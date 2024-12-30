@@ -1,0 +1,86 @@
+[
+  {
+    "location_id": "loc_001",
+    "latitude": 35.6762,
+    "longitude": 139.6503,
+    "likes": 10,
+    "description": "东京涩谷十字路口 - 世界上最繁忙的十字路口之一，每天有数十万人通过"
+  },
+  {
+    "location_id": "loc_002",
+    "latitude": 48.8584,
+    "longitude": 2.2945,
+    "likes": 8,
+    "description": "巴黎埃菲尔铁塔 - 法国巴黎的标志性建筑，世界上最著名的建筑物之一"
+  },
+  {
+    "location_id": "loc_003",
+    "latitude": 40.7580,
+    "longitude": -73.9855,
+    "likes": 15,
+    "description": "纽约时代广场 - 纽约市最受欢迎的旅游景点之一，以其巨大的广告牌和霓虹灯而闻名"
+  },
+  {
+    "location_id": "loc_004",
+    "latitude": 51.5007,
+    "longitude": -0.1246,
+    "likes": 0,
+    "description": "伦敦大本钟 - 英国议会大厦的标志性钟楼，世界上最著名的时钟之一"
+  },
+  {
+    "location_id": "loc_005",
+    "latitude": 40.4319,
+    "longitude": 116.5704,
+    "likes": 0,
+    "description": "北京长城慕田峪 - 中国最著名的文化遗产，世界七大奇迹之一"
+  },
+  {
+    "location_id": "loc_006",
+    "latitude": -22.9519,
+    "longitude": -43.2105,
+    "likes": 0,
+    "description": "里约热内卢基督像 - 巴西最著名的地标，俯瞰整个里约热内卢市"
+  },
+  {
+    "location_id": "loc_007",
+    "latitude": 27.1751,
+    "longitude": 78.0421,
+    "likes": 0,
+    "description": "印度泰姬陵 - 世界上最美丽的建筑之一，象征永恒的爱情"
+  },
+  {
+    "location_id": "loc_008",
+    "latitude": 41.8902,
+    "longitude": 12.4922,
+    "likes": 0,
+    "description": "罗马斗兽场 - 古罗马帝国最著名的建筑，见证了数千年的历史"
+  },
+  {
+    "location_id": "loc_009",
+    "latitude": 25.1972,
+    "longitude": 55.2744,
+    "likes": 0,
+    "description": "迪拜哈利法塔 - 世界最高建筑，现代建筑奇迹"
+  },
+  {
+    "location_id": "loc_010",
+    "latitude": -33.8568,
+    "longitude": 151.2153,
+    "likes": 0,
+    "description": "悉尼歌剧院 - 澳大利亚最著名的地标，独特的贝壳形建筑设计"
+  },
+  {
+    "location_id": "loc_011",
+    "latitude": 43.0428,
+    "longitude": -76.1432,
+    "likes": 0,
+    "description": "美国大峡谷国家公园 - 世界上最壮观的自然奇观之一"
+  },
+  {
+    "location_id": "loc_012",
+    "latitude": 31.6240,
+    "longitude": 74.8747,
+    "likes": 0,
+    "description": "印度金庙 - 锡克教最神圣的寺庙，金碧辉煌的建筑"
+  }
+] 
