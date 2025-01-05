@@ -19,8 +19,6 @@ services:
       retries: 3
       start_period: 10s
     restart: always
-    networks:
-      - internal
 
   frontend:
     build:
@@ -29,15 +27,13 @@ services:
     env_file:
       - ./frontend/.env
     ports:
-      - "127.0.0.1:3000:80"
+      - "127.0.0.1:3000:3000"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
       interval: 10s
       timeout: 5s
       retries: 3
     restart: always
-    networks:
-      - internal
 
   redis:
     image: redis:7.2-alpine
@@ -54,12 +50,6 @@ services:
       retries: 3
       start_period: 5s
     restart: always
-    networks:
-      - internal
-
-networks:
-  internal:
-    internal: true
 
 volumes:
   redis_data: 
