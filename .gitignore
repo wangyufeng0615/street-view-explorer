@@ -43,9 +43,6 @@ yarn-error.log*
 *.rdb
 dump.rdb
 
-# Environment variables
-.env
-
 # IDE files
 .idea/
 .vscode/
