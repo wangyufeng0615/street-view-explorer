@@ -2,9 +2,13 @@ version: '3.8'
 
 services:
   nginx:
-    image: nginx:alpine
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+      cache_from:
+        - streetview-nginx:latest
+    image: streetview-nginx:latest
     volumes:
-      - ./nginx/conf.d:/etc/nginx/conf.d:ro
       - frontend_html:/usr/share/nginx/html:ro
     ports:
       - "127.0.0.1:3000:3000"
@@ -13,11 +17,6 @@ services:
         condition: service_started
       backend:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:3000"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
     restart: always
 
   backend:
@@ -34,12 +33,6 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD", "wget", "-O-", "http://localhost:8080/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
     restart: always
 
   frontend:
@@ -56,18 +49,16 @@ services:
     restart: always
 
   redis:
-    image: redis:7.2-alpine
-    command: redis-server /usr/local/etc/redis/redis.conf
+    build:
+      context: ./redis
+      dockerfile: Dockerfile
+      cache_from:
+        - streetview-redis:latest
+    image: streetview-redis:latest
     volumes:
-      - ./redis/conf/redis.conf:/usr/local/etc/redis/redis.conf:ro
       - redis_data:/data
     expose:
       - "6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
     restart: always
 
 volumes:
