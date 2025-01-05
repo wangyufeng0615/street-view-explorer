@@ -3,9 +3,14 @@ FROM node:18-alpine AS builder
 
 WORKDIR /app
 
-# 复制依赖文件
-COPY package.json package-lock.json ./
-RUN npm ci
+# 复制 package.json
+COPY package.json ./
+
+# 复制 package-lock.json（如果存在）
+COPY package-lock.json* ./
+
+# 安装依赖
+RUN npm install
 
 # 复制源代码
 COPY . .
@@ -28,7 +33,7 @@ COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=builder /app/build /usr/share/nginx/html
 
 # 暴露端口
-EXPOSE 3000
+EXPOSE 80
 
 # 启动 Nginx
 CMD ["nginx", "-g", "daemon off;"] 
