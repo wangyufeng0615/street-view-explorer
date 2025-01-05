@@ -8,11 +8,7 @@ services:
     env_file:
       - ./backend/.env
     ports:
-      - target: 8080
-        published: 8080
-        protocol: tcp
-        mode: host
-        host_ip: 127.0.0.1
+      - 127.0.0.1:8080:8080
     depends_on:
       redis:
         condition: service_healthy
@@ -33,11 +29,7 @@ services:
     env_file:
       - ./frontend/.env
     ports:
-      - target: 80
-        published: 3000
-        protocol: tcp
-        mode: host
-        host_ip: 127.0.0.1
+      - 127.0.0.1:3000:80
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:80/health"]
       interval: 10s
@@ -54,11 +46,7 @@ services:
       - ./backend/docker/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
       - redis_data:/data
     ports:
-      - target: 6379
-        published: 6379
-        protocol: tcp
-        mode: host
-        host_ip: 127.0.0.1
+      - 127.0.0.1:6379:6379
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
