@@ -13,7 +13,7 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://0.0.0.0:8080/health"]
+      test: ["CMD", "wget", "-O-", "http://0.0.0.0:8080/health"]
       interval: 10s
       timeout: 5s
       retries: 3
