@@ -26,6 +26,9 @@ RUN npm run build
 # 运行阶段
 FROM nginx:alpine
 
+# 安装 curl 用于健康检查
+RUN apk add --no-cache curl
+
 # 复制 Nginx 配置
 COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
 
