@@ -331,7 +331,13 @@ export default function HomePage() {
 
     // 加载位置描述
     const loadLocationDescription = async (panoId) => {
-        if (!panoId || isLoadingDesc) return;
+        if (!panoId) return;
+        
+        // 如果已经在加载中，就不要重复加载
+        if (isLoadingDesc) {
+            console.log('Description is already loading, skipping...');
+            return;
+        }
         
         try {
             setIsLoadingDesc(true);
@@ -534,13 +540,10 @@ export default function HomePage() {
                                                     </div>
                                                     <div style={aiLoadingStyle.message}>{aiThinkingMessage}</div>
                                                 </div>
-                                                <p style={{ margin: '0', color: 'transparent', userSelect: 'none' }}>
-                                                    这是一个临时占位文本，用于保持加载状态时的高度。这个街景位置看起来很有趣，周围环境优美，建筑风格独特。这里的文化气息浓厚，是一个值得探索的地方。
-                                                </p>
                                             </div>
                                         ) : description ? (
                                             <p style={{ margin: '10px 0 0 0' }}>{description}</p>
-                                        ) : (
+                                        ) : location?.pano_id ? (
                                             <div style={aiLoadingStyle.container}>
                                                 <div style={aiLoadingStyle.thinkingRow}>
                                                     <div style={aiLoadingStyle.dotsContainer}>
@@ -550,10 +553,11 @@ export default function HomePage() {
                                                     </div>
                                                     <div style={aiLoadingStyle.message}>正在等待 AI 分析...</div>
                                                 </div>
-                                                <p style={{ margin: '0', color: 'transparent', userSelect: 'none' }}>
-                                                    这是一个临时占位文本，用于保持加载状态时的高度。这个街景位置看起来很有趣，周围环境优美，建筑风格独特。这里的文化气息浓厚，是一个值得探索的地方。
-                                                </p>
                                             </div>
+                                        ) : (
+                                            <p style={{ margin: '10px 0 0 0', color: '#666' }}>
+                                                无法获取此位置的街景信息，请尝试继续探索其他位置。
+                                            </p>
                                         )}
                                     </div>
 
