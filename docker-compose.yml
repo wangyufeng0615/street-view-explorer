@@ -1,6 +1,23 @@
 version: '3.8'
 
 services:
+  nginx:
+    image: nginx:alpine
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - frontend_html:/usr/share/nginx/html:ro
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - frontend
+      - backend
+    healthcheck:
+      test: ["CMD", "wget", "-O-", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: always
+
   backend:
     build:
       context: ./backend
@@ -10,8 +27,8 @@ services:
     image: streetview-backend:latest
     env_file:
       - ./backend/.env
-    ports:
-      - "127.0.0.1:8080:8080"
+    expose:
+      - "8080"
     depends_on:
       redis:
         condition: service_healthy
@@ -32,13 +49,8 @@ services:
     image: streetview-frontend:latest
     env_file:
       - ./frontend/.env
-    ports:
-      - "127.0.0.1:3000:3000"
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
+    volumes:
+      - frontend_html:/app/html
     restart: always
 
   redis:
@@ -47,14 +59,15 @@ services:
     volumes:
       - ./redis/conf/redis.conf:/usr/local/etc/redis/redis.conf:ro
       - redis_data:/data
-    ports:
-      - "127.0.0.1:6379:6379"
+    expose:
+      - "6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
+      interval: 10s
+      timeout: 5s
       retries: 3
     restart: always
 
 volumes:
-  redis_data: 
+  redis_data:
+  frontend_html: 
