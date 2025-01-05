@@ -1,18 +1,12 @@
 package repositories
 
 import (
-	"errors"
-	"math/rand"
+	"context"
+	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/my-streetview-project/backend/internal/models"
-
-	"context"
-	"fmt"
-	"strconv"
-
-	"encoding/json"
-
 	"github.com/redis/go-redis/v9"
 )
 
@@ -26,12 +20,8 @@ type RedisRepository struct {
 
 func NewRedisRepository(cfg RedisConfig) (Repository, error) {
 	rdb := redis.NewClient(&redis.Options{
-		Addr:            cfg.RedisAddress(),
-		DB:              0,
-		PoolSize:        10,
-		MinIdleConns:    5,
-		ConnMaxLifetime: time.Hour,
-		ConnMaxIdleTime: 30 * time.Minute,
+		Addr: cfg.RedisAddress(),
+		DB:   0,
 	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -44,110 +34,221 @@ func NewRedisRepository(cfg RedisConfig) (Repository, error) {
 	return &RedisRepository{client: rdb}, nil
 }
 
-func (r *RedisRepository) GetRandomLocation() (models.Location, error) {
+// SaveLocation 保存位置信息到 Redis
+func (r *RedisRepository) SaveLocation(location models.Location) error {
 	ctx := context.Background()
-	// Example: get all members from `locations` set and randomly pick one
-	locs, err := r.client.SMembers(ctx, "locations").Result()
-	if err != nil || len(locs) == 0 {
-		return models.Location{}, errors.New("no locations available or redis error")
+
+	// 设置创建时间
+	if location.CreatedAt.IsZero() {
+		location.CreatedAt = time.Now()
 	}
 
-	rand.Seed(time.Now().UnixNano())
-	chosen := locs[rand.Intn(len(locs))]
-	return r.GetLocationByID(chosen)
-}
-
-func (r *RedisRepository) GetLocationByID(locationID string) (models.Location, error) {
-	ctx := context.Background()
-	key := fmt.Sprintf("location:%s", locationID)
-	fields, err := r.client.HGetAll(ctx, key).Result()
-	if err != nil || len(fields) == 0 {
-		return models.Location{}, errors.New("location not found")
-	}
-
-	// 从 data 字段中解析完整的位置信息
-	var loc models.Location
-	if data, ok := fields["data"]; ok {
-		if err := json.Unmarshal([]byte(data), &loc); err != nil {
-			return models.Location{}, fmt.Errorf("解析位置数据失败: %w", err)
-		}
-		// 确保使用最新的点赞数
-		if likes, err := strconv.Atoi(fields["likes"]); err == nil {
-			loc.Likes = likes
-		}
-		return loc, nil
-	}
-
-	return models.Location{}, errors.New("invalid location data")
-}
-
-func (r *RedisRepository) IncrementLike(locationID string) (int, error) {
-	ctx := context.Background()
-	locKey := fmt.Sprintf("location:%s", locationID)
-
-	newLikes, err := r.client.HIncrBy(ctx, locKey, "likes", 1).Result()
+	// 序列化位置信息
+	data, err := json.Marshal(location)
 	if err != nil {
-		return 0, err
+		return fmt.Errorf("序列化位置信息失败: %w", err)
 	}
 
-	// Update leaderboard score
-	_, err = r.client.ZAdd(ctx, "location_likes", redis.Z{
-		Score:  float64(newLikes),
-		Member: locationID,
-	}).Result()
+	// 使用 pano_id 作为键
+	key := fmt.Sprintf("location:%s", location.PanoID)
+
+	// 保存完整的位置信息
+	err = r.client.Set(ctx, key, data, 0).Err()
 	if err != nil {
-		return 0, err
+		return fmt.Errorf("保存位置信息失败: %w", err)
 	}
 
-	return int(newLikes), nil
+	// 添加到国家和城市的索引中
+	if location.Country != "" {
+		r.client.SAdd(ctx, fmt.Sprintf("country:%s", location.Country), location.PanoID)
+	}
+	if location.City != "" {
+		r.client.SAdd(ctx, fmt.Sprintf("city:%s", location.City), location.PanoID)
+	}
+
+	return nil
 }
 
+// GetLocationByPanoID 通过全景图ID获取位置信息
+func (r *RedisRepository) GetLocationByPanoID(panoID string) (models.Location, error) {
+	ctx := context.Background()
+	key := fmt.Sprintf("location:%s", panoID)
+
+	data, err := r.client.Get(ctx, key).Bytes()
+	if err != nil {
+		return models.Location{}, fmt.Errorf("获取位置信息失败: %w", err)
+	}
+
+	var location models.Location
+	if err := json.Unmarshal(data, &location); err != nil {
+		return models.Location{}, fmt.Errorf("解析位置信息失败: %w", err)
+	}
+
+	// 更新访问信息
+	location.LastAccessedAt = time.Now()
+	location.AccessCount++
+	r.SaveLocation(location)
+
+	return location, nil
+}
+
+// GetLocationsByCountry 获取指定国家的所有位置
+func (r *RedisRepository) GetLocationsByCountry(country string) ([]models.Location, error) {
+	ctx := context.Background()
+	panoIDs, err := r.client.SMembers(ctx, fmt.Sprintf("country:%s", country)).Result()
+	if err != nil {
+		return nil, fmt.Errorf("获取国家位置列表失败: %w", err)
+	}
+
+	var locations []models.Location
+	for _, panoID := range panoIDs {
+		if location, err := r.GetLocationByPanoID(panoID); err == nil {
+			locations = append(locations, location)
+		}
+	}
+
+	return locations, nil
+}
+
+// GetLocationsByCity 获取指定城市的所有位置
+func (r *RedisRepository) GetLocationsByCity(city string) ([]models.Location, error) {
+	ctx := context.Background()
+	panoIDs, err := r.client.SMembers(ctx, fmt.Sprintf("city:%s", city)).Result()
+	if err != nil {
+		return nil, fmt.Errorf("获取城市位置列表失败: %w", err)
+	}
+
+	var locations []models.Location
+	for _, panoID := range panoIDs {
+		if location, err := r.GetLocationByPanoID(panoID); err == nil {
+			locations = append(locations, location)
+		}
+	}
+
+	return locations, nil
+}
+
+// IncrementLike 增加位置的点赞数
+func (r *RedisRepository) IncrementLike(panoID string) (int, error) {
+	ctx := context.Background()
+	location, err := r.GetLocationByPanoID(panoID)
+	if err != nil {
+		return 0, fmt.Errorf("获取位置信息失败: %w", err)
+	}
+
+	location.Likes++
+	if err := r.SaveLocation(location); err != nil {
+		return 0, fmt.Errorf("更新点赞数失败: %w", err)
+	}
+
+	// 更新排行榜
+	r.client.ZAdd(ctx, "leaderboard", redis.Z{
+		Score:  float64(location.Likes),
+		Member: panoID,
+	})
+
+	return location.Likes, nil
+}
+
+// GetLeaderboard 获取点赞排行榜
 func (r *RedisRepository) GetLeaderboard(page, pageSize int) ([]models.Location, error) {
 	ctx := context.Background()
 	start := int64((page - 1) * pageSize)
 	stop := start + int64(pageSize) - 1
 
-	ids, err := r.client.ZRevRange(ctx, "location_likes", start, stop).Result()
+	panoIDs, err := r.client.ZRevRange(ctx, "leaderboard", start, stop).Result()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("获取排行榜失败: %w", err)
 	}
 
-	var results []models.Location
-	for _, id := range ids {
-		loc, err := r.GetLocationByID(id)
-		if err == nil {
-			results = append(results, loc)
+	var locations []models.Location
+	for _, panoID := range panoIDs {
+		if location, err := r.GetLocationByPanoID(panoID); err == nil {
+			locations = append(locations, location)
 		}
 	}
-	return results, nil
+
+	return locations, nil
 }
 
-func (r *RedisRepository) GetAllLikes() ([]models.Location, error) {
-	ctx := context.Background()
-	// Get all from ZSET
-	ids, err := r.client.ZRange(ctx, "location_likes", 0, -1).Result()
+// SaveAIDescription 保存 AI 生成的描述
+func (r *RedisRepository) SaveAIDescription(panoID, description string, language string) error {
+	location, err := r.GetLocationByPanoID(panoID)
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("获取位置信息失败: %w", err)
 	}
 
-	var results []models.Location
-	for _, id := range ids {
-		loc, err := r.GetLocationByID(id)
-		if err == nil {
-			results = append(results, loc)
-		}
+	location.AIDescription = description
+	location.DescriptionLanguage = language
+	location.DescriptionGenerated = time.Now()
+
+	return r.SaveLocation(location)
+}
+
+// GetAIDescription 获取 AI 生成的描述
+func (r *RedisRepository) GetAIDescription(panoID string) (string, error) {
+	location, err := r.GetLocationByPanoID(panoID)
+	if err != nil {
+		return "", fmt.Errorf("获取位置信息失败: %w", err)
 	}
-	return results, nil
+
+	if location.AIDescription == "" {
+		return "", fmt.Errorf("AI描述不存在")
+	}
+
+	return location.AIDescription, nil
 }
 
-func (r *RedisRepository) SetAIDescription(locationID, desc string) error {
+// SaveExplorationPreference 保存用户的探索偏好
+func (r *RedisRepository) SaveExplorationPreference(sessionID string, pref models.ExplorationPreference) error {
 	ctx := context.Background()
-	key := fmt.Sprintf("ai_description:%s", locationID)
-	return r.client.HSet(ctx, key, "desc", desc).Err()
+	key := fmt.Sprintf("exploration_preference:%s", sessionID)
+
+	// 将偏好转换为 JSON
+	data, err := json.Marshal(pref)
+	if err != nil {
+		return fmt.Errorf("序列化探索偏好失败: %w", err)
+	}
+
+	// 保存到 Redis，不设置过期时间
+	if err := r.client.Set(ctx, key, data, 0).Err(); err != nil {
+		return fmt.Errorf("保存探索偏好失败: %w", err)
+	}
+
+	return nil
 }
 
-func (r *RedisRepository) GetAIDescription(locationID string) (string, error) {
+// GetExplorationPreference 获取用户的探索偏好
+func (r *RedisRepository) GetExplorationPreference(sessionID string) (*models.ExplorationPreference, error) {
 	ctx := context.Background()
-	key := fmt.Sprintf("ai_description:%s", locationID)
-	return r.client.HGet(ctx, key, "desc").Result()
+	key := fmt.Sprintf("exploration_preference:%s", sessionID)
+
+	// 从 Redis 获取数据
+	data, err := r.client.Get(ctx, key).Result()
+	if err == redis.Nil {
+		return nil, nil // 没有找到探索偏好
+	}
+	if err != nil {
+		return nil, fmt.Errorf("获取探索偏好失败: %w", err)
+	}
+
+	// 解析 JSON 数据
+	var pref models.ExplorationPreference
+	if err := json.Unmarshal([]byte(data), &pref); err != nil {
+		return nil, fmt.Errorf("解析探索偏好失败: %w", err)
+	}
+
+	return &pref, nil
+}
+
+// DeleteExplorationPreference 删除用户的探索偏好
+func (r *RedisRepository) DeleteExplorationPreference(sessionID string) error {
+	ctx := context.Background()
+	key := fmt.Sprintf("exploration_preference:%s", sessionID)
+
+	if err := r.client.Del(ctx, key).Err(); err != nil {
+		return fmt.Errorf("删除探索偏好失败: %w", err)
+	}
+
+	return nil
 }

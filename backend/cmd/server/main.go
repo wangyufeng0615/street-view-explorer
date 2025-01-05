@@ -23,8 +23,18 @@ func main() {
 	}
 
 	// Initialize services
-	aiService := services.NewAIService(cfg, repo)
-	locationService := services.NewLocationService(repo, aiService)
+	aiService, err := services.NewAIService(cfg, repo)
+	if err != nil {
+		log.Fatalf("初始化 AI 服务失败: %v", err)
+	}
+
+	// Initialize Maps service
+	mapsService, err := services.NewMapsService(cfg.GoogleMapsAPIKey())
+	if err != nil {
+		log.Fatalf("初始化 Maps 服务失败: %v", err)
+	}
+
+	locationService := services.NewLocationService(repo, aiService, mapsService)
 
 	// Setup Gin router
 	r := gin.Default()
@@ -32,10 +42,16 @@ func main() {
 	// Add CORS middleware
 	r.Use(api.CORSMiddleware())
 
-	// Setup routes
-	api.SetupRoutes(r, locationService, aiService)
+	// 添加健康检查接口
+	r.GET("/health", func(c *gin.Context) {
+		c.JSON(200, gin.H{"status": "ok"})
+	})
 
-	addr := ":8080" // 默认端口
+	// Setup routes
+	handlers := api.NewHandlers(locationService, aiService)
+	api.SetupRoutes(r, handlers)
+
+	addr := cfg.ServerAddress()
 	fmt.Printf("Server running on %s\n", addr)
 	if err := r.Run(addr); err != nil {
 		log.Fatalf("Failed to run server: %v", err)

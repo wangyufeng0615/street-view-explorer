@@ -5,11 +5,24 @@ import (
 )
 
 type Repository interface {
-	GetRandomLocation() (models.Location, error)
-	GetLocationByID(locationID string) (models.Location, error)
-	IncrementLike(locationID string) (int, error)
+	// 保存新的位置记录
+	SaveLocation(location models.Location) error
+
+	// 获取位置记录
+	GetLocationByPanoID(panoID string) (models.Location, error)
+	GetLocationsByCountry(country string) ([]models.Location, error)
+	GetLocationsByCity(city string) ([]models.Location, error)
+
+	// 点赞相关
+	IncrementLike(panoID string) (int, error)
 	GetLeaderboard(page, pageSize int) ([]models.Location, error)
-	GetAllLikes() ([]models.Location, error)
-	SetAIDescription(locationID, desc string) error
-	GetAIDescription(locationID string) (string, error)
+
+	// AI 描述相关
+	SaveAIDescription(panoID, description string, language string) error
+	GetAIDescription(panoID string) (string, error)
+
+	// 探索偏好相关
+	SaveExplorationPreference(sessionID string, pref models.ExplorationPreference) error
+	GetExplorationPreference(sessionID string) (*models.ExplorationPreference, error)
+	DeleteExplorationPreference(sessionID string) error
 }

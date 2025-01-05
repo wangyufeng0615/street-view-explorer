@@ -1,13 +1,3 @@
-.PHONY: init-redis
-init-redis:
-	@echo "初始化 Redis 数据..."
-	@./scripts/init_redis.sh
-
-.PHONY: dev-init-redis
-dev-init-redis:
-	@echo "初始化开发环境 Redis 数据..."
-	@REDIS_ADDRESS=localhost:6379 ./scripts/init_redis.sh 
-
 .PHONY: docker-redis-start
 docker-redis-start:
 	@echo "启动 Redis Docker 容器..."
@@ -28,6 +18,16 @@ docker-redis-logs:
 docker-redis-clean:
 	@echo "清理 Redis 数据..."
 	@docker-compose down -v
+
+.PHONY: init-redis
+init-redis:
+	@echo "初始化 Redis 数据..."
+	@go run scripts/init_redis.go
+
+.PHONY: clean-exploration-preferences
+clean-exploration-preferences:
+	@echo "清空探索兴趣缓存..."
+	@redis-cli KEYS "exploration_preference:*" | xargs -r redis-cli DEL
 
 .PHONY: dev-setup
 dev-setup: docker-redis-start init-redis

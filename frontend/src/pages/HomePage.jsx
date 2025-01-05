@@ -1,41 +1,156 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import StreetView from '../components/StreetView';
-import { getRandomLocation, likeLocation, getLocationDescription } from '../services/api';
+import PreviewMap from '../components/PreviewMap';
+import GlobalMap from '../components/GlobalMap';
+import ExplorationPreference from '../components/ExplorationPreference';
+import { getRandomLocation, getLocationDescription } from '../services/api';
 
-// 测试用的坐标点
-/*
-const TEST_LOCATIONS = [
-    {
-        location_id: 'test_001',
-        latitude: 35.6762,  // 东京涩谷十字路口
-        longitude: 139.6503,
-        likes: 0,
-        description: "测试位置：东京涩谷十字路口"
-    },
-    {
-        location_id: 'test_002',
-        latitude: 48.8584,  // 巴黎埃菲尔铁塔
-        longitude: 2.2945,
-        likes: 0,
-        description: "测试位置：巴黎埃菲尔铁塔"
-    },
-    {
-        location_id: 'test_003',
-        latitude: 40.7580,  // 纽约时代广场
-        longitude: -73.9855,
-        likes: 0,
-        description: "测试位置：纽约时代广场"
-    }
-];
-*/
+const overlayStyle = {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    width: '100vw',
+    height: '100vh',
+    zIndex: 2,
+    pointerEvents: 'none'
+};
+
+const sidebarStyle = {
+    position: 'absolute',
+    right: '20px',
+    top: '20px',
+    width: '300px',
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    padding: '20px',
+    borderRadius: '15px',
+    boxShadow: '0 4px 20px rgba(0, 0, 0, 0.15)',
+    pointerEvents: 'auto',
+    maxHeight: 'calc(100vh - 40px)',
+    overflowY: 'auto'
+};
+
+const buttonStyle = {
+    padding: '10px 20px',
+    fontSize: '16px',
+    backgroundColor: '#4CAF50',
+    color: 'white',
+    border: 'none',
+    borderRadius: '5px',
+    cursor: 'pointer',
+    width: '100%'
+};
+
+const disabledButtonStyle = {
+    ...buttonStyle,
+    backgroundColor: '#cccccc',
+    cursor: 'not-allowed'
+};
+
+const aiDescriptionStyle = {
+    backgroundColor: 'rgba(240, 242, 245, 0.8)',
+    padding: '15px',
+    borderRadius: '10px',
+    marginBottom: '20px',
+    position: 'relative',
+    border: '1px solid rgba(0, 0, 0, 0.05)'
+};
+
+const aiIconStyle = {
+    position: 'absolute',
+    top: '-10px',
+    left: '10px',
+    backgroundColor: '#007AFF',
+    color: 'white',
+    padding: '4px 8px',
+    borderRadius: '12px',
+    fontSize: '12px',
+    fontWeight: 'bold'
+};
+
+const addressStyle = {
+    fontSize: '15px',
+    color: '#333',
+    marginBottom: '20px',
+    lineHeight: '1.4'
+};
+
+const favoriteButtonStyle = {
+    ...buttonStyle,
+    backgroundColor: '#FF9500',
+    marginBottom: '10px'
+};
 
 export default function HomePage() {
-    const [data, setData] = useState(null);
+    const navigate = useNavigate();
+    const { search } = useLocation();
+    const [location, setLocation] = useState(null);
+    const [description, setDescription] = useState(null);
     const [error, setError] = useState(null);
     const [isLoading, setIsLoading] = useState(false);
-    const [locationDesc, setLocationDesc] = useState('');
     const [isLoadingDesc, setIsLoadingDesc] = useState(false);
+    const [heading, setHeading] = useState(0);
+    const isInitialLoad = useRef(true);
     const loadingRef = useRef(false);
+
+    useEffect(() => {
+        const params = new URLSearchParams(search);
+        const lat = params.get('lat');
+        const lng = params.get('lng');
+        const panoId = params.get('pano');
+
+        if (lat && lng && panoId && isInitialLoad.current) {
+            isInitialLoad.current = false;
+            setLocation({
+                latitude: parseFloat(lat),
+                longitude: parseFloat(lng),
+                panoId: panoId
+            });
+            loadLocationDescription(panoId);
+        }
+    }, [search]);
+
+    useEffect(() => {
+        if (location && !isLoading) {
+            const params = new URLSearchParams();
+            params.set('lat', location.latitude.toString());
+            params.set('lng', location.longitude.toString());
+            if (location.panoId) {
+                params.set('pano', location.panoId);
+            }
+            navigate(`?${params.toString()}`, { replace: true });
+        }
+    }, [location, isLoading, navigate]);
+
+    const loadLocationDescription = async (panoId) => {
+        if (!panoId || isLoadingDesc) return;
+        
+        try {
+            setIsLoadingDesc(true);
+            const resp = await getLocationDescription(panoId);
+            if (resp.success) {
+                setDescription(resp.data);
+            }
+        } catch (err) {
+            console.error('获取位置描述出错:', err);
+        } finally {
+            setIsLoadingDesc(false);
+        }
+    };
+
+    const handleFavorite = () => {
+        if (!location) return;
+        
+        const currentUrl = window.location.href;
+        
+        if (window.sidebar && window.sidebar.addPanel) {
+            window.sidebar.addPanel(location.formatted_address || '街景位置', currentUrl, '');
+        } else if (window.external && window.external.AddFavorite) {
+            window.external.AddFavorite(currentUrl, location.formatted_address || '街景位置');
+        } else {
+            alert('请按 ' + (navigator.userAgent.toLowerCase().indexOf('mac') != -1 ? 'Command/Cmd' : 'CTRL') + ' + D 将此页面添加到收藏夹。');
+        }
+    };
 
     const loadRandomLocation = async () => {
         if (loadingRef.current) return;
@@ -43,10 +158,16 @@ export default function HomePage() {
         try {
             loadingRef.current = true;
             setIsLoading(true);
+            setDescription(null);
+
             const resp = await getRandomLocation();
             if (resp.success) {
-                setData(resp.data);
+                setLocation(resp.data);
+                setDescription(resp.description);
                 setError(null);
+                if (!resp.description) {
+                    loadLocationDescription(resp.data.panoId);
+                }
             } else {
                 setError(resp.error || '加载失败');
             }
@@ -59,98 +180,106 @@ export default function HomePage() {
         }
     };
 
-    const loadLocationDescription = async () => {
-        if (!data || isLoadingDesc) return;
-        try {
-            setIsLoadingDesc(true);
-            const resp = await getLocationDescription(data.location_id);
-            if (resp.success) {
-                setLocationDesc(resp.data.description);
-            } else {
-                console.error('获取位置描述失败:', resp.error);
-            }
-        } catch (err) {
-            console.error('获取位置描述出错:', err);
-        } finally {
-            setIsLoadingDesc(false);
-        }
-    };
-
     useEffect(() => {
-        loadRandomLocation();
+        if (isInitialLoad.current) {
+            isInitialLoad.current = false;
+            loadRandomLocation();
+        }
         return () => {
             loadingRef.current = false;
         };
     }, []);
 
-    useEffect(() => {
-        if (data?.location_id && !isLoadingDesc) {
-            setLocationDesc(''); // 清空旧的位置描述
-            loadLocationDescription();
-        }
-    }, [data?.location_id]);
-
-    const handleLike = async () => {
-        if (!data) return;
-        try {
-            const resp = await likeLocation(data.location_id);
-            if (resp.success) {
-                setData({ ...data, likes: resp.data.likes });
-            } else {
-                alert('点赞失败: ' + (resp.error || '未知错误'));
-            }
-        } catch (err) {
-            alert('网络请求失败');
-            console.error(err);
-        }
-    };
-
-    const handleShare = () => {
-        if (!data) return;
-        const url = window.location.origin + `/?loc=${encodeURIComponent(data.location_id)}`;
-        navigator.clipboard.writeText(url).then(() => {
-            alert("链接已复制到剪贴板!");
-        }).catch(() => {
-            alert("复制失败,请手动复制: " + url);
-        });
-    };
-
-    const handleRefresh = () => {
-        if (!loadingRef.current) {
-            loadRandomLocation();
-        }
-    };
-
     if (error) {
-        return <div>
-            <h2>出错了</h2>
-            <p>{error}</p>
-            <button onClick={handleRefresh}>重试</button>
-        </div>;
+        return (
+            <div style={{ 
+                position: 'fixed',
+                top: '50%',
+                left: '50%',
+                transform: 'translate(-50%, -50%)',
+                backgroundColor: 'white',
+                padding: '20px',
+                borderRadius: '10px',
+                boxShadow: '0 0 20px rgba(0, 0, 0, 0.1)',
+                zIndex: 3
+            }}>
+                <h2>出错了</h2>
+                <p>{error}</p>
+                <button onClick={loadRandomLocation} style={buttonStyle}>
+                    重试
+                </button>
+            </div>
+        );
     }
 
-    if (isLoading || !data) {
-        return <div>加载中...</div>;
+    if (!location) {
+        return (
+            <div style={{ 
+                position: 'fixed',
+                top: '50%',
+                left: '50%',
+                transform: 'translate(-50%, -50%)',
+                color: 'white',
+                textShadow: '0 0 10px rgba(0, 0, 0, 0.5)',
+                zIndex: 3
+            }}>
+                正在加载街景...
+            </div>
+        );
     }
 
     return (
-        <div>
-            <h2>随机街景</h2>
-            <StreetView latitude={data.latitude} longitude={data.longitude} />
-            <div>
-                <h3>位置描述：</h3>
-                {isLoadingDesc ? (
-                    <p>正在获取位置描述...</p>
-                ) : locationDesc ? (
-                    <p>{locationDesc}</p>
-                ) : (
-                    <button onClick={loadLocationDescription}>获取位置描述</button>
-                )}
+        <>
+            <StreetView 
+                latitude={location.latitude} 
+                longitude={location.longitude} 
+                onPovChanged={setHeading}
+            />
+            
+            <div style={overlayStyle}>
+                <div style={sidebarStyle}>
+                    <div style={{ marginBottom: '20px' }}>
+                        <GlobalMap latitude={location.latitude} longitude={location.longitude} />
+                        <PreviewMap 
+                            latitude={location.latitude} 
+                            longitude={location.longitude} 
+                            heading={heading}
+                        />
+                    </div>
+
+                    <div style={addressStyle}>
+                        {location.formatted_address}
+                    </div>
+
+                    <div style={aiDescriptionStyle}>
+                        <div style={aiIconStyle}>AI</div>
+                        {isLoadingDesc ? (
+                            <p style={{ margin: '10px 0 0 0' }}>正在生成位置描述...</p>
+                        ) : description ? (
+                            <p style={{ margin: '10px 0 0 0' }}>{description}</p>
+                        ) : (
+                            <p style={{ margin: '10px 0 0 0' }}>正在等待 AI 描述...</p>
+                        )}
+                    </div>
+
+                    <ExplorationPreference />
+
+                    <button 
+                        onClick={handleFavorite}
+                        style={favoriteButtonStyle}
+                    >
+                        收藏此位置
+                    </button>
+
+                    <button 
+                        onClick={loadRandomLocation} 
+                        disabled={isLoading}
+                        style={isLoading ? disabledButtonStyle : buttonStyle}
+                    >
+                        {isLoading ? '加载中...' : '换一个'}
+                    </button>
+                </div>
             </div>
-            <p>点赞数: {data.likes}</p>
-            <button onClick={handleLike}>点赞</button>
-            <button onClick={handleShare}>分享</button>
-            <button onClick={handleRefresh}>换一个</button>
-        </div>
+        </>
     );
 }

@@ -8,26 +8,20 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"time"
 
+	"github.com/my-streetview-project/backend/internal/models"
 	"github.com/redis/go-redis/v9"
 )
 
-type Location struct {
-	LocationID  string  `json:"location_id"`
-	Latitude    float64 `json:"latitude"`
-	Longitude   float64 `json:"longitude"`
-	Likes       int     `json:"likes"`
-	Description string  `json:"description"`
-}
-
 // 从JSON文件加载位置数据
-func loadLocationsFromFile(filePath string) ([]Location, error) {
+func loadLocationsFromFile(filePath string) ([]models.Location, error) {
 	data, err := os.ReadFile(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("读取数据文件失败: %w", err)
 	}
 
-	var locations []Location
+	var locations []models.Location
 	if err := json.Unmarshal(data, &locations); err != nil {
 		return nil, fmt.Errorf("解析JSON数据失败: %w", err)
 	}
@@ -82,38 +76,45 @@ func main() {
 
 	// 添加位置数据
 	for _, loc := range locations {
-		// 将位置ID添加到位置集合
-		if err := rdb.SAdd(ctx, "locations", loc.LocationID).Err(); err != nil {
-			log.Printf("添加位置ID失败 %s: %v", loc.LocationID, err)
+		// 确保时间字段有值
+		if loc.CreatedAt.IsZero() {
+			loc.CreatedAt = time.Now()
+		}
+
+		// 序列化位置信息
+		data, err := json.Marshal(loc)
+		if err != nil {
+			log.Printf("序列化位置数据失败 %s: %v", loc.PanoID, err)
 			continue
 		}
 
-		// 存储位置详情
-		locJSON, _ := json.Marshal(loc)
-		if err := rdb.HSet(ctx,
-			fmt.Sprintf("location:%s", loc.LocationID),
-			"data", string(locJSON),
-			"likes", loc.Likes,
-		).Err(); err != nil {
-			log.Printf("存储位置详情失败 %s: %v", loc.LocationID, err)
+		// 保存位置数据
+		key := fmt.Sprintf("location:%s", loc.PanoID)
+		if err := rdb.Set(ctx, key, data, 0).Err(); err != nil {
+			log.Printf("保存位置数据失败 %s: %v", loc.PanoID, err)
+			continue
 		}
 
-		// 存储位置描述
-		if loc.Description != "" {
-			if err := rdb.HSet(ctx,
-				fmt.Sprintf("ai_description:%s", loc.LocationID),
-				"desc", loc.Description,
-			).Err(); err != nil {
-				log.Printf("存储位置描述失败 %s: %v", loc.LocationID, err)
+		// 添加到国家索引
+		if loc.Country != "" {
+			if err := rdb.SAdd(ctx, fmt.Sprintf("country:%s", loc.Country), loc.PanoID).Err(); err != nil {
+				log.Printf("添加国家索引失败 %s: %v", loc.PanoID, err)
+			}
+		}
+
+		// 添加到城市索引
+		if loc.City != "" {
+			if err := rdb.SAdd(ctx, fmt.Sprintf("city:%s", loc.City), loc.PanoID).Err(); err != nil {
+				log.Printf("添加城市索引失败 %s: %v", loc.PanoID, err)
 			}
 		}
 
 		// 更新点赞排行榜
-		if err := rdb.ZAdd(ctx, "location_likes", redis.Z{
+		if err := rdb.ZAdd(ctx, "leaderboard", redis.Z{
 			Score:  float64(loc.Likes),
-			Member: loc.LocationID,
+			Member: loc.PanoID,
 		}).Err(); err != nil {
-			log.Printf("更新排行榜失败 %s: %v", loc.LocationID, err)
+			log.Printf("更新排行榜失败 %s: %v", loc.PanoID, err)
 		}
 	}
 
