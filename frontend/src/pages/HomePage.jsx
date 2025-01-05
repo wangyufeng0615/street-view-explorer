@@ -81,6 +81,59 @@ const favoriteButtonStyle = {
     marginBottom: '10px'
 };
 
+const styles = {
+    loadingContainer: {
+        position: 'fixed',
+        top: '50%',
+        left: '50%',
+        transform: 'translate(-50%, -50%)',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: 'rgba(255, 255, 255, 0.95)',
+        padding: '30px',
+        borderRadius: '15px',
+        boxShadow: '0 4px 20px rgba(0, 0, 0, 0.15)',
+        zIndex: 1000
+    },
+    loadingSpinner: {
+        width: '40px',
+        height: '40px',
+        border: '3px solid #f3f3f3',
+        borderTop: '3px solid #3498db',
+        borderRadius: '50%',
+        animation: 'spin 1s linear infinite',
+        marginBottom: '15px'
+    },
+    loadingText: {
+        fontSize: '16px',
+        color: '#333',
+        fontWeight: '500',
+        textAlign: 'center',
+        animation: 'fadeInOut 2s ease-in-out infinite'
+    },
+    subText: {
+        fontSize: '14px',
+        color: '#666',
+        marginTop: '8px',
+        textAlign: 'center'
+    }
+};
+
+// 添加关键帧动画
+const keyframes = `
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+    @keyframes fadeInOut {
+        0% { opacity: 0.6; }
+        50% { opacity: 1; }
+        100% { opacity: 0.6; }
+    }
+`;
+
 export default function HomePage() {
     const navigate = useNavigate();
     const { search } = useLocation();
@@ -93,6 +146,19 @@ export default function HomePage() {
     const isInitialLoad = useRef(true);
     const loadingRef = useRef(false);
 
+    // 添加动画样式到文档
+    useEffect(() => {
+        const styleSheet = document.createElement("style");
+        styleSheet.type = "text/css";
+        styleSheet.innerText = keyframes;
+        document.head.appendChild(styleSheet);
+
+        return () => {
+            document.head.removeChild(styleSheet);
+        };
+    }, []);
+
+    // 从 URL 加载位置
     useEffect(() => {
         const params = new URLSearchParams(search);
         const lat = params.get('lat');
@@ -110,6 +176,7 @@ export default function HomePage() {
         }
     }, [search]);
 
+    // 更新 URL
     useEffect(() => {
         if (location && !isLoading) {
             const params = new URLSearchParams();
@@ -121,6 +188,17 @@ export default function HomePage() {
             navigate(`?${params.toString()}`, { replace: true });
         }
     }, [location, isLoading, navigate]);
+
+    // 初始加载
+    useEffect(() => {
+        if (isInitialLoad.current) {
+            isInitialLoad.current = false;
+            loadRandomLocation();
+        }
+        return () => {
+            loadingRef.current = false;
+        };
+    }, []);
 
     const loadLocationDescription = async (panoId) => {
         if (!panoId || isLoadingDesc) return;
@@ -180,16 +258,6 @@ export default function HomePage() {
         }
     };
 
-    useEffect(() => {
-        if (isInitialLoad.current) {
-            isInitialLoad.current = false;
-            loadRandomLocation();
-        }
-        return () => {
-            loadingRef.current = false;
-        };
-    }, []);
-
     if (error) {
         return (
             <div style={{ 
@@ -212,64 +280,63 @@ export default function HomePage() {
         );
     }
 
-    if (!location) {
-        return (
-            <div style={{ 
-                position: 'fixed',
-                top: '50%',
-                left: '50%',
-                transform: 'translate(-50%, -50%)',
-                color: 'white',
-                textShadow: '0 0 10px rgba(0, 0, 0, 0.5)',
-                zIndex: 3
-            }}>
-                正在加载街景...
-            </div>
-        );
-    }
-
+    // 始终渲染主框架
     return (
         <>
-            <StreetView 
-                latitude={location.latitude} 
-                longitude={location.longitude} 
-                onPovChanged={setHeading}
-            />
+            {/* 街景容器 */}
+            <div style={{ width: '100vw', height: '100vh', backgroundColor: '#f0f2f5' }}>
+                <StreetView 
+                    latitude={location?.latitude} 
+                    longitude={location?.longitude} 
+                    onPovChanged={setHeading}
+                />
+            </div>
             
+            {/* 侧边栏 */}
             <div style={overlayStyle}>
                 <div style={sidebarStyle}>
-                    <div style={{ marginBottom: '20px' }}>
-                        <GlobalMap latitude={location.latitude} longitude={location.longitude} />
-                        <PreviewMap 
-                            latitude={location.latitude} 
-                            longitude={location.longitude} 
-                            heading={heading}
-                        />
-                    </div>
+                    {location && (
+                        <>
+                            <div style={{ marginBottom: '20px' }}>
+                                <GlobalMap latitude={location.latitude} longitude={location.longitude} />
+                                <PreviewMap 
+                                    latitude={location.latitude} 
+                                    longitude={location.longitude} 
+                                    heading={heading}
+                                />
+                            </div>
 
-                    <div style={addressStyle}>
-                        {location.formatted_address}
-                    </div>
+                            <div style={addressStyle}>
+                                {location.formatted_address}
+                            </div>
 
-                    <div style={aiDescriptionStyle}>
-                        <div style={aiIconStyle}>AI</div>
-                        {isLoadingDesc ? (
-                            <p style={{ margin: '10px 0 0 0' }}>正在生成位置描述...</p>
-                        ) : description ? (
-                            <p style={{ margin: '10px 0 0 0' }}>{description}</p>
-                        ) : (
-                            <p style={{ margin: '10px 0 0 0' }}>正在等待 AI 描述...</p>
-                        )}
-                    </div>
+                            <div style={aiDescriptionStyle}>
+                                <div style={aiIconStyle}>AI</div>
+                                {isLoadingDesc ? (
+                                    <div style={{ margin: '10px 0 0 0', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                        <div style={{ ...styles.loadingSpinner, width: '20px', height: '20px', marginBottom: 0 }} />
+                                        <span>正在生成位置描述...</span>
+                                    </div>
+                                ) : description ? (
+                                    <p style={{ margin: '10px 0 0 0' }}>{description}</p>
+                                ) : (
+                                    <div style={{ margin: '10px 0 0 0', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                        <div style={{ ...styles.loadingSpinner, width: '20px', height: '20px', marginBottom: 0 }} />
+                                        <span>正在等待 AI 描述...</span>
+                                    </div>
+                                )}
+                            </div>
 
-                    <ExplorationPreference />
+                            <ExplorationPreference />
 
-                    <button 
-                        onClick={handleFavorite}
-                        style={favoriteButtonStyle}
-                    >
-                        收藏此位置
-                    </button>
+                            <button 
+                                onClick={handleFavorite}
+                                style={favoriteButtonStyle}
+                            >
+                                收藏此位置
+                            </button>
+                        </>
+                    )}
 
                     <button 
                         onClick={loadRandomLocation} 

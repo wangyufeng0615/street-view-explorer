@@ -3,6 +3,8 @@ package config
 import (
 	"log"
 	"os"
+	"strconv"
+	"strings"
 
 	"github.com/joho/godotenv"
 )
@@ -14,6 +16,7 @@ type Config interface {
 	GoogleMapsAPIKey() string
 	EnableOpenAI() bool
 	EnableGoogleAPI() bool
+	SecurityConfig() *SecurityConfig
 }
 
 type config struct {
@@ -23,6 +26,23 @@ type config struct {
 	googleMapsAPIKey string
 	enableOpenAI     bool
 	enableGoogleAPI  bool
+	securityConfig   *SecurityConfig
+}
+
+type SecurityConfig struct {
+	RateLimit struct {
+		Enabled       bool
+		MaxRequests   int
+		WindowSeconds int
+	}
+	CORS struct {
+		AllowedOrigins []string
+		MaxAge         int
+	}
+	Session struct {
+		Timeout int
+		Secure  bool
+	}
 }
 
 func (c *config) ServerAddress() string {
@@ -49,6 +69,10 @@ func (c *config) EnableGoogleAPI() bool {
 	return c.enableGoogleAPI
 }
 
+func (c *config) SecurityConfig() *SecurityConfig {
+	return c.securityConfig
+}
+
 func New() Config {
 	// 尝试加载 .env 文件
 	if err := godotenv.Load(); err != nil {
@@ -64,15 +88,46 @@ func New() Config {
 		enableGoogleAPI:  getEnvOrDefault("ENABLE_GOOGLE_API", "true") == "true",
 	}
 
+	// 加载安全配置
+	cfg.securityConfig = &SecurityConfig{
+		RateLimit: struct {
+			Enabled       bool
+			MaxRequests   int
+			WindowSeconds int
+		}{
+			Enabled:       getEnvOrDefault("RATE_LIMIT_ENABLED", "true") == "true",
+			MaxRequests:   getEnvAsIntOrDefault("RATE_LIMIT_MAX_REQUESTS", 100),
+			WindowSeconds: getEnvAsIntOrDefault("RATE_LIMIT_WINDOW_SECONDS", 60),
+		},
+		CORS: struct {
+			AllowedOrigins []string
+			MaxAge         int
+		}{
+			AllowedOrigins: strings.Split(getEnvOrDefault("CORS_ALLOWED_ORIGINS", "http://localhost:3000"), ","),
+			MaxAge:         getEnvAsIntOrDefault("CORS_MAX_AGE", 86400),
+		},
+		Session: struct {
+			Timeout int
+			Secure  bool
+		}{
+			Timeout: getEnvAsIntOrDefault("SESSION_TIMEOUT", 3600),
+			Secure:  getEnvOrDefault("SESSION_SECURE", "true") == "true",
+		},
+	}
+
 	log.Printf("加载配置:\n"+
 		"Server Address: %s\n"+
 		"Redis Address: %s\n"+
 		"Enable OpenAI: %v\n"+
-		"Enable Google API: %v",
+		"Enable Google API: %v\n"+
+		"Rate Limit Enabled: %v\n"+
+		"CORS Allowed Origins: %v",
 		cfg.serverAddress,
 		cfg.redisAddress,
 		cfg.enableOpenAI,
-		cfg.enableGoogleAPI)
+		cfg.enableGoogleAPI,
+		cfg.securityConfig.RateLimit.Enabled,
+		cfg.securityConfig.CORS.AllowedOrigins)
 
 	return cfg
 }
@@ -80,6 +135,15 @@ func New() Config {
 func getEnvOrDefault(key, defaultValue string) string {
 	if value := os.Getenv(key); value != "" {
 		return value
+	}
+	return defaultValue
+}
+
+func getEnvAsIntOrDefault(key string, defaultValue int) int {
+	if value := os.Getenv(key); value != "" {
+		if intValue, err := strconv.Atoi(value); err == nil {
+			return intValue
+		}
 	}
 	return defaultValue
 }

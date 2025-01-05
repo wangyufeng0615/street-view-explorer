@@ -150,9 +150,18 @@ export default function ExplorationPreference() {
                     setError(result.error || '删除探索偏好失败');
                     setEnabled(true);
                 } else {
+                    // 检查是否有保存的探索兴趣
+                    const savedInterest = localStorage.getItem('explorationInterest');
                     localStorage.removeItem('explorationInterest');
                     localStorage.removeItem('explorationEnabled');
                     setInterest('');
+                    
+                    // 只有当之前有保存的探索兴趣时才刷新页面
+                    if (savedInterest) {
+                        setTimeout(() => {
+                            window.location.reload();
+                        }, 500);
+                    }
                 }
             } catch (err) {
                 setError('网络请求失败');
@@ -258,7 +267,7 @@ export default function ExplorationPreference() {
                         maxLength={MAX_INTEREST_LENGTH}
                     />
                     <div style={styles.hint}>
-                        您可以输入地点（如：日本传统建筑、欧洲古堡）或主题（如：火山、沼泽、古寺庙、热带雨林、极地风光）
+                        可输入具体地点（如：京都寺院、阿尔卑斯城堡）或地理特征（如：火山、雨林、极地）。系统将为您匹配相关区域的街景。
                     </div>
                     {error && (
                         <div style={styles.error}>

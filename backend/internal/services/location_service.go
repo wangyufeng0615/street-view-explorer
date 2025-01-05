@@ -120,12 +120,13 @@ func (ls *LocationService) GetRandomLocationWithPreference(sessionID string) (mo
 
 	// 创建位置记录
 	location := models.Location{
-		PanoID:    locationInfo["pano_id"],
-		Latitude:  validLat,
-		Longitude: validLng,
-		Country:   locationInfo["country"],
-		City:      locationInfo["city"],
-		CreatedAt: time.Now(),
+		PanoID:           locationInfo["pano_id"],
+		Latitude:         validLat,
+		Longitude:        validLng,
+		Country:          locationInfo["country"],
+		City:             locationInfo["city"],
+		FormattedAddress: locationInfo["formatted_address"],
+		CreatedAt:        time.Now(),
 	}
 
 	// 保存位置记录
@@ -215,17 +216,6 @@ func validateRegions(regions []models.Region) error {
 
 	validCount := 0
 	for i, region := range regions {
-		log.Printf("验证区域 %d:\n"+
-			"  描述: %s\n"+
-			"  坐标: 北纬=%.3f, 南纬=%.3f, 东经=%.3f, 西经=%.3f",
-			i+1,
-			region.RegionInfo,
-			region.Coordinates.North,
-			region.Coordinates.South,
-			region.Coordinates.East,
-			region.Coordinates.West,
-		)
-
 		// 检查坐标范围
 		if region.Coordinates.North < -90 || region.Coordinates.North > 90 ||
 			region.Coordinates.South < -90 || region.Coordinates.South > 90 {
@@ -256,17 +246,6 @@ func validateRegions(regions []models.Region) error {
 
 		if lonDiff > 179 {
 			log.Printf("区域 %d 验证失败：经度范围过大 (%.3f)", i+1, lonDiff)
-			continue
-		}
-
-		// 检查区域描述
-		if len(region.RegionInfo) == 0 {
-			log.Printf("区域 %d 验证失败：缺少描述信息", i+1)
-			continue
-		}
-
-		if len(region.RegionInfo) > 500 { // 放宽描述长度限制
-			log.Printf("区域 %d 验证失败：描述过长 (%d 字符)", i+1, len(region.RegionInfo))
 			continue
 		}
 
