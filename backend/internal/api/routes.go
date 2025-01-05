@@ -14,23 +14,8 @@ func SetupRoutes(r *gin.Engine, h *Handlers) {
 			// 获取随机位置
 			locations.GET("/random", h.GetRandomLocation)
 
-			// 获取特定位置
-			locations.GET("/:panoId", h.GetLocation)
-
 			// 获取位置描述
 			locations.GET("/:panoId/description", h.GetLocationDescription)
-
-			// 点赞位置
-			locations.POST("/:panoId/like", h.LikeLocation)
-
-			// 获取排行榜
-			locations.GET("/leaderboard", h.GetLeaderboard)
-
-			// 按国家获取位置
-			locations.GET("/country/:country", h.GetLocationsByCountry)
-
-			// 按城市获取位置
-			locations.GET("/city/:city", h.GetLocationsByCity)
 		}
 
 		// 探索偏好相关

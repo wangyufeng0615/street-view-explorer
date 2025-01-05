@@ -2,7 +2,6 @@ package api
 
 import (
 	"net/http"
-	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/my-streetview-project/backend/internal/services"
@@ -38,106 +37,11 @@ func (h *Handlers) GetRandomLocation(c *gin.Context) {
 		return
 	}
 
-	// 生成位置描述
-	desc, err := h.aiService.GetDescriptionForLocation(loc)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"error":   err.Error(),
-		})
-		return
-	}
-
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data": gin.H{
-			"location":    loc,
-			"description": desc,
+			"location": loc,
 		},
-	})
-}
-
-// 点赞位置
-func (h *Handlers) LikeLocation(c *gin.Context) {
-	panoID := c.Param("panoId")
-	if panoID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"error":   "缺少位置ID",
-		})
-		return
-	}
-
-	likes, err := h.locationService.LikeLocation(panoID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"error":   err.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"data": gin.H{
-			"likes": likes,
-		},
-	})
-}
-
-// 获取排行榜
-func (h *Handlers) GetLeaderboard(c *gin.Context) {
-	pageStr := c.DefaultQuery("page", "1")
-	pageSizeStr := c.DefaultQuery("pageSize", "10")
-
-	pageInt := 1
-	if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
-		pageInt = p
-	}
-
-	pageSizeInt := 10
-	if ps, err := strconv.Atoi(pageSizeStr); err == nil && ps > 0 {
-		pageSizeInt = ps
-	}
-
-	locations, err := h.locationService.GetLeaderboard(pageInt, pageSizeInt)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"error":   err.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"data":    locations,
-	})
-}
-
-// 获取位置信息
-func (h *Handlers) GetLocation(c *gin.Context) {
-	panoID := c.Param("panoId")
-	if panoID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"error":   "缺少位置ID",
-		})
-		return
-	}
-
-	loc, err := h.locationService.GetLocation(panoID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"error":   err.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"data":    loc,
 	})
 }
 
@@ -147,10 +51,13 @@ func (h *Handlers) GetLocationDescription(c *gin.Context) {
 	if panoID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
-			"error":   "缺少位置ID",
+			"error":   "Missing location ID",
 		})
 		return
 	}
+
+	// Get language from query parameter, default to "zh"
+	language := c.DefaultQuery("lang", "zh")
 
 	loc, err := h.locationService.GetLocation(panoID)
 	if err != nil {
@@ -161,7 +68,7 @@ func (h *Handlers) GetLocationDescription(c *gin.Context) {
 		return
 	}
 
-	desc, err := h.aiService.GetDescriptionForLocation(loc)
+	desc, err := h.aiService.GetDescriptionForLocation(loc, language)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
@@ -174,59 +81,8 @@ func (h *Handlers) GetLocationDescription(c *gin.Context) {
 		"success": true,
 		"data": gin.H{
 			"description": desc,
+			"language":    language,
 		},
-	})
-}
-
-// 按国家获取位置列表
-func (h *Handlers) GetLocationsByCountry(c *gin.Context) {
-	country := c.Param("country")
-	if country == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"error":   "缺少国家参数",
-		})
-		return
-	}
-
-	locations, err := h.locationService.GetLocationsByCountry(country)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"error":   err.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"data":    locations,
-	})
-}
-
-// 按城市获取位置列表
-func (h *Handlers) GetLocationsByCity(c *gin.Context) {
-	city := c.Param("city")
-	if city == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"error":   "缺少城市参数",
-		})
-		return
-	}
-
-	locations, err := h.locationService.GetLocationsByCity(city)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"error":   err.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"data":    locations,
 	})
 }
 

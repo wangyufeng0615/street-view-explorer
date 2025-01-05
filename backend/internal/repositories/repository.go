@@ -10,12 +10,6 @@ type Repository interface {
 
 	// 获取位置记录
 	GetLocationByPanoID(panoID string) (models.Location, error)
-	GetLocationsByCountry(country string) ([]models.Location, error)
-	GetLocationsByCity(city string) ([]models.Location, error)
-
-	// 点赞相关
-	IncrementLike(panoID string) (int, error)
-	GetLeaderboard(page, pageSize int) ([]models.Location, error)
 
 	// AI 描述相关
 	SaveAIDescription(panoID, description string, language string) error

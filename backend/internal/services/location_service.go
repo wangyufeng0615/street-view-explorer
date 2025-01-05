@@ -33,7 +33,7 @@ func (ls *LocationService) GetLocation(panoID string) (models.Location, error) {
 func (ls *LocationService) GetRandomLocation() (models.Location, error) {
 	ctx := context.Background()
 	// 生成随机有效坐标
-	lat, lng, err := ls.maps.GenerateValidLocation(ctx)
+	lat, lng, panoId, err := ls.maps.GenerateValidLocation(ctx)
 	if err != nil {
 		return models.Location{}, fmt.Errorf("生成有效坐标失败: %w", err)
 	}
@@ -46,13 +46,14 @@ func (ls *LocationService) GetRandomLocation() (models.Location, error) {
 
 	// 创建新的位置记录
 	loc := models.Location{
-		OriginalLatitude:  lat,
-		OriginalLongitude: lng,
-		Latitude:          lat,
-		Longitude:         lng,
-		FormattedAddress:  locationInfo["formatted_address"],
-		CreatedAt:         time.Now(),
-		IsMock:            false,
+		PanoID:           panoId,
+		Latitude:         lat,
+		Longitude:        lng,
+		FormattedAddress: locationInfo["formatted_address"],
+		Country:          locationInfo["country"],
+		City:            locationInfo["city"],
+		CreatedAt:        time.Now(),
+		IsMock:           false,
 	}
 
 	// 保存位置信息
@@ -61,24 +62,6 @@ func (ls *LocationService) GetRandomLocation() (models.Location, error) {
 	}
 
 	return loc, nil
-}
-
-func (ls *LocationService) LikeLocation(panoID string) (int, error) {
-	return ls.repo.IncrementLike(panoID)
-}
-
-func (ls *LocationService) GetLeaderboard(page, pageSize int) ([]models.Location, error) {
-	return ls.repo.GetLeaderboard(page, pageSize)
-}
-
-// 按国家获取位置列表
-func (ls *LocationService) GetLocationsByCountry(country string) ([]models.Location, error) {
-	return ls.repo.GetLocationsByCountry(country)
-}
-
-// 按城市获取位置列表
-func (ls *LocationService) GetLocationsByCity(city string) ([]models.Location, error) {
-	return ls.repo.GetLocationsByCity(city)
 }
 
 // GetRandomLocationWithPreference 根据用户的探索偏好获取随机位置
@@ -100,7 +83,7 @@ func (ls *LocationService) GetRandomLocationWithPreference(sessionID string) (mo
 	lat, lng := utils.GenerateRandomCoordinateFromRegions(pref.Regions)
 
 	// 验证坐标是否有街景
-	hasStreetView, validLat, validLng := ls.maps.HasStreetView(ctx, lat, lng, true)
+	hasStreetView, validLat, validLng, panoId := ls.maps.HasStreetView(ctx, lat, lng, true)
 	if !hasStreetView {
 		// 如果没有街景，递归重试
 		return ls.GetRandomLocationWithPreference(sessionID)
@@ -120,7 +103,7 @@ func (ls *LocationService) GetRandomLocationWithPreference(sessionID string) (mo
 
 	// 创建位置记录
 	location := models.Location{
-		PanoID:           locationInfo["pano_id"],
+		PanoID:           panoId,
 		Latitude:         validLat,
 		Longitude:        validLng,
 		Country:          locationInfo["country"],

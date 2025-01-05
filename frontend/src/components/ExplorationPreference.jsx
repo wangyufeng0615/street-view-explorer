@@ -13,7 +13,27 @@ const styles = {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        marginBottom: '10px'
+        marginBottom: '12px'
+    },
+    title: {
+        fontSize: '15px',
+        fontWeight: '600',
+        color: '#1a1a1a',
+        letterSpacing: '0.3px',
+        fontFamily: '"PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Helvetica, Arial, sans-serif',
+        position: 'relative',
+        paddingLeft: '18px'
+    },
+    titleIcon: {
+        position: 'absolute',
+        left: 0,
+        top: '50%',
+        transform: 'translateY(-50%)',
+        width: '12px',
+        height: '12px',
+        backgroundColor: '#4CAF50',
+        borderRadius: '3px',
+        opacity: 0.8
     },
     switch: {
         position: 'relative',
@@ -60,23 +80,27 @@ const styles = {
         marginTop: '10px',
         borderRadius: '5px',
         border: '1px solid #ddd',
-        fontSize: '14px',
+        fontSize: '13px',
+        fontFamily: '"PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Helvetica, Arial, sans-serif',
         boxSizing: 'border-box',
         maxWidth: '100%'
     },
     hint: {
         fontSize: '12px',
         color: '#666',
-        marginTop: '5px'
+        marginTop: '5px',
+        fontFamily: '"PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Helvetica, Arial, sans-serif',
+        lineHeight: '1.5'
     },
     error: {
         fontSize: '12px',
         color: '#ff4d4f',
-        marginTop: '5px'
+        marginTop: '5px',
+        fontFamily: '"PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Helvetica, Arial, sans-serif'
     },
     saveButton: {
         padding: '8px 16px',
-        fontSize: '14px',
+        fontSize: '13px',
         backgroundColor: '#4CAF50',
         color: 'white',
         border: 'none',
@@ -86,7 +110,9 @@ const styles = {
         width: '100%',
         transition: 'all 0.3s ease',
         position: 'relative',
-        overflow: 'hidden'
+        overflow: 'hidden',
+        fontFamily: '"PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Helvetica, Arial, sans-serif',
+        fontWeight: '500'
     },
     saveButtonDisabled: {
         backgroundColor: '#f5f5f5',
@@ -119,7 +145,7 @@ const styles = {
     }
 };
 
-export default function ExplorationPreference() {
+export default function ExplorationPreference({ onSaveStart, onSaveEnd }) {
     const [enabled, setEnabled] = useState(false);
     const [interest, setInterest] = useState('');
     const [isLoading, setIsLoading] = useState(false);
@@ -145,10 +171,12 @@ export default function ExplorationPreference() {
         if (!newEnabled) {
             try {
                 setIsLoading(true);
+                onSaveStart?.();  // 通知父组件开始保存
                 const result = await deleteExplorationPreference();
                 if (!result.success) {
                     setError(result.error || '删除探索偏好失败');
                     setEnabled(true);
+                    onSaveEnd?.();  // 如果删除失败，通知父组件结束
                 } else {
                     // 检查是否有保存的探索兴趣
                     const savedInterest = localStorage.getItem('explorationInterest');
@@ -161,11 +189,15 @@ export default function ExplorationPreference() {
                         setTimeout(() => {
                             window.location.reload();
                         }, 500);
+                        // 不调用 onSaveEnd，保持禁用状态直到页面刷新
+                    } else {
+                        onSaveEnd?.();  // 如果没有保存的兴趣，直接通知父组件结束
                     }
                 }
             } catch (err) {
                 setError('网络请求失败');
                 setEnabled(true);
+                onSaveEnd?.();  // 如果出错，通知父组件结束
             } finally {
                 setIsLoading(false);
             }
@@ -201,9 +233,11 @@ export default function ExplorationPreference() {
 
         try {
             setIsLoading(true);
+            onSaveStart?.();  // 通知父组件开始保存
             const result = await setExplorationPreference(trimmedInterest);
             if (!result.success) {
                 setError(result.error);
+                onSaveEnd?.();  // 如果保存失败，通知父组件结束
             } else {
                 localStorage.setItem('explorationInterest', trimmedInterest);
                 localStorage.setItem('explorationEnabled', 'true');
@@ -215,25 +249,31 @@ export default function ExplorationPreference() {
                 setTimeout(() => {
                     window.location.reload();
                 }, 1000);
+                // 不调用 onSaveEnd，保持禁用状态直到页面刷新
             }
         } catch (err) {
             setError('网络请求失败');
             setEnabled(false);
+            onSaveEnd?.();  // 如果出错，通知父组件结束
         } finally {
             setIsLoading(false);
         }
     };
 
     const handleKeyPress = (e) => {
-        if (e.key === 'Enter' && !isLoading) {
+        if (e.key === 'Enter' && !isLoading && enabled && interest.trim() && isDirty) {
             e.preventDefault(); // 防止表单提交
+            handleInterestSubmit();
         }
     };
 
     return (
         <div style={styles.container}>
             <div style={styles.header}>
-                <span>指定探索兴趣</span>
+                <div style={styles.title}>
+                    <div style={styles.titleIcon}></div>
+                    指定探索兴趣
+                </div>
                 <label style={styles.switch}>
                     <input
                         type="checkbox"
@@ -267,7 +307,7 @@ export default function ExplorationPreference() {
                         maxLength={MAX_INTEREST_LENGTH}
                     />
                     <div style={styles.hint}>
-                        可输入具体地点（如：京都寺院、阿尔卑斯城堡）或地理特征（如：火山、雨林、极地）。系统将为您匹配相关区域的街景。
+                        可输入具体地点（如：京都寺院、阿尔卑斯城堡）或地理特征（如：火山、雨林、极地）。
                     </div>
                     {error && (
                         <div style={styles.error}>

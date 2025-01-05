@@ -32,40 +32,46 @@ func NewAIService(cfg config.Config, repo repositories.Repository) (*AIService, 
 	}, nil
 }
 
-func (ai *AIService) GetDescriptionForLocation(loc models.Location) (string, error) {
-	log.Printf("获取位置描述 (PanoID: %s)", loc.PanoID)
+func (ai *AIService) GetDescriptionForLocation(loc models.Location, language string) (string, error) {
+	log.Printf("Getting location description (PanoID: %s, Language: %s)", loc.PanoID, language)
 
-	// 获取地理信息
+	// Check if we have a cached description in the requested language
+	if loc.AIDescription != "" && loc.DescriptionLanguage == language {
+		log.Printf("Using cached description in %s", language)
+		return loc.AIDescription, nil
+	}
+
+	// Get location info
 	var locationInfo map[string]string
 	var err error
 
 	if ai.config.EnableGoogleAPI() {
 		locationInfo, err = ai.maps.GetLocationInfo(context.Background(), loc.Latitude, loc.Longitude)
 		if err != nil {
-			log.Printf("获取地理信息失败: %v", err)
+			log.Printf("Failed to get location info: %v", err)
 			locationInfo = getDefaultLocationInfo(loc)
 		}
 	} else {
-		log.Printf("Google API 已禁用，使用模拟数据")
+		log.Printf("Google API disabled, using mock data")
 		locationInfo = getDefaultLocationInfo(loc)
 	}
 
-	// 调用OpenAI生成描述
+	// Generate description using OpenAI
 	var desc string
 	if ai.config.EnableOpenAI() {
-		desc, err = ai.openAI.GenerateLocationDescription(loc.Latitude, loc.Longitude, locationInfo)
+		desc, err = ai.openAI.GenerateLocationDescription(loc.Latitude, loc.Longitude, locationInfo, language)
 		if err != nil {
-			log.Printf("OpenAI 调用失败: %v", err)
+			log.Printf("OpenAI call failed: %v", err)
 			desc = getDefaultDescription(locationInfo)
 		}
 	} else {
-		log.Printf("OpenAI 已禁用，使用模拟数据")
+		log.Printf("OpenAI disabled, using mock data")
 		desc = getDefaultDescription(locationInfo)
 	}
 
-	// 保存描述
-	if err := ai.repo.SaveAIDescription(loc.PanoID, desc, "zh-CN"); err != nil {
-		log.Printf("保存描述失败: %v", err)
+	// Save description
+	if err := ai.repo.SaveAIDescription(loc.PanoID, desc, language); err != nil {
+		log.Printf("Failed to save description: %v", err)
 	}
 
 	return desc, nil

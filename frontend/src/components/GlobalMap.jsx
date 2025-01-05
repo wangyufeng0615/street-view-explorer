@@ -14,6 +14,7 @@ export default function GlobalMap({ latitude, longitude }) {
                 if (!isMounted) return;
 
                 const map = new maps.Map(mapRef.current, {
+                    mapId: process.env.REACT_APP_GOOGLE_MAPS_MAP_ID,
                     center: { lat: latitude, lng: longitude },
                     zoom: 3,
                     mapTypeId: 'terrain',
@@ -21,41 +22,41 @@ export default function GlobalMap({ latitude, longitude }) {
                     streetViewControl: false,
                     fullscreenControl: false,
                     zoomControl: false,
-                    styles: [
-                        {
-                            featureType: 'administrative.locality',
-                            elementType: 'labels',
-                            stylers: [{ visibility: 'off' }]
-                        },
-                        {
-                            featureType: 'road',
-                            stylers: [{ visibility: 'off' }]
-                        },
-                        {
-                            featureType: 'administrative.country',
-                            elementType: 'labels',
-                            stylers: [{ visibility: 'on' }]
-                        }
-                    ]
+                    disableDefaultUI: true
                 });
 
-                // 添加标记
-                new maps.Marker({
-                    position: { lat: latitude, lng: longitude },
-                    map: map,
-                    icon: {
-                        path: maps.SymbolPath.CIRCLE,
-                        scale: 7,
-                        fillColor: "#FF4444",
-                        fillOpacity: 1,
-                        strokeColor: "#FFFFFF",
-                        strokeWeight: 2
+                // 隐藏 Google logo 和版权信息
+                const style = document.createElement('style');
+                style.textContent = `
+                    .gm-style-cc { display: none; }
+                    a[href^="http://maps.google.com/maps"]{display:none !important}
+                    a[href^="https://maps.google.com/maps"]{display:none !important}
+                    .gmnoprint a, .gmnoprint span, .gm-style-cc {
+                        display:none;
                     }
+                    .gmnoprint div {
+                        background:none !important;
+                    }
+                `;
+                document.head.appendChild(style);
+
+                // 创建自定义红点标记
+                const dot = document.createElement('div');
+                dot.style.width = '14px';
+                dot.style.height = '14px';
+                dot.style.borderRadius = '50%';
+                dot.style.backgroundColor = '#FF4444';
+                dot.style.border = '2px solid #FFFFFF';
+                dot.style.boxShadow = '0 2px 4px rgba(0,0,0,0.2)';
+
+                const markerView = new maps.marker.AdvancedMarkerElement({
+                    map,
+                    position: { lat: latitude, lng: longitude },
+                    content: dot
                 });
             } catch (err) {
                 if (isMounted) {
                     setError('地图加载失败');
-                    console.error('地图加载错误:', err);
                 }
             }
         };

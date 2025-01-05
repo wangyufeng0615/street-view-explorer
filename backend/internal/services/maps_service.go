@@ -29,7 +29,7 @@ func NewMapsService(apiKey string) (*MapsService, error) {
 }
 
 // 检查坐标是否有街景可用，并返回街景坐标
-func (s *MapsService) HasStreetView(ctx context.Context, latitude, longitude float64, hasInterest bool) (bool, float64, float64) {
+func (s *MapsService) HasStreetView(ctx context.Context, latitude, longitude float64, hasInterest bool) (bool, float64, float64, string) {
 	// 定义搜索半径（单位：米）
 	searchRadii := []int{5000000} // 默认值，用于兼容性
 	if hasInterest {
@@ -92,26 +92,26 @@ func (s *MapsService) HasStreetView(ctx context.Context, latitude, longitude flo
 				result.Location.Lat, result.Location.Lng,
 			)
 			log.Printf("找到街景: 距离=%.2f km, pano_id=%s, 搜索半径=%d米", distance, result.PanoId, radius)
-			return true, result.Location.Lat, result.Location.Lng
+			return true, result.Location.Lat, result.Location.Lng, result.PanoId
 		}
 
 		log.Printf("在半径 %d 米内未找到街景", radius)
 	}
 
 	log.Printf("所有搜索半径都未找到街景")
-	return false, 0, 0
+	return false, 0, 0, ""
 }
 
 // 生成有效的随机坐标（确保有街景可用）
-func (s *MapsService) GenerateValidLocation(ctx context.Context) (latitude, longitude float64, err error) {
+func (s *MapsService) GenerateValidLocation(ctx context.Context) (latitude, longitude float64, panoId string, err error) {
 	randomLat, randomLng := utils.GenerateRandomCoordinate()
 	log.Printf("生成随机坐标: (%.6f, %.6f)", randomLat, randomLng)
 
-	if hasStreetView, streetViewLat, streetViewLng := s.HasStreetView(ctx, randomLat, randomLng, false); hasStreetView {
-		return streetViewLat, streetViewLng, nil
+	if hasStreetView, streetViewLat, streetViewLng, panoId := s.HasStreetView(ctx, randomLat, randomLng, false); hasStreetView {
+		return streetViewLat, streetViewLng, panoId, nil
 	}
 
-	return 0, 0, fmt.Errorf("该位置没有可用的街景")
+	return 0, 0, "", fmt.Errorf("该位置没有可用的街景")
 }
 
 func (s *MapsService) GetLocationInfo(ctx context.Context, latitude, longitude float64) (map[string]string, error) {
@@ -130,6 +130,21 @@ func (s *MapsService) GetLocationInfo(ctx context.Context, latitude, longitude f
 	resp, err := s.client.ReverseGeocode(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("Geocoding API 请求失败: %w", err)
+	}
+
+	// 打印原始响应数据
+	log.Printf("Google Geocoding API 原始响应数据:")
+	for i, result := range resp {
+		log.Printf("结果 #%d:", i+1)
+		log.Printf("  完整地址: %s", result.FormattedAddress)
+		log.Printf("  地点类型: %v", result.Types)
+		log.Printf("  地址组件:")
+		for _, component := range result.AddressComponents {
+			log.Printf("    - %s (类型: %v)", component.LongName, component.Types)
+		}
+		log.Printf("  几何信息: 纬度=%.6f, 经度=%.6f", 
+			result.Geometry.Location.Lat, 
+			result.Geometry.Location.Lng)
 	}
 
 	// 如果没有结果，返回错误

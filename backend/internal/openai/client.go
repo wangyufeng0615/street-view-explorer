@@ -23,7 +23,7 @@ const (
 )
 
 type Client interface {
-	GenerateLocationDescription(latitude, longitude float64, locationInfo map[string]string) (string, error)
+	GenerateLocationDescription(latitude, longitude float64, locationInfo map[string]string, language string) (string, error)
 	GenerateRegionsForInterest(interest string) ([]models.Region, error)
 }
 
@@ -62,35 +62,39 @@ func NewClient(apiKey string) Client {
 	}
 }
 
-func (c *client) GenerateLocationDescription(latitude, longitude float64, locationInfo map[string]string) (string, error) {
-	log.Printf("正在请求 OpenAI 生成位置描述 (%.6f, %.6f), 地点信息: %v", latitude, longitude, locationInfo)
+func (c *client) GenerateLocationDescription(latitude, longitude float64, locationInfo map[string]string, language string) (string, error) {
+	log.Printf("Requesting OpenAI to generate location description (%.6f, %.6f), address: %v, language: %s",
+		latitude, longitude, locationInfo["formatted_address"], language)
+
+	// 根据语言选择提示词格式
+	outputFormat := "Give it to me in Chinese with that classic Atlas charm"
+	if language != "zh" {
+		outputFormat = "Give it to me in English with that classic Atlas charm"
+	}
 
 	prompt := fmt.Sprintf(
-		"请为以下地点生成一段简短但生动的位置描述：\n"+
-			"经纬度：(%.6f, %.6f)\n"+
-			"地址：%s\n"+
-			"国家：%s\n"+
-			"城市：%s\n"+
-			"地点类型：%s\n"+
-			"周边地标：%s\n\n"+
-			"要求：\n"+
-			"1. 描述要生动有趣\n"+
-			"2. 突出地点特色和文化背景\n"+
-			"3. 字数限制在100字以内",
+		"Coordinates: (%.6f, %.6f)\n"+
+			"Address: %s\n\n"+
+			"%s",
 		latitude, longitude,
 		locationInfo["formatted_address"],
-		locationInfo["country"],
-		locationInfo["city"],
-		locationInfo["type"],
-		locationInfo["nearby_places"],
+		outputFormat,
 	)
 
 	reqBody := chatRequest{
 		Model: model,
 		Messages: []chatMessage{
 			{
-				Role:    "system",
-				Content: "你是一位资深的开发者，同时也是一个环球旅行家，擅长用简洁生动的语言描述世界各地的特色。",
+				Role: "system",
+				Content: "You are Dr. Atlas, a passionate local expert who has spent years living in and studying places around the world. You're like a knowledgeable friend who knows all the fascinating details about any location.\n\n" +
+					"When sharing about a place:\n" +
+					"1. Skip repeating the coordinates or exact address - jump straight into what makes this place special\n" +
+					"2. Share specific, lesser-known facts about the local area (landmarks, history, culture)\n" +
+					"3. Include interesting details about daily life, local customs, or seasonal events\n" +
+					"4. Use a warm, conversational tone as if chatting with a friend\n" +
+					"5. Mention precise details that only a local would know (famous local spots, neighborhood quirks)\n" +
+					"6. Keep it concise (within 100 words) but packed with unique local insights\n\n" +
+					"Remember: Focus on what makes this specific spot unique - avoid generic descriptions that could apply anywhere else.",
 			},
 			{
 				Role:    "user",
