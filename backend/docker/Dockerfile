@@ -13,7 +13,6 @@ RUN go mod download
 # 复制源代码，但排除不需要的文件
 COPY cmd/ ./cmd/
 COPY internal/ ./internal/
-COPY pkg/ ./pkg/
 
 # 构建应用
 RUN CGO_ENABLED=0 GOOS=linux go build -o main ./cmd/server
