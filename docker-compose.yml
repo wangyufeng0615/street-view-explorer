@@ -39,7 +39,7 @@ services:
     image: redis:7.2-alpine
     command: redis-server /usr/local/etc/redis/redis.conf
     volumes:
-      - ./backend/docker/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+      - ./redis/conf/redis.conf:/usr/local/etc/redis/redis.conf:ro
       - redis_data:/data
     ports:
       - "127.0.0.1:6379:6379"
