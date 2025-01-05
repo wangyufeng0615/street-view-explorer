@@ -1,49 +1,40 @@
-.PHONY: dev prod clean
+.PHONY: deploy clean logs backend-sh frontend-sh init-cert renew-cert
 
-# 开发环境变量
-DEV_ENV ?= development
-DEV_REDIS_PASSWORD ?= 16DB5A5B-D9C9-4263-A85A-6E347EA219E6
-DEV_API_BASE_URL ?= http://localhost:8080
-DEV_CORS_ALLOWED_ORIGINS ?= http://localhost:3000
+# 域名配置
+DOMAIN ?= earth.wangyufeng.org
+EMAIL ?= alanwang424@gmail.com
 
-# 生产环境变量
-PROD_ENV ?= production
-PROD_REDIS_PASSWORD ?= $(shell uuidgen)
-PROD_API_BASE_URL ?= https://api.yoursite.com
-PROD_CORS_ALLOWED_ORIGINS ?= https://yoursite.com
+# 部署命令
+deploy:
+	@echo "Deploying to production environment..."
+	@mkdir -p nginx/conf.d nginx/ssl certbot/conf certbot/www
+	docker-compose up -d --build
 
-# Docker 相关命令
-dev: export ENV=$(DEV_ENV)
-dev: export REDIS_PASSWORD=$(DEV_REDIS_PASSWORD)
-dev: export API_BASE_URL=$(DEV_API_BASE_URL)
-dev: export CORS_ALLOWED_ORIGINS=$(DEV_CORS_ALLOWED_ORIGINS)
-dev:
-	@echo "Starting development environment..."
-	docker-compose -f docker-compose.yml up --build
-
-prod: export ENV=$(PROD_ENV)
-prod: export REDIS_PASSWORD=$(PROD_REDIS_PASSWORD)
-prod: export API_BASE_URL=$(PROD_API_BASE_URL)
-prod: export CORS_ALLOWED_ORIGINS=$(PROD_CORS_ALLOWED_ORIGINS)
-prod:
-	@echo "Starting production environment..."
-	@echo "Redis password: $(PROD_REDIS_PASSWORD)"
-	docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
-
+# 清理命令
 clean:
 	docker-compose down -v
 	docker system prune -f
 	rm -rf backend/tmp/* frontend/build/*
 
-# 辅助命令
+# 查看日志
 logs:
 	docker-compose logs -f
 
-redis-cli:
-	docker-compose exec redis redis-cli -a "$(REDIS_PASSWORD)"
-
+# Shell 访问
 backend-sh:
 	docker-compose exec backend sh
 
 frontend-sh:
-	docker-compose exec frontend sh 
+	docker-compose exec frontend sh
+
+# 初始化 SSL 证书
+init-cert:
+	@echo "Initializing SSL certificate for $(DOMAIN)..."
+	docker-compose run --rm certbot certonly --webroot --webroot-path=/var/www/certbot \
+		--email $(EMAIL) --agree-tos --no-eff-email \
+		-d $(DOMAIN)
+
+# 更新 SSL 证书
+renew-cert:
+	@echo "Renewing SSL certificates..."
+	docker-compose run --rm certbot renew 
