@@ -37,9 +37,7 @@ services:
 
   redis:
     image: redis:7.2-alpine
-    command: redis-server /usr/local/etc/redis/redis.conf
-    volumes:
-      - ./backend/docker/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    command: ["redis-server", "--bind", "0.0.0.0", "--port", "6379", "--protected-mode", "no"]
     ports:
       - "127.0.0.1:6379:6379"
     healthcheck:
