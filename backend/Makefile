@@ -1,34 +1,50 @@
-.PHONY: docker-redis-start
-docker-redis-start:
-	@echo "启动 Redis Docker 容器..."
-	@docker-compose up -d redis
-	@echo "等待 Redis 就绪..."
-	@sleep 3
+.PHONY: build test lint clean init-data
 
-.PHONY: docker-redis-stop
-docker-redis-stop:
-	@echo "停止 Redis Docker 容器..."
-	@docker-compose down
+# 构建命令
+build:
+	@echo "构建后端应用..."
+	@go build -o bin/server cmd/server/main.go
 
-.PHONY: docker-redis-logs
-docker-redis-logs:
-	@docker-compose logs -f redis
+# 测试命令
+test:
+	@echo "运行测试..."
+	@go test -v -race -cover ./...
 
-.PHONY: docker-redis-clean
-docker-redis-clean:
-	@echo "清理 Redis 数据..."
-	@docker-compose down -v
+# 代码检查
+lint:
+	@echo "运行代码检查..."
+	@golangci-lint run
 
-.PHONY: init-redis
-init-redis:
-	@echo "初始化 Redis 数据..."
+# 初始化测试数据
+init-data:
+	@echo "初始化测试数据..."
 	@go run scripts/init_redis.go
 
-.PHONY: clean-exploration-preferences
-clean-exploration-preferences:
-	@echo "清空探索兴趣缓存..."
-	@redis-cli KEYS "exploration_preference:*" | xargs -r redis-cli DEL
+# 清理命令
+clean:
+	@echo "清理构建产物..."
+	@rm -rf bin/
+	@rm -rf tmp/
+	@go clean -testcache
 
-.PHONY: dev-setup
-dev-setup: docker-redis-start init-redis
-	@echo "开发环境设置完成"
+# 开发相关命令
+run:
+	@echo "启动开发服务器..."
+	@go run cmd/server/main.go
+
+# 生成 mock
+mock:
+	@echo "生成 mock 文件..."
+	@mockgen -source=internal/repositories/repository.go -destination=internal/repositories/mock/repository.go
+	@mockgen -source=internal/services/maps_service.go -destination=internal/services/mock/maps_service.go
+
+# 更新依赖
+deps-update:
+	@echo "更新依赖..."
+	@go get -u ./...
+	@go mod tidy
+
+# 检查依赖安全性
+deps-check:
+	@echo "检查依赖安全性..."
+	@go list -json -m all | nancy sleuth

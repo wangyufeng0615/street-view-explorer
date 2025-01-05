@@ -18,7 +18,9 @@ func main() {
 
 	// 初始化 Redis 客户端
 	redisClient := redis.NewClient(&redis.Options{
-		Addr: cfg.RedisAddress(),
+		Addr:     cfg.RedisAddress(),
+		Password: cfg.RedisPassword(),
+		DB:       0,
 	})
 
 	// 初始化 Redis 仓库

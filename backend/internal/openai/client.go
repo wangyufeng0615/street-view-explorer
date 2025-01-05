@@ -63,9 +63,6 @@ func NewClient(apiKey string) Client {
 }
 
 func (c *client) GenerateLocationDescription(latitude, longitude float64, locationInfo map[string]string, language string) (string, error) {
-	log.Printf("Requesting OpenAI to generate location description (%.6f, %.6f), address: %v, language: %s",
-		latitude, longitude, locationInfo["formatted_address"], language)
-
 	// 根据语言选择提示词格式
 	outputFormat := "Give it to me in Chinese with that classic Atlas charm"
 	if language != "zh" {
@@ -108,8 +105,6 @@ func (c *client) GenerateLocationDescription(latitude, longitude float64, locati
 		return "", fmt.Errorf("编码请求失败: %w", err)
 	}
 
-	log.Printf("OpenAI 请求内容:\n%s", string(reqJSON))
-
 	req, err := http.NewRequest("POST", apiEndpoint, bytes.NewBuffer(reqJSON))
 	if err != nil {
 		return "", fmt.Errorf("创建请求失败: %w", err)
@@ -118,10 +113,8 @@ func (c *client) GenerateLocationDescription(latitude, longitude float64, locati
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+c.apiKey)
 
-	log.Printf("发送请求到 OpenAI API (model: %s)...", model)
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		log.Printf("OpenAI API 请求失败: %v", err)
 		return "", fmt.Errorf("发送请求失败: %w", err)
 	}
 	defer resp.Body.Close()
@@ -131,26 +124,20 @@ func (c *client) GenerateLocationDescription(latitude, longitude float64, locati
 		return "", fmt.Errorf("读取响应失败: %w", err)
 	}
 
-	log.Printf("OpenAI 响应内容:\n%s", string(body))
-
 	var chatResp chatResponse
 	if err := json.Unmarshal(body, &chatResp); err != nil {
-		log.Printf("解析 OpenAI 响应失败: %v", err)
 		return "", fmt.Errorf("解析响应失败: %w", err)
 	}
 
 	if chatResp.Error != nil {
-		log.Printf("OpenAI API 返回错误: %s", chatResp.Error.Message)
 		return "", fmt.Errorf("OpenAI API错误: %s", chatResp.Error.Message)
 	}
 
 	if len(chatResp.Choices) == 0 {
-		log.Printf("OpenAI 未返回任何结果")
 		return "", fmt.Errorf("OpenAI未返回任何结果")
 	}
 
 	desc := chatResp.Choices[0].Message.Content
-	log.Printf("成功获取位置描述: %s", desc)
 	return desc, nil
 }
 

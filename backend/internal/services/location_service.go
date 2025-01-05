@@ -3,7 +3,6 @@ package services
 import (
 	"context"
 	"fmt"
-	"log"
 	"math"
 	"time"
 
@@ -51,7 +50,7 @@ func (ls *LocationService) GetRandomLocation() (models.Location, error) {
 		Longitude:        lng,
 		FormattedAddress: locationInfo["formatted_address"],
 		Country:          locationInfo["country"],
-		City:            locationInfo["city"],
+		City:             locationInfo["city"],
 		CreatedAt:        time.Now(),
 		IsMock:           false,
 	}
@@ -98,7 +97,7 @@ func (ls *LocationService) GetRandomLocationWithPreference(sessionID string) (mo
 	// 更新最后使用时间
 	pref.LastUsedAt = time.Now()
 	if err := ls.repo.SaveExplorationPreference(sessionID, *pref); err != nil {
-		log.Printf("更新探索偏好使用时间失败: %v", err)
+		return models.Location{}, fmt.Errorf("更新探索偏好使用时间失败: %w", err)
 	}
 
 	// 创建位置记录
@@ -185,36 +184,29 @@ func containsSensitiveChars(s string) bool {
 
 // validateRegions 验证区域数据的合法性
 func validateRegions(regions []models.Region) error {
-	log.Printf("开始验证区域数据，共 %d 个区域", len(regions))
-
 	if len(regions) == 0 {
-		log.Printf("验证失败：区域列表为空")
 		return fmt.Errorf("区域列表为空")
 	}
 
 	if len(regions) > 10 {
-		log.Printf("验证失败：区域数量超出限制（%d > 10）", len(regions))
 		return fmt.Errorf("区域数量超出限制")
 	}
 
 	validCount := 0
-	for i, region := range regions {
+	for _, region := range regions {
 		// 检查坐标范围
 		if region.Coordinates.North < -90 || region.Coordinates.North > 90 ||
 			region.Coordinates.South < -90 || region.Coordinates.South > 90 {
-			log.Printf("区域 %d 验证失败：纬度超出范围", i+1)
 			continue
 		}
 
 		if region.Coordinates.East < -180 || region.Coordinates.East > 180 ||
 			region.Coordinates.West < -180 || region.Coordinates.West > 180 {
-			log.Printf("区域 %d 验证失败：经度超出范围", i+1)
 			continue
 		}
 
 		// 确保南北纬度关系正确
 		if region.Coordinates.South > region.Coordinates.North {
-			log.Printf("区域 %d 验证失败：南北纬度关系错误", i+1)
 			continue
 		}
 
@@ -223,26 +215,21 @@ func validateRegions(regions []models.Region) error {
 		lonDiff := math.Abs(region.Coordinates.East - region.Coordinates.West)
 
 		if latDiff > 89 {
-			log.Printf("区域 %d 验证失败：纬度范围过大 (%.3f)", i+1, latDiff)
 			continue
 		}
 
 		if lonDiff > 179 {
-			log.Printf("区域 %d 验证失败：经度范围过大 (%.3f)", i+1, lonDiff)
 			continue
 		}
 
-		log.Printf("区域 %d 验证通过", i+1)
 		validCount++
 	}
 
 	// 只要有至少一个有效区域就通过验证
 	if validCount == 0 {
-		log.Printf("验证失败：没有任何有效区域")
 		return fmt.Errorf("没有有效的区域数据")
 	}
 
-	log.Printf("区域验证完成：共 %d 个区域，%d 个有效", len(regions), validCount)
 	return nil
 }
 

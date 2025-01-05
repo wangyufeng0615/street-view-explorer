@@ -1,7 +1,6 @@
 package config
 
 import (
-	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -12,6 +11,7 @@ import (
 type Config interface {
 	ServerAddress() string
 	RedisAddress() string
+	RedisPassword() string
 	OpenAIAPIKey() string
 	GoogleMapsAPIKey() string
 	EnableOpenAI() bool
@@ -22,6 +22,7 @@ type Config interface {
 type config struct {
 	serverAddress    string
 	redisAddress     string
+	redisPassword    string
 	openAIAPIKey     string
 	googleMapsAPIKey string
 	enableOpenAI     bool
@@ -53,6 +54,10 @@ func (c *config) RedisAddress() string {
 	return c.redisAddress
 }
 
+func (c *config) RedisPassword() string {
+	return c.redisPassword
+}
+
 func (c *config) OpenAIAPIKey() string {
 	return c.openAIAPIKey
 }
@@ -74,16 +79,17 @@ func (c *config) SecurityConfig() *SecurityConfig {
 }
 
 func New() Config {
-	// 尝试加载 .env 文件
+	// 加载 .env 文件
 	if err := godotenv.Load(); err != nil {
-		log.Printf("警告: 无法加载 .env 文件: %v", err)
+		// 忽略错误，因为在生产环境中通常不使用 .env 文件
 	}
 
 	cfg := &config{
 		serverAddress:    getEnvOrDefault("SERVER_ADDRESS", ":8080"),
 		redisAddress:     getEnvOrDefault("REDIS_ADDRESS", "localhost:6379"),
-		openAIAPIKey:     getEnvOrDefault("OPENAI_API_KEY", ""),
-		googleMapsAPIKey: getEnvOrDefault("GOOGLE_API_KEY", ""),
+		redisPassword:    os.Getenv("REDIS_PASSWORD"),
+		openAIAPIKey:     os.Getenv("OPENAI_API_KEY"),
+		googleMapsAPIKey: os.Getenv("GOOGLE_API_KEY"),
 		enableOpenAI:     getEnvOrDefault("ENABLE_OPENAI", "true") == "true",
 		enableGoogleAPI:  getEnvOrDefault("ENABLE_GOOGLE_API", "true") == "true",
 	}
@@ -114,20 +120,6 @@ func New() Config {
 			Secure:  getEnvOrDefault("SESSION_SECURE", "true") == "true",
 		},
 	}
-
-	log.Printf("加载配置:\n"+
-		"Server Address: %s\n"+
-		"Redis Address: %s\n"+
-		"Enable OpenAI: %v\n"+
-		"Enable Google API: %v\n"+
-		"Rate Limit Enabled: %v\n"+
-		"CORS Allowed Origins: %v",
-		cfg.serverAddress,
-		cfg.redisAddress,
-		cfg.enableOpenAI,
-		cfg.enableGoogleAPI,
-		cfg.securityConfig.RateLimit.Enabled,
-		cfg.securityConfig.CORS.AllowedOrigins)
 
 	return cfg
 }

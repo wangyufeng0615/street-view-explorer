@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: docker/Dockerfile
+    environment:
+      - SERVER_ADDRESS=:8080
+      - REDIS_ADDRESS=redis:6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - ENABLE_OPENAI=true
+      - ENABLE_GOOGLE_API=true
+      - RATE_LIMIT_ENABLED=true
+      - RATE_LIMIT_MAX_REQUESTS=100
+      - RATE_LIMIT_WINDOW_SECONDS=60
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS}
+      - CORS_MAX_AGE=86400
+      - SESSION_TIMEOUT=3600
+      - SESSION_SECURE=true
+      - LOG_LEVEL=info
+    ports:
+      - "8080:8080"
+    depends_on:
+      - redis
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: docker/Dockerfile
+      args:
+        - REACT_APP_API_BASE_URL=${API_BASE_URL}
+        - REACT_APP_GOOGLE_MAPS_API_KEY=${GOOGLE_API_KEY}
+        - REACT_APP_GOOGLE_MAPS_MAP_ID=${GOOGLE_MAPS_MAP_ID}
+    ports:
+      - "3000:3000"
+
+  redis:
+    image: redis:7.2-alpine
+    command: redis-server /usr/local/etc/redis/redis.conf
+    volumes:
+      - ./backend/docker/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+      - redis_data:/data
+      - redis_logs:/var/log/redis
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+
+volumes:
+  redis_data:
+  redis_logs: 
