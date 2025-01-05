@@ -29,33 +29,11 @@ services:
       dockerfile: docker/Dockerfile
     env_file:
       - ./frontend/.env
-    networks:
-      - web
-    restart: always
-
-  nginx:
-    image: nginx:alpine
     ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx/conf.d:/etc/nginx/conf.d
-      - ./nginx/ssl:/etc/nginx/ssl
-      - ./certbot/conf:/etc/letsencrypt
-      - ./certbot/www:/var/www/certbot
-    depends_on:
-      - frontend
+      - "127.0.0.1:3000:80"
     restart: always
     networks:
-      - web
-
-  certbot:
-    image: certbot/certbot
-    volumes:
-      - ./certbot/conf:/etc/letsencrypt
-      - ./certbot/www:/var/www/certbot
-    networks:
-      - web
+      - internal
 
   redis:
     image: redis:7.2-alpine
@@ -78,8 +56,6 @@ services:
 networks:
   internal:
     internal: true
-  web:
-    driver: bridge
 
 volumes:
   redis_data:
