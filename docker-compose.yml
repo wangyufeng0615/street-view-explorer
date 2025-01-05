@@ -34,7 +34,6 @@ services:
     volumes:
       - ./backend/docker/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
       - redis_data:/data
-      - redis_logs:/var/log/redis
     ports:
       - "127.0.0.1:6379:6379"
     healthcheck:
@@ -51,5 +50,4 @@ networks:
     internal: true
 
 volumes:
-  redis_data:
-  redis_logs: 
+  redis_data: 
