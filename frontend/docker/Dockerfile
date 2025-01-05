@@ -3,14 +3,14 @@ FROM node:18-alpine AS builder
 
 WORKDIR /app
 
-# 复制 package.json
-COPY package.json ./
+# 安装 yarn
+RUN apk add --no-cache yarn
 
-# 复制 package-lock.json（如果存在）
-COPY package-lock.json* ./
+# 复制 package.json 和 yarn.lock（如果存在）
+COPY package.json yarn.lock* ./
 
 # 安装依赖
-RUN npm install
+RUN yarn install --frozen-lockfile
 
 # 复制源代码
 COPY . .
@@ -21,7 +21,7 @@ ARG REACT_APP_GOOGLE_MAPS_API_KEY
 ARG REACT_APP_GOOGLE_MAPS_MAP_ID
 
 # 构建应用
-RUN npm run build
+RUN yarn build
 
 # 运行阶段
 FROM nginx:alpine
