@@ -22,7 +22,7 @@ FROM alpine:3.19
 WORKDIR /app
 
 # 安装运行时依赖
-RUN apk add --no-cache ca-certificates tzdata
+RUN apk add --no-cache ca-certificates tzdata wget
 
 # 复制编译好的应用
 COPY --from=builder /app/main .
