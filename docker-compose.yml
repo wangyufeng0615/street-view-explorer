@@ -8,12 +8,16 @@ services:
     env_file:
       - ./backend/.env
     ports:
-      - "127.0.0.1:8080:8080"
+      - target: 8080
+        published: 8080
+        protocol: tcp
+        mode: host
+        host_ip: 127.0.0.1
     depends_on:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-O-", "http://0.0.0.0:8080/health"]
+      test: ["CMD", "wget", "-O-", "http://localhost:8080/health"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -21,8 +25,6 @@ services:
     restart: always
     networks:
       - internal
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
 
   frontend:
     build:
@@ -31,7 +33,11 @@ services:
     env_file:
       - ./frontend/.env
     ports:
-      - "127.0.0.1:3000:80"
+      - target: 80
+        published: 3000
+        protocol: tcp
+        mode: host
+        host_ip: 127.0.0.1
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:80/health"]
       interval: 10s
@@ -40,8 +46,6 @@ services:
     restart: always
     networks:
       - internal
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
 
   redis:
     image: redis:7.2-alpine
@@ -50,7 +54,11 @@ services:
       - ./backend/docker/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
       - redis_data:/data
     ports:
-      - "127.0.0.1:6379:6379"
+      - target: 6379
+        published: 6379
+        protocol: tcp
+        mode: host
+        host_ip: 127.0.0.1
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
