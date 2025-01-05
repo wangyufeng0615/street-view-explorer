@@ -13,7 +13,7 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
+      test: ["CMD", "wget", "-q", "--spider", "http://0.0.0.0:8080/health"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -21,6 +21,8 @@ services:
     restart: always
     networks:
       - internal
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   frontend:
     build:
@@ -38,6 +40,8 @@ services:
     restart: always
     networks:
       - internal
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   redis:
     image: redis:7.2-alpine
