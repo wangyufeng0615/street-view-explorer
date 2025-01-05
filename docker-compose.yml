@@ -5,6 +5,9 @@ services:
     build:
       context: ./backend
       dockerfile: docker/Dockerfile
+      cache_from:
+        - streetview-backend:latest
+    image: streetview-backend:latest
     env_file:
       - ./backend/.env
     ports:
@@ -24,6 +27,9 @@ services:
     build:
       context: ./frontend
       dockerfile: docker/Dockerfile
+      cache_from:
+        - streetview-frontend:latest
+    image: streetview-frontend:latest
     env_file:
       - ./frontend/.env
     ports:

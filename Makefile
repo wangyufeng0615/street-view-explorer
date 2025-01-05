@@ -2,14 +2,12 @@
 
 # 部署命令
 deploy:
-	@echo "Deploying to production environment..."
 	docker compose up -d --build
 
 # 清理命令
 clean:
 	docker compose down -v
-	docker system prune -f
-	rm -rf backend/tmp/* frontend/build/*
+	docker compose rm -f
 
 # 查看日志
 logs:

@@ -1,8 +1,7 @@
 // Basic API wrappers to call backend
 // Assuming backend runs on same origin or set proper baseURL.
 
-const BASE_URL = process.env.REACT_APP_API_BASE_URL || '';
-const API_V1 = `${BASE_URL}/api/v1`;
+const API_V1 = '/api/v1';
 
 // 获取随机位置
 export async function getRandomLocation() {

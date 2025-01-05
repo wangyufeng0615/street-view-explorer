@@ -6,12 +6,14 @@ WORKDIR /app
 # 安装构建依赖
 RUN apk add --no-cache git
 
-# 复制 go.mod 和 go.sum
+# 首先只复制依赖文件
 COPY go.mod go.sum ./
 RUN go mod download
 
-# 复制源代码
-COPY . .
+# 复制源代码，但排除不需要的文件
+COPY cmd/ ./cmd/
+COPY internal/ ./internal/
+COPY pkg/ ./pkg/
 
 # 构建应用
 RUN CGO_ENABLED=0 GOOS=linux go build -o main ./cmd/server
@@ -29,6 +31,10 @@ COPY --from=builder /app/main .
 
 # 设置时区
 ENV TZ=Asia/Shanghai
+
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=3s \
+    CMD wget -O- http://localhost:8080/health || exit 1
 
 # 暴露端口
 EXPOSE 8080
