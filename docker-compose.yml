@@ -40,7 +40,6 @@ services:
     command: redis-server /usr/local/etc/redis/redis.conf
     volumes:
       - ./backend/docker/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
-      - redis_data:/data
     ports:
       - "127.0.0.1:6379:6379"
     healthcheck:
@@ -48,7 +47,6 @@ services:
       interval: 5s
       timeout: 3s
       retries: 3
-      start_period: 5s
     restart: always
 
 volumes:
