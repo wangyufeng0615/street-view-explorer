@@ -23,12 +23,12 @@ ARG REACT_APP_GOOGLE_MAPS_MAP_ID
 RUN yarn build
 
 # 使用更轻量的镜像来存放静态文件
-FROM busybox:1.36
+FROM alpine:3.19
 
 WORKDIR /app
 
 # 复制构建产物
 COPY --from=builder /app/build /app/html
 
-# 使用 tail -f /dev/null 来保持容器运行
-CMD ["tail", "-f", "/dev/null"] 
+# 使容器保持运行
+CMD ["sh", "-c", "while true; do sleep 1; done"] 
