@@ -85,14 +85,9 @@ const ExplorationPreference = forwardRef(({
         // 阻止默认行为
         e?.preventDefault();
         
-        console.log('Tab change clicked:', mode, 'current mode:', explorationMode);
-        
         if (mode === explorationMode) {
-            console.log('Same mode, skipping...');
             return;
         }
-        
-        console.log('Switching to mode:', mode);
         
         if (mode === 'random') {
             setPreference('');

@@ -9,6 +9,7 @@ import '../styles/HomePage.css';
 
 const MAX_RETRIES = 3;
 const TIMEOUT_MS = 10000; // 10 seconds timeout
+const RATE_LIMIT_MS = 1000; // 1秒限制
 
 // 探索模式的存储键
 const EXPLORATION_MODE_KEY = 'exploration_mode';
@@ -47,6 +48,7 @@ export default function HomePage() {
     const loadingDescTimeoutRef = useRef(null);
     const networkStateRef = useRef(navigator.onLine);
     const timeoutRef = useRef(null);
+    const lastRefreshTimeRef = useRef(0);
 
     // 添加超时控制的 Promise
     const timeoutPromise = useCallback((ms) => {
@@ -109,7 +111,6 @@ export default function HomePage() {
     // 监听 location 变化
     useEffect(() => {
         if (location?.pano_id) {
-            console.log('Location changed:', location);
             locationRef.current = location;
             
             // 清理之前的超时
@@ -120,13 +121,11 @@ export default function HomePage() {
             // 使用 RAF 代替 setTimeout
             loadingDescTimeoutRef.current = requestAnimationFrame(() => {
                 loadingDescTimeoutRef.current = null;
-                if (locationRef.current?.pano_id === location.pano_id) {  // 使用 pano_id 比较
-                    console.log('Loading description for panoId:', location.pano_id);
+                if (locationRef.current?.pano_id === location.pano_id) {
                     loadLocationDescription(location.pano_id);
                 }
             });
         } else {
-            console.log('Location cleared');
             // 清除描述相关状态
             setDescription(null);
             setDescError(null);
@@ -143,7 +142,19 @@ export default function HomePage() {
 
     // 加载随机位置
     const loadRandomLocation = useCallback(async () => {
+        // 检查限流
+        const now = Date.now();
+        const timeSinceLastRefresh = now - lastRefreshTimeRef.current;
+        if (timeSinceLastRefresh < RATE_LIMIT_MS) {
+            const waitTime = Math.ceil((RATE_LIMIT_MS - timeSinceLastRefresh) / 1000);
+            setError(`请等待 ${waitTime} 秒后再试`);
+            return;
+        }
+
         if (loadingRef.current) return;
+        
+        // 更新最后刷新时间
+        lastRefreshTimeRef.current = now;
         
         // 设置加载状态
         loadingRef.current = true;
@@ -202,28 +213,23 @@ export default function HomePage() {
 
     // 加载位置描述
     const loadLocationDescription = useCallback(async (panoId) => {
-        console.log('loadLocationDescription called with panoId:', panoId);
         if (!panoId) {
-            console.log('No panoId provided, skipping');
             return;
         }
         
         // 检查网络状态
         if (!networkStateRef.current) {
-            console.log('Network offline, skipping');
             setDescError('网络连接已断开');
             return;
         }
         
         // 检查是否是当前位置的请求
         if (locationRef.current?.pano_id !== panoId) {
-            console.log('Location changed, skipping description request');
             return;
         }
         
         // 如果已经在加载中，就不要重复加载
         if (isLoadingDesc) {
-            console.log('Description is already loading, skipping...');
             return;
         }
 
@@ -231,7 +237,6 @@ export default function HomePage() {
         cleanup();
         
         try {
-            console.log('Starting to load description...');
             setIsLoadingDesc(true);
             setDescError(null);
             setDescription(null);  // 清除旧的描述
@@ -244,11 +249,9 @@ export default function HomePage() {
             
             // 再次检查位置和网络状态
             if (locationRef.current?.pano_id !== panoId || !networkStateRef.current) {
-                console.log('Location changed or network offline during preparation');
                 return;
             }
             
-            console.log('Sending description request...');
             // 使用 Promise.race 实现超时控制
             const resp = await Promise.race([
                 getLocationDescription(panoId, userLang, abortControllerRef.current.signal),
@@ -257,12 +260,10 @@ export default function HomePage() {
 
             // 如果请求已经被取消或位置已改变，直接返回
             if (!abortControllerRef.current || locationRef.current?.pano_id !== panoId) {
-                console.log('Request cancelled or location changed');
                 return;
             }
 
             if (resp.success) {
-                console.log('Description loaded successfully');
                 setDescription(resp.data);
                 setDescRetries(0); // 重置重试次数
             } else {
@@ -271,15 +272,11 @@ export default function HomePage() {
         } catch (err) {
             // 如果是取消的请求或组件已卸载，不处理错误
             if (err.name === 'AbortError' || !abortControllerRef.current) {
-                console.log('Request aborted');
                 return;
             }
-
-            console.error('Error getting location description:', err);
             
             // 再次检查位置是否改变
             if (locationRef.current?.pano_id !== panoId) {
-                console.log('Location changed during error handling');
                 return;
             }
             
@@ -289,12 +286,10 @@ export default function HomePage() {
             
             // 只在网络正常时重试
             if (networkStateRef.current && descRetries < MAX_RETRIES) {
-                console.log('Scheduling retry...');
                 setDescRetries(prev => prev + 1);
                 retryTimeoutRef.current = setTimeout(() => {
                     // 最后一次检查位置是否改变和网络状态
                     if (locationRef.current?.pano_id === panoId && networkStateRef.current) {
-                        console.log('Retrying description request...');
                         loadLocationDescription(panoId);
                     }
                 }, Math.min(2000 * (descRetries + 1), 5000)); // 递增重试间隔，最大5秒
@@ -405,6 +400,16 @@ export default function HomePage() {
 
     // 处理保存探索兴趣
     const handlePreferenceChange = useCallback(async (preference) => {
+        // 检查限流
+        const now = Date.now();
+        const timeSinceLastRefresh = now - lastRefreshTimeRef.current;
+        if (timeSinceLastRefresh < RATE_LIMIT_MS) {
+            return { 
+                success: false, 
+                error: `请等待 ${Math.ceil((RATE_LIMIT_MS - timeSinceLastRefresh) / 1000)} 秒后再试` 
+            };
+        }
+
         if (loadingRef.current) {
             return { success: false, error: '正在加载中，请稍后再试' };
         }
@@ -412,25 +417,25 @@ export default function HomePage() {
         try {
             setPreferenceError(null);
             setIsSavingPreference(true);
-            loadingRef.current = true;  // 设置加载状态
-            setIsLoadingDesc(false);  // 重置描述加载状态
+            loadingRef.current = true;
+            setIsLoadingDesc(false);
             
             const resp = await setExplorationPreference(preference);
             
             if (resp.success) {
-                // 保存成功后更新本地存储
+                // 更新最后刷新时间
+                lastRefreshTimeRef.current = now;
+                
                 localStorage.setItem(EXPLORATION_MODE_KEY, EXPLORATION_MODES.CUSTOM);
                 localStorage.setItem(EXPLORATION_INTEREST_KEY, preference);
                 setExplorationMode(EXPLORATION_MODES.CUSTOM);
                 setExplorationInterest(preference);
-                // 刷新页面获取新位置
                 await loadRandomLocation();
                 return { success: true };
             } else {
                 throw new Error(resp.error || '保存兴趣失败');
             }
         } catch (err) {
-            console.error('Error saving preference:', err);
             setPreferenceError(err.message);
             return { success: false, error: err.message };
         } finally {

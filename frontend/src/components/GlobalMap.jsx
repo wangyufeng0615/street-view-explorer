@@ -7,6 +7,8 @@ export default function GlobalMap({ latitude, longitude }) {
 
     useEffect(() => {
         let isMounted = true;
+        let mapInstance = null;
+        let markerInstance = null;
 
         const initMap = async () => {
             try {
@@ -21,7 +23,7 @@ export default function GlobalMap({ latitude, longitude }) {
                     throw new Error('无效的坐标');
                 }
 
-                const map = new maps.Map(mapRef.current, {
+                mapInstance = new maps.Map(mapRef.current, {
                     mapId: process.env.REACT_APP_GOOGLE_MAPS_MAP_ID,
                     center: { lat, lng },
                     zoom: 3,
@@ -36,15 +38,15 @@ export default function GlobalMap({ latitude, longitude }) {
 
                 // 创建自定义红点标记
                 const dot = document.createElement('div');
-                dot.style.width = '8px';  // 减小尺寸
-                dot.style.height = '8px';  // 减小尺寸
+                dot.style.width = '8px';
+                dot.style.height = '8px';
                 dot.style.borderRadius = '50%';
                 dot.style.backgroundColor = '#FF4444';
-                dot.style.border = '2px solid #FFFFFF';  // 减小边框
+                dot.style.border = '2px solid #FFFFFF';
                 dot.style.boxShadow = '0 2px 4px rgba(0,0,0,0.3)';
-                dot.style.position = 'absolute';  // 改为 absolute
-                dot.style.left = '-4px';  // 调整偏移量为宽度的一半
-                dot.style.top = '-4px';   // 调整偏移量为高度的一半
+                dot.style.position = 'absolute';
+                dot.style.left = '-4px';
+                dot.style.top = '-4px';
 
                 // 添加脉动动画
                 dot.style.animation = 'pulse 2s infinite';
@@ -74,19 +76,18 @@ export default function GlobalMap({ latitude, longitude }) {
                 document.head.appendChild(style);
 
                 // 创建标记点
-                const markerView = new maps.marker.AdvancedMarkerElement({
-                    map,
+                markerInstance = new maps.marker.AdvancedMarkerElement({
+                    map: mapInstance,
                     position: { lat, lng },
                     content: dot,
                     zIndex: 1000
                 });
 
                 // 确保地图中心点和标记位置一致
-                map.setCenter({ lat, lng });
+                mapInstance.setCenter({ lat, lng });
             } catch (err) {
                 if (isMounted) {
                     setError('地图加载失败');
-                    console.error('Map initialization error:', err);
                 }
             }
         };
@@ -95,6 +96,15 @@ export default function GlobalMap({ latitude, longitude }) {
 
         return () => {
             isMounted = false;
+            // 清理标记点
+            if (markerInstance) {
+                markerInstance.map = null;
+                markerInstance = null;
+            }
+            // 清理地图实例
+            if (mapInstance) {
+                mapInstance = null;
+            }
         };
     }, [latitude, longitude]);
 
