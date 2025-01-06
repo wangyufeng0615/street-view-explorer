@@ -48,7 +48,7 @@ export default function HomePage() {
     const loadingDescTimeoutRef = useRef(null);
     const networkStateRef = useRef(navigator.onLine);
     const timeoutRef = useRef(null);
-    const lastRefreshTimeRef = useRef(0);
+    const lastRefreshTimeRef = useRef(Date.now() - RATE_LIMIT_MS);  // 初始化为当前时间减去限流时间，这样首次加载不会触发限流
 
     // 添加超时控制的 Promise
     const timeoutPromise = useCallback((ms) => {
@@ -141,20 +141,22 @@ export default function HomePage() {
     }, [location]);
 
     // 加载随机位置
-    const loadRandomLocation = useCallback(async () => {
-        // 检查限流
-        const now = Date.now();
-        const timeSinceLastRefresh = now - lastRefreshTimeRef.current;
-        if (timeSinceLastRefresh < RATE_LIMIT_MS) {
-            const waitTime = Math.ceil((RATE_LIMIT_MS - timeSinceLastRefresh) / 1000);
-            setError(`请等待 ${waitTime} 秒后再试`);
-            return;
+    const loadRandomLocation = useCallback(async (skipRateLimit = false) => {
+        // 检查限流（除非明确跳过）
+        if (!skipRateLimit) {
+            const now = Date.now();
+            const timeSinceLastRefresh = now - lastRefreshTimeRef.current;
+            if (timeSinceLastRefresh < RATE_LIMIT_MS) {
+                const waitTime = Math.ceil((RATE_LIMIT_MS - timeSinceLastRefresh) / 1000);
+                setError(`请等待 ${waitTime} 秒后再试`);
+                return;
+            }
         }
 
         if (loadingRef.current) return;
         
         // 更新最后刷新时间
-        lastRefreshTimeRef.current = now;
+        lastRefreshTimeRef.current = Date.now();
         
         // 设置加载状态
         loadingRef.current = true;
@@ -311,8 +313,8 @@ export default function HomePage() {
         if (savedMode === EXPLORATION_MODES.CUSTOM && savedInterest) {
             setExplorationMode(EXPLORATION_MODES.CUSTOM);
             setExplorationInterest(savedInterest);
-            // 确保后端也有这个偏好
-            setExplorationPreference(savedInterest).catch(console.error);
+            // 确保后端也有这个偏好，首次加载时跳过限流检查
+            setExplorationPreference(savedInterest, true).catch(console.error);
         } else {
             // 否则默认使用随机模式
             setExplorationMode(EXPLORATION_MODES.RANDOM);
@@ -357,7 +359,8 @@ export default function HomePage() {
             // 如果是特定兴趣模式但没有兴趣，切换到随机模式
             handleModeChange(EXPLORATION_MODES.RANDOM);
         } else {
-            loadRandomLocation();
+            // 首次加载时跳过限流检查
+            loadRandomLocation(true);
         }
     }, []);
 
@@ -399,15 +402,17 @@ export default function HomePage() {
     }, []);
 
     // 处理保存探索兴趣
-    const handlePreferenceChange = useCallback(async (preference) => {
-        // 检查限流
-        const now = Date.now();
-        const timeSinceLastRefresh = now - lastRefreshTimeRef.current;
-        if (timeSinceLastRefresh < RATE_LIMIT_MS) {
-            return { 
-                success: false, 
-                error: `请等待 ${Math.ceil((RATE_LIMIT_MS - timeSinceLastRefresh) / 1000)} 秒后再试` 
-            };
+    const handlePreferenceChange = useCallback(async (preference, skipRateLimit = false) => {
+        // 检查限流（除非明确跳过）
+        if (!skipRateLimit) {
+            const now = Date.now();
+            const timeSinceLastRefresh = now - lastRefreshTimeRef.current;
+            if (timeSinceLastRefresh < RATE_LIMIT_MS) {
+                return { 
+                    success: false, 
+                    error: `请等待 ${Math.ceil((RATE_LIMIT_MS - timeSinceLastRefresh) / 1000)} 秒后再试` 
+                };
+            }
         }
 
         if (loadingRef.current) {
@@ -424,13 +429,14 @@ export default function HomePage() {
             
             if (resp.success) {
                 // 更新最后刷新时间
-                lastRefreshTimeRef.current = now;
+                lastRefreshTimeRef.current = Date.now();
                 
                 localStorage.setItem(EXPLORATION_MODE_KEY, EXPLORATION_MODES.CUSTOM);
                 localStorage.setItem(EXPLORATION_INTEREST_KEY, preference);
                 setExplorationMode(EXPLORATION_MODES.CUSTOM);
                 setExplorationInterest(preference);
-                await loadRandomLocation();
+                // 首次加载时跳过限流检查
+                await loadRandomLocation(skipRateLimit);
                 return { success: true };
             } else {
                 throw new Error(resp.error || '保存兴趣失败');
