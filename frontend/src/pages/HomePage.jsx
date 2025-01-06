@@ -435,9 +435,7 @@ export default function HomePage() {
                 localStorage.setItem(EXPLORATION_INTEREST_KEY, preference);
                 setExplorationMode(EXPLORATION_MODES.CUSTOM);
                 setExplorationInterest(preference);
-                // 首次加载时跳过限流检查
-                await loadRandomLocation(skipRateLimit);
-                return { success: true };
+                return { success: true, skipRateLimit: true };
             } else {
                 throw new Error(resp.error || '保存兴趣失败');
             }

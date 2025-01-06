@@ -61,8 +61,8 @@ const ExplorationPreference = forwardRef(({
                 if (result?.success) {
                     // 记录成功的探索兴趣
                     setLastSuccessInterest(trimmedPreference);
-                    // 自动触发探索
-                    onRandomExplore();
+                    // 使用返回的 skipRateLimit 标志调用探索
+                    onRandomExplore(result.skipRateLimit);
                 }
             } catch (err) {
                 console.error('Failed to save preference:', err);
