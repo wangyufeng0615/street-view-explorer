@@ -135,9 +135,10 @@ func (ls *LocationService) SetExplorationPreference(sessionID, interest string) 
 	}
 
 	// 获取用户当前的偏好设置，检查更新频率
-	if existingPref, err := ls.repo.GetExplorationPreference(sessionID); err == nil && existingPref != nil {
-		// 如果距离上次更新时间不足 10 秒，拒绝请求
-		if time.Since(existingPref.LastUsedAt) < 10*time.Second {
+	existingPref, err := ls.repo.GetExplorationPreference(sessionID)
+	if err == nil && existingPref != nil {
+		// 只有在已存在偏好设置的情况下才检查更新频率
+		if time.Since(existingPref.LastUsedAt) < 100*time.Millisecond {
 			return fmt.Errorf("请求过于频繁，请稍后再试")
 		}
 	}

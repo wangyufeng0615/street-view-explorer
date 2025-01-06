@@ -1,281 +1,23 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import StreetView from '../components/StreetView';
-import PreviewMap from '../components/PreviewMap';
-import GlobalMap from '../components/GlobalMap';
-import ExplorationPreference from '../components/ExplorationPreference';
-import { getRandomLocation, getLocationDescription } from '../services/api';
+import Sidebar from '../components/Sidebar';
+import GlobalLoading from '../components/GlobalLoading';
+import { getRandomLocation, getLocationDescription, setExplorationPreference, deleteExplorationPreference } from '../services/api';
+import { overlayStyle, sidebarWrapperStyle } from '../styles/HomePage.styles';
+import '../styles/animations.css';
+import '../styles/HomePage.css';
 
-// 添加全局字体变量
-const globalFontFamily = '"PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Helvetica, Arial, sans-serif';
+const MAX_RETRIES = 3;
+const TIMEOUT_MS = 10000; // 10 seconds timeout
 
-const overlayStyle = {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    width: '100vw',
-    height: '100vh',
-    zIndex: 2,
-    pointerEvents: 'none'
-};
+// 探索模式的存储键
+const EXPLORATION_MODE_KEY = 'exploration_mode';
+const EXPLORATION_INTEREST_KEY = 'exploration_interest';
 
-const sidebarWrapperStyle = {
-    position: 'fixed',
-    top: '20px',
-    right: '20px',
-    bottom: '20px',
-    width: '340px',
-    pointerEvents: 'none',
-};
-
-const sidebarStyle = {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    width: '100%',
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
-    padding: '12px',
-    borderRadius: '15px',
-    boxShadow: '0 4px 20px rgba(0, 0, 0, 0.15)',
-    transformOrigin: 'top right',
-    pointerEvents: 'auto',
-};
-
-const sidebarContentStyle = {
-    width: '100%',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '12px',
-};
-
-const buttonStyle = {
-    padding: '10px 20px',
-    fontSize: '16px',
-    backgroundColor: '#FF7043',
-    color: 'white',
-    border: 'none',
-    borderRadius: '5px',
-    cursor: 'pointer',
-    width: '100%',
-    fontFamily: globalFontFamily,
-    fontWeight: '500',
-    transition: 'background-color 0.2s ease',
-    boxShadow: '0 2px 8px rgba(255, 112, 67, 0.2)',
-    ':hover': {
-        backgroundColor: '#FF8A65'
-    }
-};
-
-const disabledButtonStyle = {
-    ...buttonStyle,
-    backgroundColor: '#E0E0E0',
-    cursor: 'not-allowed',
-    boxShadow: 'none'
-};
-
-const aiDescriptionStyle = {
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
-    padding: '16px',
-    borderRadius: '12px',
-    marginBottom: '12px',
-    position: 'relative',
-    border: '1px solid rgba(0, 0, 0, 0.08)',
-    boxShadow: '0 2px 12px rgba(0, 0, 0, 0.05)',
-    fontFamily: globalFontFamily,
-    fontSize: '14px',
-    lineHeight: '1.6',
-    letterSpacing: '0.3px',
-    color: '#2c3e50',
-    fontWeight: '400'
-};
-
-const aiIconStyle = {
-    position: 'absolute',
-    top: '-12px',
-    left: '16px',
-    backgroundColor: '#1a73e8',
-    color: 'white',
-    padding: '4px 12px',
-    borderRadius: '20px',
-    fontSize: '13px',
-    fontWeight: '500',
-    fontFamily: globalFontFamily,
-    boxShadow: '0 2px 8px rgba(26, 115, 232, 0.2)',
-    letterSpacing: '0.3px',
-    border: '1px solid rgba(255, 255, 255, 0.2)'
-};
-
-const addressStyle = {
-    fontSize: '14px',
-    color: '#555',
-    marginBottom: '12px',
-    lineHeight: '1.4',
-    padding: '8px 12px',
-    backgroundColor: 'rgba(240, 242, 245, 0.6)',
-    borderRadius: '8px',
-    border: '1px solid rgba(0, 0, 0, 0.05)',
-    fontFamily: globalFontFamily
-};
-
-// 添加一个函数来格式化地址显示
-const formatAddress = (location) => {
-    if (!location) return '';
-    
-    if (location.formatted_address) {
-        return location.formatted_address;
-    }
-
-    // 如果没有 formatted_address，尝试组合其他地址信息
-    const parts = [];
-    if (location.city) parts.push(location.city);
-    if (location.country) parts.push(location.country);
-    
-    // 如果连城市和国家都没有，显示坐标
-    if (parts.length === 0) {
-        return `${location.latitude.toFixed(6)}, ${location.longitude.toFixed(6)}`;
-    }
-
-    return parts.join(', ');
-};
-
-const styles = {
-    loadingContainer: {
-        position: 'fixed',
-        top: '50%',
-        left: '50%',
-        transform: 'translate(-50%, -50%)',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: 'rgba(255, 255, 255, 0.95)',
-        padding: '30px',
-        borderRadius: '15px',
-        boxShadow: '0 4px 20px rgba(0, 0, 0, 0.15)',
-        zIndex: 1000,
-        fontFamily: globalFontFamily
-    },
-    loadingSpinner: {
-        width: '40px',
-        height: '40px',
-        border: '3px solid #f3f3f3',
-        borderTop: '3px solid #3498db',
-        borderRadius: '50%',
-        animation: 'spin 1s linear infinite',
-        marginBottom: '15px'
-    },
-    loadingText: {
-        fontSize: '16px',
-        color: '#333',
-        fontWeight: '500',
-        textAlign: 'center',
-        animation: 'fadeInOut 2s ease-in-out infinite',
-        fontFamily: globalFontFamily
-    },
-    subText: {
-        fontSize: '14px',
-        color: '#666',
-        marginTop: '8px',
-        textAlign: 'center',
-        fontFamily: globalFontFamily
-    }
-};
-
-// 添加关键帧动画
-const keyframes = `
-    @keyframes spin {
-        0% { transform: rotate(0deg); }
-        100% { transform: rotate(360deg); }
-    }
-    @keyframes fadeInOut {
-        0% { opacity: 0.6; }
-        50% { opacity: 1; }
-        100% { opacity: 0.6; }
-    }
-    @keyframes pulse {
-        0%, 100% { transform: scale(0.8); opacity: 0.5; }
-        50% { transform: scale(1.2); opacity: 1; }
-    }
-`;
-
-const loadingMessages = [
-    "正在挑选降落地点...",
-    "正在清空地图迷雾...",
-    "正在挑选自驾游地点...",
-    "正在寻找有趣的街道...",
-    "正在规划环球旅行路线...",
-    "正在穿越时空隧道...",
-    "正在打开任意门...",
-    "正在搜寻世界奇观...",
-    "正在寻找美食街区...",
-    "正在探索城市角落...",
-    "正在解锁新地图...",
-    "正在启动随机传送...",
-    "正在翻阅世界地图...",
-    "正在寻找风景绝佳处...",
-    "正在开启探索模式...",
-    "正在计算最佳路线...",
-    "正在搜寻文化地标...",
-    "正在定位城市热点...",
-    "正在寻找隐藏景点...",
-    "正在解析地理坐标...",
-    "正在打开时光相机...",
-    "正在搜寻城市故事...",
-    "正在定位街景视角...",
-    "正在寻找城市灵魂...",
-    "正在探索未知领域...",
-    "正在开启冒险之旅...",
-    "正在寻找生活气息...",
-    "正在解读地域文化...",
-    "正在搜寻城市记忆...",
-    "正在启动漫游模式..."
-];
-
-// AI 思考文案数组
-const aiThinkingMessages = [
-    "正在观察周边建筑风格...",
-    "正在分析地理环境特征...",
-    "正在解读文化历史痕迹...",
-    "正在感受当地生活氛围...",
-    "正在探索独特地标建筑...",
-    "正在解析城市规划特色...",
-    "正在品味街区人文气息...",
-    "正在捕捉季节性特征...",
-    "正在分析建筑年代特征...",
-    "正在解读城市肌理纹路..."
-];
-
-// AI 加载动画样式
-const aiLoadingStyle = {
-    container: {
-        margin: '10px 0 0 0',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '15px',
-        fontFamily: globalFontFamily
-    },
-    thinkingRow: {
-        display: 'flex',
-        alignItems: 'center',
-        gap: '12px'
-    },
-    dotsContainer: {
-        display: 'flex',
-        gap: '4px',
-        alignItems: 'center'
-    },
-    dot: {
-        width: '4px',
-        height: '4px',
-        backgroundColor: '#3498db',
-        borderRadius: '50%',
-        animation: 'pulse 1s ease-in-out infinite'
-    },
-    message: {
-        fontSize: '14px',
-        color: '#666',
-        animation: 'fadeInOut 2s ease-in-out infinite',
-        fontFamily: globalFontFamily
-    }
+// 探索模式枚举
+const EXPLORATION_MODES = {
+    RANDOM: 'random',
+    CUSTOM: 'custom'
 };
 
 export default function HomePage() {
@@ -286,85 +28,140 @@ export default function HomePage() {
     const [isLoadingDesc, setIsLoadingDesc] = useState(false);
     const [heading, setHeading] = useState(0);
     const [isSavingPreference, setIsSavingPreference] = useState(false);
-    const [loadingMessage, setLoadingMessage] = useState(
-        loadingMessages[Math.floor(Math.random() * loadingMessages.length)]
-    );
+    const [descError, setDescError] = useState(null);
+    const [descRetries, setDescRetries] = useState(0);
+    const [scale, setScale] = useState(1);
+    const [preferenceError, setPreferenceError] = useState(null);
+    
+    // 新增：探索模式状态
+    const [explorationMode, setExplorationMode] = useState(EXPLORATION_MODES.RANDOM);
+    const [explorationInterest, setExplorationInterest] = useState('');
+
+    // Refs
     const loadingRef = useRef(false);
     const sidebarRef = useRef(null);
     const contentRef = useRef(null);
-    const [scale, setScale] = useState(1);
-    const [aiThinkingMessage, setAiThinkingMessage] = useState(
-        aiThinkingMessages[Math.floor(Math.random() * aiThinkingMessages.length)]
-    );
+    const abortControllerRef = useRef(null);
+    const retryTimeoutRef = useRef(null);
+    const locationRef = useRef(null);
+    const loadingDescTimeoutRef = useRef(null);
+    const networkStateRef = useRef(navigator.onLine);
+    const timeoutRef = useRef(null);
 
-    // 添加动画样式到文档
-    useEffect(() => {
-        const styleSheet = document.createElement("style");
-        styleSheet.type = "text/css";
-        styleSheet.innerText = keyframes;
-        document.head.appendChild(styleSheet);
-
-        return () => {
-            document.head.removeChild(styleSheet);
-        };
+    // 添加超时控制的 Promise
+    const timeoutPromise = useCallback((ms) => {
+        return new Promise((_, reject) => {
+            timeoutRef.current = setTimeout(() => {
+                timeoutRef.current = null;
+                reject(new Error('请求超时'));
+            }, ms);
+        });
     }, []);
 
-    // 更新加载文案
-    useEffect(() => {
-        if (isLoading) {
-            const interval = setInterval(() => {
-                setLoadingMessage(loadingMessages[Math.floor(Math.random() * loadingMessages.length)]);
-            }, 2000);
-            return () => clearInterval(interval);
+    // 增强清理函数
+    const cleanup = useCallback(() => {
+        if (abortControllerRef.current) {
+            abortControllerRef.current.abort();
+            abortControllerRef.current = null;
         }
-    }, [isLoading]);
+        if (retryTimeoutRef.current) {
+            clearTimeout(retryTimeoutRef.current);
+            retryTimeoutRef.current = null;
+        }
+        if (loadingDescTimeoutRef.current) {
+            clearTimeout(loadingDescTimeoutRef.current);
+            loadingDescTimeoutRef.current = null;
+        }
+        if (timeoutRef.current) {
+            clearTimeout(timeoutRef.current);
+            timeoutRef.current = null;
+        }
+    }, []);
 
-    // 更新 AI 思考文案
+    // 监听网络状态
     useEffect(() => {
-        if (isLoadingDesc) {
-            const interval = setInterval(() => {
-                setAiThinkingMessage(aiThinkingMessages[Math.floor(Math.random() * aiThinkingMessages.length)]);
-            }, 3000);
-            return () => clearInterval(interval);
-        }
-    }, [isLoadingDesc]);
-
-    // 加载位置描述
-    const loadLocationDescription = async (panoId) => {
-        if (!panoId) return;
-        
-        // 如果已经在加载中，就不要重复加载
-        if (isLoadingDesc) {
-            console.log('Description is already loading, skipping...');
-            return;
-        }
-        
-        try {
-            setIsLoadingDesc(true);
-            // Get user's preferred language from browser or localStorage
-            const userLang = localStorage.getItem('preferredLanguage') || navigator.language.split('-')[0] || 'zh';
-            const resp = await getLocationDescription(panoId, userLang);
-            if (resp.success) {
-                setDescription(resp.data);
+        const handleOnline = () => {
+            networkStateRef.current = true;
+            // 如果有失败的请求，尝试重新加载
+            if (descError && location?.pano_id) {
+                loadLocationDescription(location.pano_id);
             }
-        } catch (err) {
-            console.error('Error getting location description:', err);
-        } finally {
-            setIsLoadingDesc(false);
+        };
+
+        const handleOffline = () => {
+            networkStateRef.current = false;
+            // 如果正在加载，设置错误状态
+            if (isLoadingDesc) {
+                setDescError('网络连接已断开');
+                setIsLoadingDesc(false);
+            }
+        };
+
+        window.addEventListener('online', handleOnline);
+        window.addEventListener('offline', handleOffline);
+
+        return () => {
+            window.removeEventListener('online', handleOnline);
+            window.removeEventListener('offline', handleOffline);
+        };
+    }, [descError, location]);
+
+    // 监听 location 变化
+    useEffect(() => {
+        if (location?.pano_id) {
+            console.log('Location changed:', location);
+            locationRef.current = location;
+            
+            // 清理之前的超时
+            if (loadingDescTimeoutRef.current) {
+                clearTimeout(loadingDescTimeoutRef.current);
+            }
+            
+            // 使用 RAF 代替 setTimeout
+            loadingDescTimeoutRef.current = requestAnimationFrame(() => {
+                loadingDescTimeoutRef.current = null;
+                if (locationRef.current?.pano_id === location.pano_id) {  // 使用 pano_id 比较
+                    console.log('Loading description for panoId:', location.pano_id);
+                    loadLocationDescription(location.pano_id);
+                }
+            });
+        } else {
+            console.log('Location cleared');
+            // 清除描述相关状态
+            setDescription(null);
+            setDescError(null);
+            setDescRetries(0);
         }
-    };
+        
+        return () => {
+            if (loadingDescTimeoutRef.current) {
+                cancelAnimationFrame(loadingDescTimeoutRef.current);
+                loadingDescTimeoutRef.current = null;
+            }
+        };
+    }, [location]);
 
     // 加载随机位置
-    const loadRandomLocation = async () => {
+    const loadRandomLocation = useCallback(async () => {
         if (loadingRef.current) return;
         
+        // 设置加载状态
+        loadingRef.current = true;
+        setIsLoading(true);
+        
         try {
-            loadingRef.current = true;
-            setIsLoading(true);
-            setDescription(null);  // 清除旧的描述
+            // 清理之前的描述相关状态
+            cleanup();
+            setDescription(null);
+            setDescError(null);
+            setDescRetries(0);
+            setIsLoadingDesc(false);  // 重置描述加载状态
             setLocation(null);     // 清除旧的位置
             
             const resp = await getRandomLocation();
+            
+            // 检查是否仍在加载状态（防止用户已经取消）
+            if (!loadingRef.current) return;
 
             if (resp.success && resp.data) {
                 // 确保数据格式正确
@@ -386,25 +183,187 @@ export default function HomePage() {
                 
                 setLocation(locationData);
                 setError(null);
-                
-                // 获取到位置后，异步加载描述
-                if (locationData.pano_id) {
-                    loadLocationDescription(locationData.pano_id);
-                }
             } else {
-                setError(resp.error || '加载失败');
+                throw new Error(resp.error || '加载失败');
             }
         } catch (err) {
-            setError(err.message || '网络请求失败');
+            if (loadingRef.current) {  // 只在仍在加载时设置错误
+                setError(err.message || '网络请求失败');
+                setLocation(null);
+            }
         } finally {
-            setIsLoading(false);
-            loadingRef.current = false;
+            // 确保状态一致性
+            if (loadingRef.current) {
+                setIsLoading(false);
+                loadingRef.current = false;
+            }
         }
-    };
+    }, [cleanup]);
 
-    // 页面加载时自动获取随机位置
+    // 加载位置描述
+    const loadLocationDescription = useCallback(async (panoId) => {
+        console.log('loadLocationDescription called with panoId:', panoId);
+        if (!panoId) {
+            console.log('No panoId provided, skipping');
+            return;
+        }
+        
+        // 检查网络状态
+        if (!networkStateRef.current) {
+            console.log('Network offline, skipping');
+            setDescError('网络连接已断开');
+            return;
+        }
+        
+        // 检查是否是当前位置的请求
+        if (locationRef.current?.pano_id !== panoId) {
+            console.log('Location changed, skipping description request');
+            return;
+        }
+        
+        // 如果已经在加载中，就不要重复加载
+        if (isLoadingDesc) {
+            console.log('Description is already loading, skipping...');
+            return;
+        }
+
+        // 清理之前的请求和超时
+        cleanup();
+        
+        try {
+            console.log('Starting to load description...');
+            setIsLoadingDesc(true);
+            setDescError(null);
+            setDescription(null);  // 清除旧的描述
+            
+            // 创建新的 AbortController
+            abortControllerRef.current = new AbortController();
+            
+            // Get user's preferred language from browser or localStorage
+            const userLang = localStorage.getItem('preferredLanguage') || navigator.language.split('-')[0] || 'zh';
+            
+            // 再次检查位置和网络状态
+            if (locationRef.current?.pano_id !== panoId || !networkStateRef.current) {
+                console.log('Location changed or network offline during preparation');
+                return;
+            }
+            
+            console.log('Sending description request...');
+            // 使用 Promise.race 实现超时控制
+            const resp = await Promise.race([
+                getLocationDescription(panoId, userLang, abortControllerRef.current.signal),
+                timeoutPromise(TIMEOUT_MS)
+            ]);
+
+            // 如果请求已经被取消或位置已改变，直接返回
+            if (!abortControllerRef.current || locationRef.current?.pano_id !== panoId) {
+                console.log('Request cancelled or location changed');
+                return;
+            }
+
+            if (resp.success) {
+                console.log('Description loaded successfully');
+                setDescription(resp.data);
+                setDescRetries(0); // 重置重试次数
+            } else {
+                throw new Error(resp.error || '获取描述失败');
+            }
+        } catch (err) {
+            // 如果是取消的请求或组件已卸载，不处理错误
+            if (err.name === 'AbortError' || !abortControllerRef.current) {
+                console.log('Request aborted');
+                return;
+            }
+
+            console.error('Error getting location description:', err);
+            
+            // 再次检查位置是否改变
+            if (locationRef.current?.pano_id !== panoId) {
+                console.log('Location changed during error handling');
+                return;
+            }
+            
+            const errorMessage = err.message === '请求超时' ? '获取描述超时，正在重试...' : (err.message || '获取描述失败');
+            setDescError(errorMessage);
+            setDescription(null);  // 清除可能存在的旧描述
+            
+            // 只在网络正常时重试
+            if (networkStateRef.current && descRetries < MAX_RETRIES) {
+                console.log('Scheduling retry...');
+                setDescRetries(prev => prev + 1);
+                retryTimeoutRef.current = setTimeout(() => {
+                    // 最后一次检查位置是否改变和网络状态
+                    if (locationRef.current?.pano_id === panoId && networkStateRef.current) {
+                        console.log('Retrying description request...');
+                        loadLocationDescription(panoId);
+                    }
+                }, Math.min(2000 * (descRetries + 1), 5000)); // 递增重试间隔，最大5秒
+            }
+        } finally {
+            // 只在请求未取消且位置未改变时更新状态
+            if (abortControllerRef.current && locationRef.current?.pano_id === panoId) {
+                setIsLoadingDesc(false);
+            }
+        }
+    }, [isLoadingDesc, descRetries, cleanup, timeoutPromise]);
+
+    // 初始化探索模式
     useEffect(() => {
-        loadRandomLocation();
+        const savedMode = localStorage.getItem(EXPLORATION_MODE_KEY);
+        const savedInterest = localStorage.getItem(EXPLORATION_INTEREST_KEY) || '';
+        
+        // 只有当同时存在保存的模式和兴趣时，才使用保存的模式
+        if (savedMode === EXPLORATION_MODES.CUSTOM && savedInterest) {
+            setExplorationMode(EXPLORATION_MODES.CUSTOM);
+            setExplorationInterest(savedInterest);
+            // 确保后端也有这个偏好
+            setExplorationPreference(savedInterest).catch(console.error);
+        } else {
+            // 否则默认使用随机模式
+            setExplorationMode(EXPLORATION_MODES.RANDOM);
+            setExplorationInterest('');
+            // 清除可能存在的本地存储
+            localStorage.removeItem(EXPLORATION_MODE_KEY);
+            localStorage.removeItem(EXPLORATION_INTEREST_KEY);
+        }
+    }, []);
+
+    // 切换探索模式
+    const handleModeChange = useCallback(async (mode) => {
+        if (mode === explorationMode) return;
+
+        setExplorationMode(mode);
+        localStorage.setItem(EXPLORATION_MODE_KEY, mode);
+
+        if (mode === EXPLORATION_MODES.RANDOM) {
+            // 清除本地存储的探索兴趣
+            localStorage.removeItem(EXPLORATION_INTEREST_KEY);
+            setExplorationInterest('');
+            // 清除后端的探索偏好
+            try {
+                await deleteExplorationPreference();
+            } catch (err) {
+                console.error('Failed to delete exploration preference:', err);
+            }
+            // 让用户自己点击 GO 按钮来获取新位置
+        } else if (mode === EXPLORATION_MODES.CUSTOM) {
+            // 如果有保存的兴趣，恢复它
+            const savedInterest = localStorage.getItem(EXPLORATION_INTEREST_KEY);
+            if (savedInterest) {
+                setExplorationInterest(savedInterest);
+                await setExplorationPreference(savedInterest);
+            }
+        }
+    }, [explorationMode]);
+
+    // 页面加载时根据当前模式加载位置
+    useEffect(() => {
+        if (explorationMode === EXPLORATION_MODES.CUSTOM && !explorationInterest) {
+            // 如果是特定兴趣模式但没有兴趣，切换到随机模式
+            handleModeChange(EXPLORATION_MODES.RANDOM);
+        } else {
+            loadRandomLocation();
+        }
     }, []);
 
     // 监听空格键
@@ -423,77 +382,121 @@ export default function HomePage() {
 
         window.addEventListener('keydown', handleKeyPress);
         return () => window.removeEventListener('keydown', handleKeyPress);
-    }, [isLoading]);
+    }, [isLoading, loadRandomLocation]);
 
     // Add handleResize function
-    const handleResize = () => {
+    const handleResize = useCallback(() => {
         if (sidebarRef.current && contentRef.current) {
-            const wrapperHeight = window.innerHeight - 40; // 上下各20px的可用空间
-            const contentHeight = contentRef.current.offsetHeight;
-            const paddingHeight = 40; // 上下padding各20px
-            
-            if (contentHeight + paddingHeight > wrapperHeight) {
-                setScale((wrapperHeight) / (contentHeight + paddingHeight));
-            } else {
-                setScale(1);
-            }
+            // 给一个小延时确保DOM已经完全更新
+            setTimeout(() => {
+                const wrapperHeight = window.innerHeight - 40; // 上下各20px的可用空间
+                const contentHeight = contentRef.current.offsetHeight;
+                const padding = 24; // 上下padding各12px
+                
+                if (contentHeight + padding > wrapperHeight) {
+                    const scale = Math.min(0.85, (wrapperHeight - padding) / contentHeight);
+                    setScale(Math.max(0.6, scale)); // 设置最小缩放比例为0.6
+                } else {
+                    setScale(1);
+                }
+            }, 0);
         }
-    };
+    }, []);
+
+    // 处理保存探索兴趣
+    const handlePreferenceChange = useCallback(async (preference) => {
+        if (loadingRef.current) {
+            return { success: false, error: '正在加载中，请稍后再试' };
+        }
+        
+        try {
+            setPreferenceError(null);
+            setIsSavingPreference(true);
+            loadingRef.current = true;  // 设置加载状态
+            setIsLoadingDesc(false);  // 重置描述加载状态
+            
+            const resp = await setExplorationPreference(preference);
+            
+            if (resp.success) {
+                // 保存成功后更新本地存储
+                localStorage.setItem(EXPLORATION_MODE_KEY, EXPLORATION_MODES.CUSTOM);
+                localStorage.setItem(EXPLORATION_INTEREST_KEY, preference);
+                setExplorationMode(EXPLORATION_MODES.CUSTOM);
+                setExplorationInterest(preference);
+                // 刷新页面获取新位置
+                await loadRandomLocation();
+                return { success: true };
+            } else {
+                throw new Error(resp.error || '保存兴趣失败');
+            }
+        } catch (err) {
+            console.error('Error saving preference:', err);
+            setPreferenceError(err.message);
+            return { success: false, error: err.message };
+        } finally {
+            loadingRef.current = false;
+            setIsLoading(false);
+            setIsSavingPreference(false);
+        }
+    }, [loadRandomLocation]);
+
+    // Add effect to handle description updates
+    useEffect(() => {
+        if (description || isLoadingDesc || descError) {
+            handleResize();
+        }
+    }, [description, isLoadingDesc, descError, handleResize]);
 
     // Add resize observer effect
     useEffect(() => {
-        window.addEventListener('resize', handleResize);
+        const handleWindowResize = () => {
+            requestAnimationFrame(handleResize);
+        };
+
+        window.addEventListener('resize', handleWindowResize);
 
         const resizeObserver = new ResizeObserver(() => {
-            handleResize();
+            requestAnimationFrame(handleResize);
         });
 
         if (contentRef.current) {
             resizeObserver.observe(contentRef.current);
         }
 
+        // 初始化时执行一次
         handleResize();
 
         return () => {
-            window.removeEventListener('resize', handleResize);
+            window.removeEventListener('resize', handleWindowResize);
             resizeObserver.disconnect();
         };
-    }, []);
+    }, [handleResize]);
 
-    // Add effect to handle description updates
-    useEffect(() => {
-        if (description) {
-            handleResize();
+    // 删除探索兴趣
+    const handleDeletePreference = useCallback(async () => {
+        try {
+            await deleteExplorationPreference();
+        } catch (err) {
+            console.error('Error deleting preference:', err);
         }
-    }, [description]);
+    }, []);
 
     if (error) {
         return (
-            <div style={{ 
-                position: 'fixed',
-                top: '50%',
-                left: '50%',
-                transform: 'translate(-50%, -50%)',
-                backgroundColor: 'white',
-                padding: '20px',
-                borderRadius: '10px',
-                boxShadow: '0 0 20px rgba(0, 0, 0, 0.1)',
-                zIndex: 3
-            }}>
+            <div className="error-container">
                 <h2>出错了</h2>
                 <p>{error}</p>
-                <button onClick={loadRandomLocation} style={buttonStyle}>
+                <button onClick={loadRandomLocation} className="retry-button">
                     重试
                 </button>
             </div>
         );
     }
 
-    // 始终渲染主框架
     return (
         <>
             {/* 街景容器 */}
-            <div style={{ width: '100vw', height: '100vh', backgroundColor: '#f0f2f5' }}>
+            <div className="street-view-container">
                 <StreetView 
                     latitude={location?.latitude} 
                     longitude={location?.longitude} 
@@ -504,102 +507,34 @@ export default function HomePage() {
             {/* 侧边栏 */}
             <div style={overlayStyle}>
                 <div style={sidebarWrapperStyle}>
-                    <div
+                    <Sidebar
                         ref={sidebarRef}
-                        style={{
-                            ...sidebarStyle,
-                            transform: `scale(${scale})`,
-                            transition: 'transform 0.3s ease-out',
+                        contentRef={contentRef}
+                        location={location}
+                        heading={heading}
+                        description={description}
+                        isLoadingDesc={isLoadingDesc}
+                        descError={descError}
+                        descRetries={descRetries}
+                        isLoading={isLoading}
+                        isSavingPreference={isSavingPreference}
+                        preferenceError={preferenceError}
+                        onRetryDescription={() => {
+                            setDescRetries(0);
+                            loadLocationDescription(location?.pano_id);
                         }}
-                    >
-                        <div ref={contentRef} style={sidebarContentStyle}>
-                            {location && (
-                                <>
-                                    <div style={{ marginBottom: '8px' }}>
-                                        <GlobalMap latitude={location.latitude} longitude={location.longitude} />
-                                        <PreviewMap 
-                                            latitude={location.latitude} 
-                                            longitude={location.longitude} 
-                                            heading={heading}
-                                        />
-                                    </div>
-
-                                    <div style={addressStyle}>
-                                        {formatAddress(location)}
-                                    </div>
-
-                                    <div style={aiDescriptionStyle}>
-                                        <div style={aiIconStyle}>Dr. Atlas (AI)</div>
-                                        {isLoadingDesc ? (
-                                            <div style={aiLoadingStyle.container}>
-                                                <div style={aiLoadingStyle.thinkingRow}>
-                                                    <div style={aiLoadingStyle.dotsContainer}>
-                                                        <div style={{ ...aiLoadingStyle.dot, animationDelay: '0s' }} />
-                                                        <div style={{ ...aiLoadingStyle.dot, animationDelay: '0.2s' }} />
-                                                        <div style={{ ...aiLoadingStyle.dot, animationDelay: '0.4s' }} />
-                                                    </div>
-                                                    <div style={aiLoadingStyle.message}>{aiThinkingMessage}</div>
-                                                </div>
-                                            </div>
-                                        ) : description ? (
-                                            <p style={{ margin: '10px 0 0 0' }}>{description}</p>
-                                        ) : location?.pano_id ? (
-                                            <div style={aiLoadingStyle.container}>
-                                                <div style={aiLoadingStyle.thinkingRow}>
-                                                    <div style={aiLoadingStyle.dotsContainer}>
-                                                        <div style={{ ...aiLoadingStyle.dot, animationDelay: '0s' }} />
-                                                        <div style={{ ...aiLoadingStyle.dot, animationDelay: '0.2s' }} />
-                                                        <div style={{ ...aiLoadingStyle.dot, animationDelay: '0.4s' }} />
-                                                    </div>
-                                                    <div style={aiLoadingStyle.message}>正在等待 AI 分析...</div>
-                                                </div>
-                                            </div>
-                                        ) : (
-                                            <p style={{ margin: '10px 0 0 0', color: '#666' }}>
-                                                无法获取此位置的街景信息，请尝试继续探索其他位置。
-                                            </p>
-                                        )}
-                                    </div>
-
-                                    <ExplorationPreference 
-                                        onSaveStart={() => setIsSavingPreference(true)}
-                                        onSaveEnd={() => setIsSavingPreference(false)}
-                                    />
-
-                                    <button 
-                                        onClick={loadRandomLocation} 
-                                        disabled={isLoading || isSavingPreference}
-                                        style={isLoading || isSavingPreference ? disabledButtonStyle : buttonStyle}
-                                    >
-                                        {isLoading ? '加载中...' : isSavingPreference ? '保存中...' : '继续探索(空格)'}
-                                    </button>
-                                </>
-                            )}
-                        </div>
-                    </div>
+                        onExplore={loadRandomLocation}
+                        onPreferenceChange={handlePreferenceChange}
+                        scale={scale}
+                        explorationMode={explorationMode}
+                        explorationInterest={explorationInterest}
+                        onModeChange={handleModeChange}
+                    />
                 </div>
             </div>
 
             {/* 全局加载动画 */}
-            {isLoading && (
-                <div style={{
-                    position: 'fixed',
-                    top: 0,
-                    left: 0,
-                    width: '100vw',
-                    height: '100vh',
-                    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-                    backdropFilter: 'blur(5px)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    zIndex: 9999
-                }}>
-                    <div style={styles.loadingSpinner} />
-                    <div style={styles.loadingText}>{loadingMessage}</div>
-                </div>
-            )}
+            {isLoading && <GlobalLoading />}
         </>
     );
 }

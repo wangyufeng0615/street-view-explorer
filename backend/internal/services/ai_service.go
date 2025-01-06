@@ -49,7 +49,7 @@ func (ai *AIService) GetDescriptionForLocation(loc models.Location, language str
 		locationInfo, err = ai.maps.GetLocationInfo(context.Background(), loc.Latitude, loc.Longitude)
 		if err != nil {
 			log.Printf("Failed to get location info: %v", err)
-			locationInfo = getDefaultLocationInfo(loc)
+			return "", fmt.Errorf("获取位置信息失败: %v", err)
 		}
 	} else {
 		log.Printf("Google API disabled, using mock data")
@@ -62,7 +62,7 @@ func (ai *AIService) GetDescriptionForLocation(loc models.Location, language str
 		desc, err = ai.openAI.GenerateLocationDescription(loc.Latitude, loc.Longitude, locationInfo, language)
 		if err != nil {
 			log.Printf("OpenAI call failed: %v", err)
-			desc = getDefaultDescription(locationInfo)
+			return "", fmt.Errorf("AI 描述生成失败: %v", err)
 		}
 	} else {
 		log.Printf("OpenAI disabled, using mock data")

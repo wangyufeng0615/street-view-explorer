@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -386,6 +385,7 @@ func isValidCoordinates(coords struct {
 		return false
 	}
 
+	// 确保南北纬度关系正确
 	if coords.South > coords.North {
 		log.Printf("坐标验证失败: 南北纬度关系错误 (北纬=%.3f, 南纬=%.3f)", coords.North, coords.South)
 		return false
@@ -398,32 +398,7 @@ func isValidCoordinates(coords struct {
 		return false
 	}
 
-	// 确保区域不会过大（比如整个地球）
-	latDiff := coords.North - coords.South
-	lonDiff := math.Abs(coords.East - coords.West)
-
-	if latDiff > 89 {
-		log.Printf("坐标验证失败: 纬度范围过大 (差值=%.3f)", latDiff)
-		return false
-	}
-
-	if lonDiff > 179 {
-		log.Printf("坐标验证失败: 经度范围过大 (差值=%.3f)", lonDiff)
-		return false
-	}
-
-	// 确保区域不会过小（至少0.001度）
-	if latDiff < 0.001 {
-		log.Printf("坐标验证失败: 纬度范围过小 (差值=%.3f)", latDiff)
-		return false
-	}
-
-	if lonDiff < 0.001 {
-		log.Printf("坐标验证失败: 经度范围过小 (差值=%.3f)", lonDiff)
-		return false
-	}
-
-	log.Printf("坐标验证通过: 北纬=%.3f, 南纬=%.3f, 东经=%.3f, 西经=%.3f (纬度差=%.3f, 经度差=%.3f)",
-		coords.North, coords.South, coords.East, coords.West, latDiff, lonDiff)
+	log.Printf("坐标验证通过: 北纬=%.3f, 南纬=%.3f, 东经=%.3f, 西经=%.3f",
+		coords.North, coords.South, coords.East, coords.West)
 	return true
 }
