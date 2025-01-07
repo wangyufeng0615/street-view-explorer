@@ -6,6 +6,7 @@ import { getRandomLocation, getLocationDescription, setExplorationPreference, de
 import { overlayStyle, sidebarWrapperStyle } from '../styles/HomePage.styles';
 import '../styles/animations.css';
 import '../styles/HomePage.css';
+import '../styles/HelpButton.css';
 
 const MAX_RETRIES = 3;
 const TIMEOUT_MS = 10000; // 10 seconds timeout
@@ -456,6 +457,14 @@ export default function HomePage() {
         }
     }, [description, isLoadingDesc, descError, handleResize]);
 
+    // 处理复制邮箱
+    const handleCopyEmail = useCallback(() => {
+        const email = 'alanwang424@gmail.com';
+        navigator.clipboard.writeText(email).then(() => {
+            // 可以添加一个复制成功的提示，但为了保持简洁，这里省略
+        }).catch(console.error);
+    }, []);
+
     // Add resize observer effect
     useEffect(() => {
         const handleWindowResize = () => {
@@ -511,6 +520,19 @@ export default function HomePage() {
                     longitude={location?.longitude} 
                     onPovChanged={setHeading}
                 />
+            </div>
+            
+            {/* 问号按钮 */}
+            <div className="help-button">
+                ?
+                <div className="help-tooltip">
+                    <span className="email" onClick={handleCopyEmail}>
+                        如有任何需求或建议：alanwang424@gmail.com
+                    </span>
+                    <a href="https://wangyufeng.org" target="_blank" rel="noopener noreferrer">
+                        blog
+                    </a>
+                </div>
             </div>
             
             {/* 侧边栏 */}
