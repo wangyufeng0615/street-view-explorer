@@ -8,6 +8,8 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -53,11 +55,84 @@ type chatResponse struct {
 }
 
 func NewClient(apiKey string) Client {
+	// 从环境变量获取代理URL
+	proxyURLStr := os.Getenv("OPENAI_PROXY_URL")
+	if proxyURLStr == "" {
+		proxyURLStr = os.Getenv("PROXY_URL")
+	}
+
+	proxyType := os.Getenv("PROXY_TYPE")
+	if proxyType == "" {
+		proxyType = "http"
+	}
+
+	proxyUser := os.Getenv("PROXY_USER")
+	proxyPass := os.Getenv("PROXY_PASS")
+
+	httpClient := &http.Client{
+		Timeout: timeout,
+	}
+
+	// 如果设置了代理，配置HTTP客户端使用代理
+	if proxyURLStr != "" {
+		var transport *http.Transport
+
+		// 根据代理类型创建不同的代理URL
+		var proxyFunc func(*http.Request) (*url.URL, error)
+
+		if proxyType == "socks5" {
+			// 对于SOCKS5代理，我们需要使用golang.org/x/net/proxy包
+			// 这里简化处理，仅构建代理URL
+			proxyURLWithAuth := proxyURLStr
+			if proxyUser != "" && proxyPass != "" {
+				// 从URL中解析出协议、主机和端口
+				parsedURL, err := url.Parse(proxyURLStr)
+				if err == nil {
+					// 重建带认证的URL
+					parsedURL.User = url.UserPassword(proxyUser, proxyPass)
+					proxyURLWithAuth = parsedURL.String()
+				}
+			}
+
+			log.Printf("OpenAI客户端使用SOCKS5代理: %s", proxyURLWithAuth)
+
+			// 注意：这里需要额外的库支持SOCKS5
+			// 简化起见，我们仍然使用http.ProxyURL，但实际使用时需要使用SOCKS5专用的库
+			proxyURL, err := url.Parse(proxyURLWithAuth)
+			if err != nil {
+				log.Printf("解析代理URL失败: %v，将不使用代理", err)
+				proxyFunc = nil
+			} else {
+				proxyFunc = http.ProxyURL(proxyURL)
+			}
+		} else {
+			// 默认HTTP代理
+			proxyURL, err := url.Parse(proxyURLStr)
+			if err != nil {
+				log.Printf("解析代理URL失败: %v，将不使用代理", err)
+				proxyFunc = nil
+			} else {
+				// 如果提供了用户名和密码，添加到代理URL
+				if proxyUser != "" && proxyPass != "" {
+					proxyURL.User = url.UserPassword(proxyUser, proxyPass)
+				}
+				proxyFunc = http.ProxyURL(proxyURL)
+				log.Printf("OpenAI客户端使用HTTP代理: %s", proxyURL.String())
+			}
+		}
+
+		// 创建带有代理的Transport
+		if proxyFunc != nil {
+			transport = &http.Transport{
+				Proxy: proxyFunc,
+			}
+			httpClient.Transport = transport
+		}
+	}
+
 	return &client{
-		apiKey: apiKey,
-		httpClient: &http.Client{
-			Timeout: timeout,
-		},
+		apiKey:     apiKey,
+		httpClient: httpClient,
 	}
 }
 
@@ -82,15 +157,26 @@ func (c *client) GenerateLocationDescription(latitude, longitude float64, locati
 		Messages: []chatMessage{
 			{
 				Role: "system",
-				Content: "You are Dr. Atlas, a passionate local expert who has spent years living in and studying places around the world. You're like a knowledgeable friend who knows all the fascinating details about any location.\n\n" +
-					"When sharing about a place:\n" +
-					"1. Skip repeating the coordinates or exact address - jump straight into what makes this place special\n" +
-					"2. Share specific, lesser-known facts about the local area (landmarks, history, culture)\n" +
-					"3. Include interesting details about daily life, local customs, or seasonal events\n" +
-					"4. Use a warm, conversational tone as if chatting with a friend\n" +
-					"5. Mention precise details that only a local would know (famous local spots, neighborhood quirks)\n" +
-					"6. Keep it concise (within 100 words) but packed with unique local insights\n\n" +
-					"Remember: Focus on what makes this specific spot unique - avoid generic descriptions that could apply anywhere else.",
+				Content: "You are a knowledgeable geographer and cultural expert specializing in providing comprehensive information about locations worldwide. Your responses should focus on:\n\n" +
+					"1. Geographic Context:\n" +
+					"   - Terrain and landscape features\n" +
+					"   - Climate characteristics\n" +
+					"   - Natural resources and environmental features\n\n" +
+					"2. Human Geography:\n" +
+					"   - Population demographics and urban development\n" +
+					"   - Economic activities and industries\n" +
+					"   - Transportation and infrastructure\n\n" +
+					"3. Cultural Heritage:\n" +
+					"   - Historical development and significant events\n" +
+					"   - Cultural traditions and local customs\n" +
+					"   - Architectural styles and urban planning\n\n" +
+					"Guidelines:\n" +
+					"- Focus on factual, substantive information rather than emotional descriptions\n" +
+					"- Include specific data points and statistics when relevant\n" +
+					"- Highlight the interconnections between physical geography and human activities\n" +
+					"- Keep descriptions concise (within 150 words) but information-rich\n" +
+					"- Emphasize unique geographical and cultural characteristics that distinguish this location\n\n" +
+					"Remember: Prioritize educational value and factual accuracy over atmospheric descriptions.",
 			},
 			{
 				Role:    "user",

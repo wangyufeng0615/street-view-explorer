@@ -17,6 +17,11 @@ type Config interface {
 	EnableOpenAI() bool
 	EnableGoogleAPI() bool
 	SecurityConfig() *SecurityConfig
+	ProxyURL() string
+	ProxyType() string
+	ProxyAuth() (string, string)
+	OpenAIProxyURL() string
+	MapsProxyURL() string
 }
 
 type config struct {
@@ -28,6 +33,12 @@ type config struct {
 	enableOpenAI     bool
 	enableGoogleAPI  bool
 	securityConfig   *SecurityConfig
+	proxyURL         string
+	proxyType        string
+	proxyUser        string
+	proxyPass        string
+	openaiProxyURL   string
+	mapsProxyURL     string
 }
 
 type SecurityConfig struct {
@@ -78,6 +89,34 @@ func (c *config) SecurityConfig() *SecurityConfig {
 	return c.securityConfig
 }
 
+func (c *config) ProxyURL() string {
+	return c.proxyURL
+}
+
+func (c *config) ProxyType() string {
+	return c.proxyType
+}
+
+func (c *config) ProxyAuth() (string, string) {
+	return c.proxyUser, c.proxyPass
+}
+
+func (c *config) OpenAIProxyURL() string {
+	// 如果设置了OpenAI专用代理，则使用它，否则使用通用代理
+	if c.openaiProxyURL != "" {
+		return c.openaiProxyURL
+	}
+	return c.proxyURL
+}
+
+func (c *config) MapsProxyURL() string {
+	// 如果设置了Maps专用代理，则使用它，否则使用通用代理
+	if c.mapsProxyURL != "" {
+		return c.mapsProxyURL
+	}
+	return c.proxyURL
+}
+
 func New() Config {
 	// 加载 .env 文件
 	if err := godotenv.Load(); err != nil {
@@ -92,6 +131,12 @@ func New() Config {
 		googleMapsAPIKey: os.Getenv("GOOGLE_API_KEY"),
 		enableOpenAI:     getEnvOrDefault("ENABLE_OPENAI", "true") == "true",
 		enableGoogleAPI:  getEnvOrDefault("ENABLE_GOOGLE_API", "true") == "true",
+		proxyURL:         os.Getenv("PROXY_URL"),
+		proxyType:        getEnvOrDefault("PROXY_TYPE", "http"),
+		proxyUser:        os.Getenv("PROXY_USER"),
+		proxyPass:        os.Getenv("PROXY_PASS"),
+		openaiProxyURL:   os.Getenv("OPENAI_PROXY_URL"),
+		mapsProxyURL:     os.Getenv("MAPS_PROXY_URL"),
 	}
 
 	// 加载安全配置

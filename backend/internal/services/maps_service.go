@@ -5,7 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
+	"net/url"
+	"os"
 
 	"github.com/my-streetview-project/backend/internal/utils"
 	"googlemaps.github.io/maps"
@@ -17,7 +20,84 @@ type MapsService struct {
 }
 
 func NewMapsService(apiKey string) (*MapsService, error) {
-	client, err := maps.NewClient(maps.WithAPIKey(apiKey))
+	// 从环境变量获取代理URL
+	proxyURL := os.Getenv("MAPS_PROXY_URL")
+	if proxyURL == "" {
+		proxyURL = os.Getenv("PROXY_URL")
+	}
+
+	proxyType := os.Getenv("PROXY_TYPE")
+	if proxyType == "" {
+		proxyType = "http"
+	}
+
+	proxyUser := os.Getenv("PROXY_USER")
+	proxyPass := os.Getenv("PROXY_PASS")
+
+	var opts []maps.ClientOption
+	opts = append(opts, maps.WithAPIKey(apiKey))
+
+	// 如果设置了代理，配置HTTP客户端使用代理
+	if proxyURL != "" {
+		var transport *http.Transport
+
+		// 根据代理类型创建不同的代理URL
+		var proxyFunc func(*http.Request) (*url.URL, error)
+
+		if proxyType == "socks5" {
+			// 对于SOCKS5代理，我们需要使用golang.org/x/net/proxy包
+			// 这里简化处理，仅构建代理URL
+			proxyURLWithAuth := proxyURL
+			if proxyUser != "" && proxyPass != "" {
+				// 从URL中解析出协议、主机和端口
+				parsedURL, err := url.Parse(proxyURL)
+				if err == nil {
+					// 重建带认证的URL
+					parsedURL.User = url.UserPassword(proxyUser, proxyPass)
+					proxyURLWithAuth = parsedURL.String()
+				}
+			}
+
+			log.Printf("Maps服务使用SOCKS5代理: %s", proxyURLWithAuth)
+
+			// 注意：这里需要额外的库支持SOCKS5
+			// 简化起见，我们仍然使用http.ProxyURL，但实际使用时需要使用SOCKS5专用的库
+			proxy, err := url.Parse(proxyURLWithAuth)
+			if err != nil {
+				log.Printf("解析代理URL失败: %v，将不使用代理", err)
+				proxyFunc = nil
+			} else {
+				proxyFunc = http.ProxyURL(proxy)
+			}
+		} else {
+			// 默认HTTP代理
+			proxy, err := url.Parse(proxyURL)
+			if err != nil {
+				log.Printf("解析代理URL失败: %v，将不使用代理", err)
+				proxyFunc = nil
+			} else {
+				// 如果提供了用户名和密码，添加到代理URL
+				if proxyUser != "" && proxyPass != "" {
+					proxy.User = url.UserPassword(proxyUser, proxyPass)
+				}
+				proxyFunc = http.ProxyURL(proxy)
+				log.Printf("Maps服务使用HTTP代理: %s", proxy.String())
+			}
+		}
+
+		// 创建带有代理的Transport
+		if proxyFunc != nil {
+			transport = &http.Transport{
+				Proxy: proxyFunc,
+			}
+			httpClient := &http.Client{
+				Transport: transport,
+			}
+			opts = append(opts, maps.WithHTTPClient(httpClient))
+		}
+	}
+
+	client, err := maps.NewClient(opts...)
 	if err != nil {
 		return nil, fmt.Errorf("创建 Google Maps 客户端失败: %w", err)
 	}
@@ -39,7 +119,7 @@ func (s *MapsService) HasStreetView(ctx context.Context, latitude, longitude flo
 
 	// 逐步增加搜索半径
 	for _, radius := range searchRadii {
-		url := fmt.Sprintf(
+		streetViewURL := fmt.Sprintf(
 			"https://maps.googleapis.com/maps/api/streetview/metadata"+
 				"?location=%.6f,%.6f"+
 				"&source=outdoor"+ // 只搜索户外街景
@@ -50,8 +130,47 @@ func (s *MapsService) HasStreetView(ctx context.Context, latitude, longitude flo
 			s.apiKey,
 		)
 
-		// 发送 HTTP GET 请求
-		resp, err := http.Get(url)
+		// 创建请求
+		req, err := http.NewRequestWithContext(ctx, "GET", streetViewURL, nil)
+		if err != nil {
+			continue
+		}
+
+		// 创建HTTP客户端，如果有代理则使用代理
+		client := &http.Client{}
+
+		// 从环境变量获取代理URL
+		proxyURLStr := os.Getenv("MAPS_PROXY_URL")
+		if proxyURLStr == "" {
+			proxyURLStr = os.Getenv("PROXY_URL")
+		}
+
+		if proxyURLStr != "" {
+			proxyType := os.Getenv("PROXY_TYPE")
+			if proxyType == "" {
+				proxyType = "http"
+			}
+
+			proxyUser := os.Getenv("PROXY_USER")
+			proxyPass := os.Getenv("PROXY_PASS")
+
+			// 创建代理URL
+			proxyURL, err := url.Parse(proxyURLStr)
+			if err == nil {
+				// 如果提供了用户名和密码，添加到代理URL
+				if proxyUser != "" && proxyPass != "" {
+					proxyURL.User = url.UserPassword(proxyUser, proxyPass)
+				}
+
+				transport := &http.Transport{
+					Proxy: http.ProxyURL(proxyURL),
+				}
+				client.Transport = transport
+			}
+		}
+
+		// 发送请求
+		resp, err := client.Do(req)
 		if err != nil {
 			continue
 		}
