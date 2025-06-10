@@ -1,0 +1,35 @@
+# robots.txt for Explore Earth with AI
+# Allow all crawlers to access all content
+User-agent: *
+Allow: /
+
+# Block access to backend API endpoints that shouldn't be indexed
+Disallow: /api/
+Disallow: /admin/
+Disallow: /_next/
+Disallow: /static/js/
+Disallow: /static/css/
+
+# Special rules for Google crawlers
+User-agent: Googlebot
+Allow: /
+
+# Special rules for Bing crawlers  
+User-agent: Bingbot
+Allow: /
+
+# Block common bad bots
+User-agent: AhrefsBot
+Disallow: /
+
+User-agent: MJ12bot
+Disallow: /
+
+User-agent: SemrushBot
+Disallow: /
+
+# Crawl delay (optional - remove if causing issues)
+Crawl-delay: 1
+
+# Host directive
+Host: https://earth.wangyufeng.org 

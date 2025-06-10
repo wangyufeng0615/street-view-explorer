@@ -47,18 +47,115 @@ const styles = {
 
 export default function StreetView({ latitude, longitude, onPovChanged }) {
     const panoramaRef = useRef(null);
+    const panoramaInstanceRef = useRef(null); // 存储街景实例的引用
+    const autoRotateRef = useRef(null); // 存储自动旋转定时器的引用
+    const userInteractionTimerRef = useRef(null); // 存储用户交互恢复定时器
+    const isAutoRotatingRef = useRef(false); // 标记是否正在自动旋转
+    const lastUserInteractionRef = useRef(0); // 记录最后一次用户交互时间
     const [error, setError] = useState(null);
     const [isNetworkError, setIsNetworkError] = useState(false);
     const { t } = useTranslation();
 
+    // 自动旋转函数 - 使用 requestAnimationFrame 实现丝滑效果
+    const startAutoRotate = (panorama) => {
+        if (autoRotateRef.current) {
+            stopAutoRotate(); // 先停止现有的旋转
+        }
+        
+        let currentHeading = panorama.getPov().heading; // 从当前角度开始
+        const rotateSpeed = 0.1; // 每帧旋转0.1度，更细腻的增量
+        let lastTime = performance.now();
+        let animationId;
+
+        isAutoRotatingRef.current = true;
+        
+        const animate = (currentTime) => {
+            if (!panorama || !panoramaInstanceRef.current || !isAutoRotatingRef.current) {
+                stopAutoRotate();
+                return;
+            }
+
+            // 计算时间差，确保旋转速度在不同设备上保持一致
+            const deltaTime = currentTime - lastTime;
+
+            // 根据实际帧率调整旋转速度
+            const speedMultiplier = deltaTime / 16.67; // 16.67ms约等于60fps
+            const actualRotateSpeed = rotateSpeed * speedMultiplier;
+            
+            currentHeading = (currentHeading + actualRotateSpeed) % 360;
+            
+            // 使用更平滑的设置方式
+            try {
+                panorama.setPov({
+                    heading: currentHeading,
+                    pitch: panorama.getPov().pitch
+                });
+                
+                // 通知父组件视角变化
+                if (onPovChanged) {
+                    onPovChanged(currentHeading);
+                }
+            } catch (error) {
+                // 如果街景实例出现问题，停止旋转
+                console.warn('街景旋转时出现错误:', error);
+                stopAutoRotate();
+                return;
+            }
+            
+            lastTime = currentTime;
+            
+            // 继续下一帧
+            if (isAutoRotatingRef.current) {
+                animationId = requestAnimationFrame(animate);
+                autoRotateRef.current = animationId;
+            }
+        };
+        
+        // 开始动画
+        animationId = requestAnimationFrame(animate);
+        autoRotateRef.current = animationId;
+    };
+
+    // 停止自动旋转
+    const stopAutoRotate = () => {
+        if (autoRotateRef.current) {
+            cancelAnimationFrame(autoRotateRef.current);
+            autoRotateRef.current = null;
+        }
+        isAutoRotatingRef.current = false;
+    };
+
+    // 处理用户交互
+    const handleUserInteraction = () => {
+        if (isAutoRotatingRef.current) {
+            stopAutoRotate();
+            
+            // 清除之前的恢复定时器
+            if (userInteractionTimerRef.current) {
+                clearTimeout(userInteractionTimerRef.current);
+            }
+            
+            // 3秒后恢复自动旋转
+            userInteractionTimerRef.current = setTimeout(() => {
+                if (panoramaInstanceRef.current) {
+                    startAutoRotate(panoramaInstanceRef.current);
+                }
+            }, 3000);
+        }
+    };
+
     useEffect(() => {
         let isMounted = true;
         let panorama = null;
+        let cleanup = null;
 
         const initStreetView = async () => {
             try {
                 setError(null);
                 setIsNetworkError(false);
+                
+                // 停止之前的自动旋转
+                stopAutoRotate();
                 
                 // 验证坐标
                 const lat = Number(latitude);
@@ -88,6 +185,9 @@ export default function StreetView({ latitude, longitude, onPovChanged }) {
                     addressControl: false,
                 });
 
+                // 存储街景实例引用
+                panoramaInstanceRef.current = panorama;
+
                 // 监听街景状态变化
                 panorama.addListener('status_changed', () => {
                     if (!isMounted) return;
@@ -97,36 +197,72 @@ export default function StreetView({ latitude, longitude, onPovChanged }) {
                         // 街景数据不可用
                         setError(t('error.streetViewNotAvailable'));
                         setIsNetworkError(false);
+                        stopAutoRotate(); // 如果街景加载失败，停止自动旋转
                     }
                 });
 
-                // 监听视角变化
-                panorama.addListener('pov_changed', () => {
-                    if (onPovChanged) {
-                        onPovChanged(panorama.getPov().heading);
+                // 监听街景成功加载，启动自动旋转
+                panorama.addListener('pano_changed', () => {
+                    if (isMounted) {
+                        setError(null);
+                        setIsNetworkError(false);
+                        
+                        // 延迟启动自动旋转，让街景先完全加载
+                        setTimeout(() => {
+                            if (isMounted && panoramaInstanceRef.current) {
+                                startAutoRotate(panorama);
+                            }
+                        }, 2000); // 街景加载完成后等待2秒再开始旋转
                     }
                 });
+
+                // 监听鼠标事件（桌面端）
+                const streetViewElement = panoramaRef.current;
+                streetViewElement.addEventListener('mousedown', handleUserInteraction);
+                streetViewElement.addEventListener('wheel', handleUserInteraction);
+                
+                // 监听触摸事件（移动端）
+                streetViewElement.addEventListener('touchstart', handleUserInteraction);
+                
+                // 监听视角变化，只用于通知父组件
+                panorama.addListener('pov_changed', () => {
+                    if (onPovChanged && panorama) {
+                        const currentPov = panorama.getPov();
+                        onPovChanged(currentPov.heading);
+                    }
+                });
+
+                // 清理函数
+                cleanup = () => {
+                    if (streetViewElement) {
+                        streetViewElement.removeEventListener('mousedown', handleUserInteraction);
+                        streetViewElement.removeEventListener('wheel', handleUserInteraction);
+                        streetViewElement.removeEventListener('touchstart', handleUserInteraction);
+                    }
+                    if (userInteractionTimerRef.current) {
+                        clearTimeout(userInteractionTimerRef.current);
+                        userInteractionTimerRef.current = null;
+                    }
+                };
 
                 // 设置加载超时
                 const timeoutId = setTimeout(() => {
                     if (isMounted) {
                         setError(t('error.networkConnectionFailed'));
                         setIsNetworkError(true);
+                        stopAutoRotate();
                     }
                 }, 10000); // 10秒超时
 
-                // 监听成功加载
+                // 监听成功加载，清除超时
                 panorama.addListener('pano_changed', () => {
                     clearTimeout(timeoutId);
-                    if (isMounted) {
-                        setError(null);
-                        setIsNetworkError(false);
-                    }
                 });
 
             } catch (err) {
                 if (isMounted) {
                     console.error('StreetView initialization error:', err);
+                    stopAutoRotate();
                     
                     // 判断是否为网络相关错误
                     const isNetworkIssue = err.message?.includes('network') || 
@@ -153,6 +289,17 @@ export default function StreetView({ latitude, longitude, onPovChanged }) {
 
         return () => {
             isMounted = false;
+            stopAutoRotate();
+            // 清理用户交互定时器
+            if (userInteractionTimerRef.current) {
+                clearTimeout(userInteractionTimerRef.current);
+                userInteractionTimerRef.current = null;
+            }
+            panoramaInstanceRef.current = null;
+            // 调用清理函数（如果存在）
+            if (cleanup) {
+                cleanup();
+            }
         };
     }, [latitude, longitude, onPovChanged, t]);
 
