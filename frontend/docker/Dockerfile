@@ -10,7 +10,7 @@ RUN apk add --no-cache yarn
 COPY package.json yarn.lock* ./
 
 # 安装依赖
-RUN yarn install --frozen-lockfile
+RUN yarn install --frozen-lockfile --network-timeout 100000
 
 # 复制源代码
 COPY . .
