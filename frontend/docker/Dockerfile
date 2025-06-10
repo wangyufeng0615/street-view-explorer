@@ -1,10 +1,18 @@
 # 构建阶段
-FROM node:18-alpine AS builder
+FROM node:18-bullseye AS builder
 
 WORKDIR /app
 
-# 安装 yarn
-RUN apk add --no-cache yarn
+# 更新包管理器并安装必要的网络工具
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    curl \
+    wget \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# 安装最新版本的 yarn
+RUN npm install -g yarn@latest
 
 # 复制 package.json 和 yarn.lock（如果存在）
 COPY package.json yarn.lock* ./
