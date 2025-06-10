@@ -31,6 +31,8 @@ services:
     image: streetview-backend:latest
     env_file:
       - ./backend/.env
+    environment:
+      - REDIS_ADDRESS=redis:6379
     expose:
       - "8080"
     depends_on:
