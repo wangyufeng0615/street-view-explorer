@@ -6,9 +6,10 @@ import (
 	"net/http"
 	"regexp"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/go-redis/redis/v8"
+	"github.com/redis/go-redis/v9"
 )
 
 // RateLimitMiddleware 实现基于 Redis 的请求限流
@@ -22,15 +23,13 @@ func RateLimitMiddleware(redisClient *redis.Client) gin.HandlerFunc {
 		switch endpoint {
 		case "/api/v1/locations/random":
 			maxRequests = 30 // 每分钟
-		case "/api/v1/locations/:panoId/like":
-			maxRequests = 10 // 每分钟
 		default:
 			maxRequests = 100 // 默认限制
 		}
 
 		// 使用 Redis 实现计数器
 		key := "ratelimit:" + clientIP + ":" + endpoint
-		count, err := redisClient.Incr(c, key).Result()
+		count, err := redisClient.Incr(c.Request.Context(), key).Result()
 		if err != nil {
 			c.Next() // Redis 错误时不阻止请求
 			return
@@ -38,7 +37,10 @@ func RateLimitMiddleware(redisClient *redis.Client) gin.HandlerFunc {
 
 		// 设置过期时间（60秒）
 		if count == 1 {
-			redisClient.Expire(c, key, 60)
+			if err := redisClient.Expire(c.Request.Context(), key, 60*time.Second).Err(); err != nil {
+				c.Next()
+				return
+			}
 		}
 
 		if count > int64(maxRequests) {

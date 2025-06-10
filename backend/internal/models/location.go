@@ -19,6 +19,7 @@ type Location struct {
 	AIDescription        string    `json:"ai_description"`        // AI 生成的描述
 	DescriptionLanguage  string    `json:"description_language"`  // 描述语言
 	DescriptionGenerated time.Time `json:"description_generated"` // 描述生成时间
+	ConversationHistory  string    `json:"conversation_history"`  // 对话历史（JSON格式）
 
 	// 元数据
 	CreatedAt      time.Time `json:"created_at"`       // 创建时间

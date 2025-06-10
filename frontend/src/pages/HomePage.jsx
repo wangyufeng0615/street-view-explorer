@@ -1,12 +1,13 @@
 import React, { useEffect, useCallback } from 'react';
-import Sidebar from '../components/Sidebar';
+import TopBar from '../components/TopBar';
+import NewSidebar from '../components/NewSidebar';
 import GlobalLoading from '../components/GlobalLoading';
 import ErrorDisplay from '../components/ErrorDisplay';
-import HelpButton from '../components/HelpButton';
 import StreetViewContainer from '../components/StreetViewContainer';
-import { overlayStyle, sidebarWrapperStyle } from '../styles/HomePage.styles';
+import Toast from '../components/Toast';
 import '../styles/animations.css';
 import '../styles/HomePage.css';
+import '../styles/responsive.css';
 
 // 自定义钩子
 import useLocationData from '../hooks/useLocationData';
@@ -62,23 +63,13 @@ export default function HomePage() {
     const {
         heading,
         setHeading,
-        scale,
         handleCopyEmail,
-        sidebarRef,
-        contentRef,
-        handleResize
+        toastMessage,
+        showToast
     } = useUIHandlers();
     
     // 使用键盘导航钩子
     useKeyboardNavigation(loadRandomLocation, isLoading, loadingRef);
-
-    // 创建防抖的 resize 处理函数
-    const debouncedResize = useCallback(
-        debounce(() => {
-            handleResize();
-        }, 300),
-        [handleResize]
-    );
     
     // 监听 location 变化
     useEffect(() => {
@@ -129,67 +120,82 @@ export default function HomePage() {
         }
     }, [explorationMode, explorationInterest, handleModeChange, loadRandomLocation]);
     
-    // 监听描述状态变化，调整UI大小
-    useEffect(() => {
-        if (description || isLoadingDesc || descError) {
-            debouncedResize();
-        }
-        
-        return () => {
-            // 清理防抖的timeout
-            debouncedResize.cancel && debouncedResize.cancel();
-        };
-    }, [description, isLoadingDesc, descError, debouncedResize]);
-    
     // 如果有错误，显示错误页面
     if (error) {
         return <ErrorDisplay error={error} onRetry={loadRandomLocation} />;
     }
 
     return (
-        <>
-            {/* 街景容器 */}
-            <StreetViewContainer 
-                latitude={location?.latitude} 
-                longitude={location?.longitude} 
-                onPovChanged={setHeading}
+        <div style={styles.container}>
+            {/* 顶栏 */}
+            <TopBar
+                location={location}
+                isLoading={isLoading}
+                onExplore={loadRandomLocation}
+                explorationMode={explorationMode}
+                explorationInterest={explorationInterest}
+                onModeChange={handleModeChange}
+                onCopyEmail={handleCopyEmail}
+                onPreferenceChange={handlePreferenceChange}
+                isSavingPreference={isSavingPreference}
             />
-            
-            {/* 问号按钮 */}
-            <HelpButton onCopyEmail={handleCopyEmail} />
-            
-            {/* 侧边栏 */}
-            <div style={overlayStyle}>
-                <div style={sidebarWrapperStyle}>
-                    <Sidebar
-                        ref={sidebarRef}
-                        contentRef={contentRef}
-                        location={location}
-                        heading={heading}
-                        description={description}
-                        isLoadingDesc={isLoadingDesc}
-                        descError={descError}
-                        descRetries={descRetries}
-                        isLoading={isLoading}
-                        isSavingPreference={isSavingPreference}
-                        preferenceError={preferenceError}
-                        onRetryDescription={() => {
-                            if (location?.pano_id) {
-                                loadLocationDescription(location.pano_id);
-                            }
-                        }}
-                        onExplore={loadRandomLocation}
-                        onPreferenceChange={handlePreferenceChange}
-                        scale={scale}
-                        explorationMode={explorationMode}
-                        explorationInterest={explorationInterest}
-                        onModeChange={handleModeChange}
+
+            {/* 主要内容区域 */}
+            <div style={styles.mainContent}>
+                {/* 街景容器 */}
+                <div style={styles.streetViewWrapper} className="street-view-wrapper">
+                    <StreetViewContainer 
+                        latitude={location?.latitude} 
+                        longitude={location?.longitude} 
+                        onPovChanged={setHeading}
                     />
                 </div>
+
+                {/* 侧边栏 */}
+                <NewSidebar
+                    location={location}
+                    heading={heading}
+                    description={description}
+                    isLoadingDesc={isLoadingDesc}
+                    descError={descError}
+                    descRetries={descRetries}
+                    onRetryDescription={() => {
+                        if (location?.pano_id) {
+                            loadLocationDescription(location.pano_id);
+                        }
+                    }}
+                />
             </div>
 
             {/* 全局加载动画 */}
             {isLoading && <GlobalLoading />}
-        </>
+            
+            {/* Toast 通知 */}
+            <Toast message={toastMessage} visible={showToast} />
+        </div>
     );
 }
+
+const styles = {
+    container: {
+        width: '100vw',
+        height: '100vh',
+        overflow: 'hidden',
+        display: 'flex',
+        flexDirection: 'column'
+    },
+    mainContent: {
+        flex: 1,
+        display: 'flex',
+        position: 'relative'
+    },
+    streetViewWrapper: {
+        position: 'absolute',
+        top: '50px', // 从顶栏下方开始
+        left: 0,
+        right: '320px', // 到侧边栏左边缘结束
+        bottom: 0,
+        width: 'auto', // 让浏览器自动计算宽度
+        height: 'auto' // 让浏览器自动计算高度
+    }
+};

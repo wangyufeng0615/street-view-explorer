@@ -4,14 +4,29 @@
 }
 
 @keyframes fadeInOut {
-    0% { opacity: 0.6; }
-    50% { opacity: 1; }
-    100% { opacity: 0.6; }
+    0% {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    10%, 90% {
+        opacity: 1;
+        transform: translateY(0);
+    }
+    100% {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
 }
 
 @keyframes pulse {
-    0%, 100% { transform: scale(0.8); opacity: 0.5; }
-    50% { transform: scale(1.2); opacity: 1; }
+    0%, 100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+    50% {
+        opacity: 0.7;
+        transform: scale(1.05);
+    }
 }
 
 @keyframes progressBar {
@@ -197,6 +212,73 @@
     flex-grow: 1;
 }
 
+/* 新布局动画 */
+@keyframes slideInRight {
+    0% { transform: translateX(100%); opacity: 0; }
+    100% { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes slideInDown {
+    0% { transform: translateY(-100%); opacity: 0; }
+    100% { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes fadeIn {
+    0% { opacity: 0; }
+    100% { opacity: 1; }
+}
+
+.new-sidebar {
+    animation: slideInRight 0.3s ease-out;
+}
+
+.top-bar {
+    animation: slideInDown 0.3s ease-out;
+}
+
+.tab-content {
+    animation: fadeIn 0.2s ease-in;
+}
+
+/* 按钮悬停效果 */
+.hover-scale:hover {
+    transform: scale(1.05);
+    transition: transform 0.2s ease;
+}
+
+.hover-glow:hover {
+    box-shadow: 0 4px 12px rgba(255, 112, 67, 0.4);
+    transition: box-shadow 0.2s ease;
+}
+
+/* 自定义滚动条样式 */
+.sidebar-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: #FF7043 rgba(0, 0, 0, 0.1);
+}
+
+.sidebar-scroll::-webkit-scrollbar {
+    width: 8px;
+}
+
+.sidebar-scroll::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.05);
+    border-radius: 4px;
+    margin: 4px;
+}
+
+.sidebar-scroll::-webkit-scrollbar-thumb {
+    background: #FF7043;
+    border-radius: 4px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.sidebar-scroll::-webkit-scrollbar-thumb:hover {
+    background: #FF8A65;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+
 .ai-icon {
     position: absolute;
     top: -14px;
@@ -227,4 +309,115 @@
     letter-spacing: 0.3px;
     border: 1px solid rgba(255, 255, 255, 0.3);
     backdrop-filter: blur(4px);
+}
+
+/* 模态窗口动画 */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes slideUp {
+    from {
+        transform: translateY(20px);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+/* 输入框焦点效果 */
+input:focus {
+    border-color: #FF7043 !important;
+    box-shadow: 0 0 0 3px rgba(255, 112, 67, 0.1) !important;
+}
+
+/* 按钮悬停效果 */
+button:hover:not(:disabled) {
+    transform: translateY(-1px);
+    filter: brightness(1.05);
+}
+
+button:active:not(:disabled) {
+    transform: translateY(0);
+}
+
+/* GO按钮环形光带动画 */
+@keyframes scrollBorder {
+    0% {
+        background-position: 0% 0%;
+    }
+    100% {
+        background-position: 400% 0%;
+    }
+}
+
+.go-button-animated {
+    position: relative !important;
+    background: linear-gradient(135deg, #FF7043, #FF5722) !important;
+    border: none !important;
+    padding: 8px 32px !important;
+}
+
+.go-button-animated::before {
+    content: '';
+    position: absolute;
+    top: -2px;
+    left: -2px;
+    right: -2px;
+    bottom: -2px;
+    background: linear-gradient(90deg, 
+        #FF6B35 0%, 
+        #FFB74D 12.5%, 
+        #FF8A50 25%, 
+        #FF6B35 37.5%, 
+        #FFB74D 50%, 
+        #FF8A50 62.5%, 
+        #FF6B35 75%, 
+        #FFB74D 87.5%, 
+        #FF8A50 100%
+    );
+    background-size: 400% 100%;
+    border-radius: 12px;
+    z-index: -1;
+    animation: scrollBorder 3s linear infinite;
+}
+
+.go-button-animated::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(135deg, #FF7043, #FF5722);
+    border-radius: 10px;
+    z-index: 0;
+}
+
+.go-button-animated span {
+    position: relative;
+    z-index: 1;
+    color: white !important;
+}
+
+/* 禁用状态 */
+.go-button-animated:disabled {
+    background: #ccc !important;
+    color: #666 !important;
+    cursor: not-allowed !important;
+}
+
+.go-button-animated:disabled::before {
+    display: none !important;
+}
+
+.go-button-animated:disabled::after {
+    background: #ccc !important;
 } 

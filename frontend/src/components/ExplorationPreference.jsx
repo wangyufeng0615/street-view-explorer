@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef, forwardRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import '../styles/ExplorationPreference.css';
 
 const ExplorationPreference = forwardRef(({ 
@@ -10,6 +11,7 @@ const ExplorationPreference = forwardRef(({
     explorationMode = 'random',
     explorationInterest: initialInterest
 }, ref) => {
+    const { t } = useTranslation();
     const [preference, setPreference] = useState(initialInterest || '');
     const [showEffect, setShowEffect] = useState(false);
     const [lastSuccessInterest, setLastSuccessInterest] = useState(initialInterest || '');
@@ -104,14 +106,14 @@ const ExplorationPreference = forwardRef(({
                         onClick={(e) => handleTabChange('random', e)}
                     >
                         <span className="tab-icon">🎲</span>
-                        随机探索地球
+                        {t('explore.randomEarth')}
                     </button>
                     <button
                         className={`preference-tab ${explorationMode === 'custom' ? 'active' : ''}`}
                         onClick={(e) => handleTabChange('custom', e)}
                     >
                         <span className="tab-icon">🎯</span>
-                        探索特定兴趣
+                        {t('explore.specificInterest')}
                     </button>
                     <div className={`tab-slider ${explorationMode === 'custom' ? 'right' : ''}`} />
                 </div>
@@ -128,7 +130,7 @@ const ExplorationPreference = forwardRef(({
                         >
                             <span className="button-content">
                                 <span className="explore-icon">🌍</span>
-                                GO! (或按空格)
+                                {t('explore.goOrSpace')}
                             </span>
                             {showEffect && (
                                 <div className="effect-container">
@@ -150,7 +152,7 @@ const ExplorationPreference = forwardRef(({
                                         handleSubmit(e);
                                     }
                                 }}
-                                placeholder="随意输入你想要探索的主题!"
+                                placeholder={t('explore.typeYourTopic')}
                                 className="preference-input"
                                 disabled={isSavingPreference}
                             />
@@ -167,12 +169,12 @@ const ExplorationPreference = forwardRef(({
                                                 <span className="dot"></span>
                                                 <span className="dot"></span>
                                             </span>
-                                            理解中...
+                                            {t('explore.understanding')}
                                         </>
                                     ) : (
                                         <>
                                             <span className="explore-icon">🌍</span>
-                                            GO!
+                                            {t('explore.go')}
                                         </>
                                     )}
                                 </span>

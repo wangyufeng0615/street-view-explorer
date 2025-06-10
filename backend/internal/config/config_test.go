@@ -18,7 +18,7 @@ func TestLoadConfig(t *testing.T) {
 
 	t.Run("with all required vars", func(t *testing.T) {
 		os.Setenv("REDIS_ADDRESS", "localhost:6379")
-		os.Setenv("OPENAI_API_KEY", "test-key")
+		os.Setenv("AI_API_KEY", "test-key")
 
 		cfg, err := LoadConfig()
 		if err != nil {

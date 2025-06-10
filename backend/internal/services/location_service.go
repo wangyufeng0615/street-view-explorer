@@ -29,7 +29,7 @@ func (ls *LocationService) GetLocation(panoID string) (models.Location, error) {
 	return ls.repo.GetLocationByPanoID(panoID)
 }
 
-func (ls *LocationService) GetRandomLocation() (models.Location, error) {
+func (ls *LocationService) GetRandomLocation(language string) (models.Location, error) {
 	ctx := context.Background()
 	// 生成随机有效坐标
 	lat, lng, panoId, err := ls.maps.GenerateValidLocation(ctx)
@@ -37,8 +37,8 @@ func (ls *LocationService) GetRandomLocation() (models.Location, error) {
 		return models.Location{}, fmt.Errorf("生成有效坐标失败: %w", err)
 	}
 
-	// 获取位置信息
-	locationInfo, err := ls.maps.GetLocationInfo(ctx, lat, lng)
+	// 获取位置信息, pass language
+	locationInfo, err := ls.maps.GetLocationInfo(ctx, lat, lng, language)
 	if err != nil {
 		return models.Location{}, fmt.Errorf("获取位置信息失败: %w", err)
 	}
@@ -64,7 +64,7 @@ func (ls *LocationService) GetRandomLocation() (models.Location, error) {
 }
 
 // GetRandomLocationWithPreference 根据用户的探索偏好获取随机位置
-func (ls *LocationService) GetRandomLocationWithPreference(sessionID string) (models.Location, error) {
+func (ls *LocationService) GetRandomLocationWithPreference(sessionID string, language string) (models.Location, error) {
 	ctx := context.Background()
 
 	// 获取用户的探索偏好
@@ -73,9 +73,9 @@ func (ls *LocationService) GetRandomLocationWithPreference(sessionID string) (mo
 		return models.Location{}, fmt.Errorf("获取探索偏好失败: %w", err)
 	}
 
-	// 如果没有探索偏好，使用默认的随机生成
+	// 如果没有探索偏好，使用默认的随机生成, pass language
 	if pref == nil {
-		return ls.GetRandomLocation()
+		return ls.GetRandomLocation(language)
 	}
 
 	// 从偏好区域生成随机坐标
@@ -84,12 +84,12 @@ func (ls *LocationService) GetRandomLocationWithPreference(sessionID string) (mo
 	// 验证坐标是否有街景
 	hasStreetView, validLat, validLng, panoId := ls.maps.HasStreetView(ctx, lat, lng, true)
 	if !hasStreetView {
-		// 如果没有街景，递归重试
-		return ls.GetRandomLocationWithPreference(sessionID)
+		// 如果没有街景，递归重试, pass language
+		return ls.GetRandomLocationWithPreference(sessionID, language)
 	}
 
-	// 获取位置信息
-	locationInfo, err := ls.maps.GetLocationInfo(ctx, validLat, validLng)
+	// 获取位置信息, pass language
+	locationInfo, err := ls.maps.GetLocationInfo(ctx, validLat, validLng, language)
 	if err != nil {
 		return models.Location{}, fmt.Errorf("获取位置信息失败: %w", err)
 	}
@@ -143,7 +143,7 @@ func (ls *LocationService) SetExplorationPreference(sessionID, interest string) 
 		}
 	}
 
-	// 通过 OpenAI 获取相关区域
+	// 通过 AI 获取相关区域
 	regions, err := ls.aiService.openAI.GenerateRegionsForInterest(interest)
 	if err != nil {
 		return fmt.Errorf("无法理解该探索兴趣")

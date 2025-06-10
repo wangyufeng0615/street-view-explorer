@@ -1,0 +1,26 @@
+/* 侧边栏滚动条样式 - 简洁风格，常态化显示 */
+.sidebar-scroll {
+    /* Firefox */
+    scrollbar-width: thin;
+    scrollbar-color: #999 #f0f0f0;
+}
+
+/* WebKit browsers (Chrome, Safari, Edge) */
+.sidebar-scroll::-webkit-scrollbar {
+    width: 6px;
+}
+
+.sidebar-scroll::-webkit-scrollbar-track {
+    background: #f0f0f0;
+    border-radius: 3px;
+}
+
+.sidebar-scroll::-webkit-scrollbar-thumb {
+    background: #999;
+    border-radius: 3px;
+    min-height: 20px;
+}
+
+.sidebar-scroll::-webkit-scrollbar-thumb:hover {
+    background: #666;
+} 

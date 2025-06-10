@@ -216,14 +216,18 @@ func (s *MapsService) GenerateValidLocation(ctx context.Context) (latitude, long
 	return 0, 0, "", fmt.Errorf("该位置没有可用的街景")
 }
 
-func (s *MapsService) GetLocationInfo(ctx context.Context, latitude, longitude float64) (map[string]string, error) {
+func (s *MapsService) GetLocationInfo(ctx context.Context, latitude, longitude float64, language string) (map[string]string, error) {
 	// 创建 Geocoding 请求
 	req := &maps.GeocodingRequest{
 		LatLng: &maps.LatLng{
 			Lat: latitude,
 			Lng: longitude,
 		},
-		Language: "zh-CN", // 使用中文
+	}
+
+	// Set language if provided, otherwise Google will use its default or infer
+	if language != "" {
+		req.Language = language
 	}
 
 	// 发送请求
@@ -241,17 +245,106 @@ func (s *MapsService) GetLocationInfo(ctx context.Context, latitude, longitude f
 	result := make(map[string]string)
 	result["formatted_address"] = resp[0].FormattedAddress
 
-	// 提取更详细的信息
+	// 提取详细的地址组件信息
 	for _, component := range resp[0].AddressComponents {
 		for _, t := range component.Types {
 			switch t {
+			case "street_number":
+				result["street_number"] = component.LongName
+			case "route":
+				result["route"] = component.LongName
+			case "intersection":
+				result["intersection"] = component.LongName
+			case "political":
+				result["political"] = component.LongName
 			case "country":
 				result["country"] = component.LongName
+				result["country_code"] = component.ShortName
+			case "administrative_area_level_1":
+				result["state_province"] = component.LongName
+				result["state_province_code"] = component.ShortName
+			case "administrative_area_level_2":
+				result["county_district"] = component.LongName
+			case "administrative_area_level_3":
+				result["subdistrict"] = component.LongName
+			case "administrative_area_level_4":
+				result["neighborhood"] = component.LongName
+			case "administrative_area_level_5":
+				result["subneighborhood"] = component.LongName
 			case "locality":
 				result["city"] = component.LongName
+			case "sublocality":
+				result["sublocality"] = component.LongName
+			case "sublocality_level_1":
+				result["sublocality_level_1"] = component.LongName
+			case "sublocality_level_2":
+				result["sublocality_level_2"] = component.LongName
+			case "sublocality_level_3":
+				result["sublocality_level_3"] = component.LongName
+			case "colloquial_area":
+				result["colloquial_area"] = component.LongName
+			case "floor":
+				result["floor"] = component.LongName
+			case "room":
+				result["room"] = component.LongName
+			case "postal_code":
+				result["postal_code"] = component.LongName
+			case "postal_code_suffix":
+				result["postal_code_suffix"] = component.LongName
+			case "postal_town":
+				result["postal_town"] = component.LongName
+			case "premise":
+				result["premise"] = component.LongName
+			case "subpremise":
+				result["subpremise"] = component.LongName
+			case "plus_code":
+				result["plus_code"] = component.LongName
+			case "establishment":
+				result["establishment"] = component.LongName
+			case "point_of_interest":
+				result["point_of_interest"] = component.LongName
+			case "park":
+				result["park"] = component.LongName
+			case "natural_feature":
+				result["natural_feature"] = component.LongName
+			case "airport":
+				result["airport"] = component.LongName
+			case "university":
+				result["university"] = component.LongName
+			case "school":
+				result["school"] = component.LongName
+			case "hospital":
+				result["hospital"] = component.LongName
+			case "pharmacy":
+				result["pharmacy"] = component.LongName
+			case "church":
+				result["church"] = component.LongName
+			case "finance":
+				result["finance"] = component.LongName
+			case "post_box":
+				result["post_box"] = component.LongName
+			case "bus_station":
+				result["bus_station"] = component.LongName
+			case "train_station":
+				result["train_station"] = component.LongName
+			case "transit_station":
+				result["transit_station"] = component.LongName
 			}
 		}
 	}
+
+	// 如果有Plus Code信息，也提取出来
+	if resp[0].PlusCode.GlobalCode != "" {
+		result["plus_code_global"] = resp[0].PlusCode.GlobalCode
+	}
+	if resp[0].PlusCode.CompoundCode != "" {
+		result["plus_code_compound"] = resp[0].PlusCode.CompoundCode
+	}
+
+	// 添加调试日志 - 记录从Google API获取的完整地理位置信息
+	log.Printf("Google Maps API - 原始响应的第一个结果: FormattedAddress=%s, AddressComponents数量=%d", resp[0].FormattedAddress, len(resp[0].AddressComponents))
+	log.Printf("Google Maps API - PlusCode: Global=%s, Compound=%s", resp[0].PlusCode.GlobalCode, resp[0].PlusCode.CompoundCode)
+	log.Printf("Google Maps API - 提取的完整result: %+v", result)
 
 	return result, nil
 }

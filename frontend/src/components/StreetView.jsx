@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { loadGoogleMapsScript } from '../utils/googleMaps';
 
 const styles = {
@@ -17,32 +18,38 @@ const styles = {
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: 'rgba(255, 255, 255, 0.9)',
-        padding: '20px',
+        backgroundColor: 'rgba(255, 255, 255, 0.95)',
+        padding: '30px 20px',
         textAlign: 'center',
-        zIndex: 1000
+        zIndex: 1000,
+        backdropFilter: 'blur(4px)'
     },
     errorIcon: {
-        fontSize: '40px',
-        color: '#ff4d4f',
-        marginBottom: '15px'
+        fontSize: '48px',
+        marginBottom: '20px',
+        animation: 'pulse 2s infinite'
     },
     errorText: {
-        fontSize: '16px',
+        fontSize: '18px',
         color: '#333',
-        marginBottom: '10px',
-        fontWeight: '500'
+        marginBottom: '12px',
+        fontWeight: '600',
+        lineHeight: '1.4',
+        maxWidth: '400px'
     },
     errorSubText: {
         fontSize: '14px',
         color: '#666',
-        maxWidth: '80%'
+        maxWidth: '300px',
+        lineHeight: '1.5'
     }
 };
 
 export default function StreetView({ latitude, longitude, onPovChanged }) {
     const panoramaRef = useRef(null);
     const [error, setError] = useState(null);
+    const [isNetworkError, setIsNetworkError] = useState(false);
+    const { t } = useTranslation();
 
     useEffect(() => {
         let isMounted = true;
@@ -50,12 +57,15 @@ export default function StreetView({ latitude, longitude, onPovChanged }) {
 
         const initStreetView = async () => {
             try {
+                setError(null);
+                setIsNetworkError(false);
+                
                 // 验证坐标
                 const lat = Number(latitude);
                 const lng = Number(longitude);
                 
                 if (isNaN(lat) || isNaN(lng)) {
-                    throw new Error('无效的坐标值');
+                    throw new Error(t('error.invalidCoordinateValues'));
                 }
 
                 const maps = await loadGoogleMapsScript();
@@ -78,15 +88,61 @@ export default function StreetView({ latitude, longitude, onPovChanged }) {
                     addressControl: false,
                 });
 
+                // 监听街景状态变化
+                panorama.addListener('status_changed', () => {
+                    if (!isMounted) return;
+                    
+                    const status = panorama.getStatus();
+                    if (status !== 'OK') {
+                        // 街景数据不可用
+                        setError(t('error.streetViewNotAvailable'));
+                        setIsNetworkError(false);
+                    }
+                });
+
                 // 监听视角变化
                 panorama.addListener('pov_changed', () => {
                     if (onPovChanged) {
                         onPovChanged(panorama.getPov().heading);
                     }
                 });
+
+                // 设置加载超时
+                const timeoutId = setTimeout(() => {
+                    if (isMounted) {
+                        setError(t('error.networkConnectionFailed'));
+                        setIsNetworkError(true);
+                    }
+                }, 10000); // 10秒超时
+
+                // 监听成功加载
+                panorama.addListener('pano_changed', () => {
+                    clearTimeout(timeoutId);
+                    if (isMounted) {
+                        setError(null);
+                        setIsNetworkError(false);
+                    }
+                });
+
             } catch (err) {
                 if (isMounted) {
-                    setError('街景加载失败');
+                    console.error('StreetView initialization error:', err);
+                    
+                    // 判断是否为网络相关错误
+                    const isNetworkIssue = err.message?.includes('network') || 
+                                          err.message?.includes('timeout') || 
+                                          err.message?.includes('fetch') ||
+                                          err.message?.includes('Google Maps') ||
+                                          err.name === 'NetworkError' ||
+                                          !navigator.onLine;
+                    
+                    if (isNetworkIssue) {
+                        setError(t('error.networkConnectionFailed'));
+                        setIsNetworkError(true);
+                    } else {
+                        setError(t('error.streetViewLoadFailed'));
+                        setIsNetworkError(false);
+                    }
                 }
             }
         };
@@ -98,7 +154,7 @@ export default function StreetView({ latitude, longitude, onPovChanged }) {
         return () => {
             isMounted = false;
         };
-    }, [latitude, longitude, onPovChanged]);
+    }, [latitude, longitude, onPovChanged, t]);
 
     return (
         <div style={styles.container}>
@@ -106,10 +162,18 @@ export default function StreetView({ latitude, longitude, onPovChanged }) {
             
             {error && (
                 <div style={styles.errorContainer}>
-                    <div style={styles.errorIcon}>⚠️</div>
+                    <div style={styles.errorIcon}>
+                        {isNetworkError ? '🌐' : '⚠️'}
+                    </div>
                     <div style={styles.errorText}>{error}</div>
                     <div style={styles.errorSubText}>
-                        建议尝试附近其他位置，或稍后再试
+                        {isNetworkError ? 
+                            t('error.checkNetworkConnection') : 
+                            (error === t('error.streetViewNotAvailable') ? 
+                                t('error.tryOtherLocationOrLater') : 
+                                ''
+                            )
+                        }
                     </div>
                 </div>
             )}

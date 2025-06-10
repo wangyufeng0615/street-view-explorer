@@ -16,6 +16,9 @@ func SetupRoutes(r *gin.Engine, h *Handlers) {
 
 			// 获取位置描述
 			locations.GET("/:panoId/description", h.GetLocationDescription)
+
+			// 获取位置详细描述
+			locations.GET("/:panoId/detailed-description", h.GetLocationDetailedDescription)
 		}
 
 		// 探索偏好相关

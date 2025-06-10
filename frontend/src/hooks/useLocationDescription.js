@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { getLocationDescription } from '../services/api';
 
 const MAX_RETRIES = 3;
@@ -32,6 +33,8 @@ export default function useLocationDescription() {
     const networkStateRef = useRef(navigator.onLine);
     const timeoutRef = useRef(null);
     const isLoadingRef = useRef(false);  // 新增：用ref跟踪加载状态
+    
+    const { i18n } = useTranslation();
     
     // 添加超时控制的 Promise
     const timeoutPromise = useCallback((ms) => {
@@ -93,8 +96,8 @@ export default function useLocationDescription() {
             // 创建新的 AbortController
             abortControllerRef.current = new AbortController();
 
-            // Get user's preferred language
-            const userLang = localStorage.getItem('preferredLanguage') || navigator.language.split('-')[0] || 'zh';
+            // Get user's preferred language from i18next
+            const userLang = i18n.language || 'en';
 
             // 再次检查位置和网络状态
             if (locationRef.current?.pano_id !== panoId || !networkStateRef.current) {
@@ -144,7 +147,7 @@ export default function useLocationDescription() {
                 setIsLoadingDesc(false);
             }
         }
-    }, [cleanup, timeoutPromise]);
+    }, [cleanup, timeoutPromise, i18n.language]);
 
     // 使用防抖包装 fetchLocationDescription
     const loadLocationDescription = useCallback(

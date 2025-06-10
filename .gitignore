@@ -101,3 +101,5 @@ coverage/
 # 系统文件
 .DS_Store
 Thumbs.db
+
+backend/server

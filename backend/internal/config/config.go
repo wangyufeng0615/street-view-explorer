@@ -22,6 +22,8 @@ type Config interface {
 	ProxyAuth() (string, string)
 	OpenAIProxyURL() string
 	MapsProxyURL() string
+	SkipProxyCheck() bool
+	SetSkipProxyCheck(value bool)
 }
 
 type config struct {
@@ -39,6 +41,7 @@ type config struct {
 	proxyPass        string
 	openaiProxyURL   string
 	mapsProxyURL     string
+	skipProxyCheck   bool
 }
 
 type SecurityConfig struct {
@@ -102,7 +105,7 @@ func (c *config) ProxyAuth() (string, string) {
 }
 
 func (c *config) OpenAIProxyURL() string {
-	// 如果设置了OpenAI专用代理，则使用它，否则使用通用代理
+	// 如果设置了AI专用代理，则使用它，否则使用通用代理
 	if c.openaiProxyURL != "" {
 		return c.openaiProxyURL
 	}
@@ -117,6 +120,14 @@ func (c *config) MapsProxyURL() string {
 	return c.proxyURL
 }
 
+func (c *config) SetSkipProxyCheck(value bool) {
+	c.skipProxyCheck = value
+}
+
+func (c *config) SkipProxyCheck() bool {
+	return c.skipProxyCheck
+}
+
 func New() Config {
 	// 加载 .env 文件
 	if err := godotenv.Load(); err != nil {
@@ -127,16 +138,17 @@ func New() Config {
 		serverAddress:    getEnvOrDefault("SERVER_ADDRESS", ":8080"),
 		redisAddress:     getEnvOrDefault("REDIS_ADDRESS", "localhost:6379"),
 		redisPassword:    os.Getenv("REDIS_PASSWORD"),
-		openAIAPIKey:     os.Getenv("OPENAI_API_KEY"),
+		openAIAPIKey:     os.Getenv("AI_API_KEY"),
 		googleMapsAPIKey: os.Getenv("GOOGLE_API_KEY"),
-		enableOpenAI:     getEnvOrDefault("ENABLE_OPENAI", "true") == "true",
+		enableOpenAI:     getEnvOrDefault("ENABLE_AI", "true") == "true",
 		enableGoogleAPI:  getEnvOrDefault("ENABLE_GOOGLE_API", "true") == "true",
 		proxyURL:         os.Getenv("PROXY_URL"),
 		proxyType:        getEnvOrDefault("PROXY_TYPE", "http"),
 		proxyUser:        os.Getenv("PROXY_USER"),
 		proxyPass:        os.Getenv("PROXY_PASS"),
-		openaiProxyURL:   os.Getenv("OPENAI_PROXY_URL"),
+		openaiProxyURL:   os.Getenv("AI_PROXY_URL"),
 		mapsProxyURL:     os.Getenv("MAPS_PROXY_URL"),
+		skipProxyCheck:   false,
 	}
 
 	// 加载安全配置

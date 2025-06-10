@@ -106,6 +106,21 @@ func (r *RedisRepository) SaveAIDescription(panoID, description string, language
 	return r.SaveLocation(location)
 }
 
+// SaveAIDescriptionWithHistory 保存 AI 生成的描述和对话历史
+func (r *RedisRepository) SaveAIDescriptionWithHistory(panoID, description string, language string, conversationHistory string) error {
+	location, err := r.GetLocationByPanoID(panoID)
+	if err != nil {
+		return fmt.Errorf("获取位置信息失败: %w", err)
+	}
+
+	location.AIDescription = description
+	location.DescriptionLanguage = language
+	location.DescriptionGenerated = time.Now()
+	location.ConversationHistory = conversationHistory
+
+	return r.SaveLocation(location)
+}
+
 // GetAIDescription 获取 AI 生成的描述
 func (r *RedisRepository) GetAIDescription(panoID string) (string, error) {
 	location, err := r.GetLocationByPanoID(panoID)
@@ -172,4 +187,9 @@ func (r *RedisRepository) DeleteExplorationPreference(sessionID string) error {
 	}
 
 	return nil
+}
+
+// GetRedisClient returns the underlying redis client.
+func (r *RedisRepository) GetRedisClient() *redis.Client {
+	return r.client
 }

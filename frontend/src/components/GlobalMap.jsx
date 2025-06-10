@@ -1,9 +1,31 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { loadGoogleMapsScript } from '../utils/googleMaps';
 
 export default function GlobalMap({ latitude, longitude }) {
     const mapRef = useRef(null);
     const [error, setError] = useState(null);
+    const { t } = useTranslation();
+
+    // 参数验证
+    if (latitude === undefined || longitude === undefined) {
+        console.warn('GlobalMap: Missing coordinates', { latitude, longitude });
+        return (
+            <div style={{
+                width: '100%',
+                height: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: '#f5f5f5',
+                borderRadius: '8px',
+                color: '#666',
+                minHeight: '200px'
+            }}>
+                {t('loading_location')}
+            </div>
+        );
+    }
 
     useEffect(() => {
         let isMounted = true;
@@ -12,6 +34,7 @@ export default function GlobalMap({ latitude, longitude }) {
 
         const initMap = async () => {
             try {
+                console.log('GlobalMap: Initializing with coordinates:', { latitude, longitude });
                 const maps = await loadGoogleMapsScript();
                 if (!isMounted) return;
 
@@ -19,8 +42,9 @@ export default function GlobalMap({ latitude, longitude }) {
                 const lat = parseFloat(latitude);
                 const lng = parseFloat(longitude);
 
-                if (isNaN(lat) || isNaN(lng)) {
-                    throw new Error('无效的坐标');
+                if (isNaN(lat) || isNaN(lng) || lat === 0 || lng === 0) {
+                    console.error('Invalid coordinates for GlobalMap:', { latitude, longitude, lat, lng });
+                    throw new Error(t('error.invalidCoordinates'));
                 }
 
                 mapInstance = new maps.Map(mapRef.current, {
@@ -87,7 +111,7 @@ export default function GlobalMap({ latitude, longitude }) {
                 mapInstance.setCenter({ lat, lng });
             } catch (err) {
                 if (isMounted) {
-                    setError('地图加载失败');
+                    setError(t('error.mapLoadFailed'));
                 }
             }
         };
@@ -106,20 +130,20 @@ export default function GlobalMap({ latitude, longitude }) {
                 mapInstance = null;
             }
         };
-    }, [latitude, longitude]);
+    }, [latitude, longitude, t]);
 
     if (error) {
         return (
             <div style={{
                 width: '100%',
-                height: '150px',
+                height: '100%',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 backgroundColor: '#f5f5f5',
-                borderRadius: '5px',
+                borderRadius: '8px',
                 color: '#666',
-                marginTop: '10px'
+                minHeight: '200px'
             }}>
                 {error}
             </div>
@@ -131,10 +155,10 @@ export default function GlobalMap({ latitude, longitude }) {
             ref={mapRef} 
             style={{
                 width: '100%',
-                height: '150px',
-                borderRadius: '5px',
+                height: '100%',
+                borderRadius: '8px',
                 overflow: 'hidden',
-                marginTop: '10px'
+                minHeight: '200px'
             }}
         />
     );

@@ -1,9 +1,11 @@
 import { useState, useRef, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { getRandomLocation } from '../services/api';
 
 const RATE_LIMIT_MS = 1000; // 1秒限制
 
 export default function useLocationData() {
+    const { i18n } = useTranslation();
     const [location, setLocation] = useState(null);
     const [error, setError] = useState(null);
     const [isLoading, setIsLoading] = useState(true);
@@ -37,7 +39,8 @@ export default function useLocationData() {
         try {
             setLocation(null);     // 清除旧的位置
             
-            const resp = await getRandomLocation();
+            const currentLanguage = i18n.language || 'en';
+            const resp = await getRandomLocation(currentLanguage);
             
             // 检查是否仍在加载状态（防止用户已经取消）
             if (!loadingRef.current) return;
@@ -77,7 +80,7 @@ export default function useLocationData() {
                 loadingRef.current = false;
             }
         }
-    }, []);
+    }, [i18n.language]);
 
     return {
         location,

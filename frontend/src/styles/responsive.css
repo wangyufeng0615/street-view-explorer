@@ -1,0 +1,204 @@
+/* 响应式设计 */
+
+/* 平板设备 */
+@media (max-width: 1024px) {
+    .new-sidebar {
+        width: 280px !important;
+    }
+    
+    .street-view-wrapper {
+        right: 280px !important; /* 调整为侧边栏宽度 */
+    }
+    
+    .top-bar {
+        padding: 0 12px !important;
+    }
+    
+    .address-container {
+        max-width: 200px !important;
+    }
+}
+
+/* 手机设备 */
+@media (max-width: 768px) {
+    .new-sidebar {
+        width: 100vw !important;
+        height: 40vh !important;
+        top: auto !important;
+        bottom: 0 !important;
+        border-left: none !important;
+        border-top: 1px solid rgba(0, 0, 0, 0.1) !important;
+        animation: slideInUp 0.3s ease-out !important;
+    }
+    
+    .street-view-wrapper {
+        right: 0 !important; /* 手机端侧边栏在底部，不需要右边距 */
+        bottom: 40vh !important; /* 为底部侧边栏留出空间 */
+    }
+    
+    .top-bar {
+        padding: 0 12px !important;
+        height: 45px !important;
+        flex-wrap: wrap !important;
+    }
+    
+    .left-section {
+        order: 1 !important;
+        flex: 0 0 auto !important;
+        margin-right: 8px !important;
+    }
+    
+    .left-section h1 {
+        font-size: 13px !important;
+        white-space: nowrap !important;
+        letter-spacing: 0.3px !important;
+    }
+    
+    .center-section {
+        order: 3 !important;
+        flex: 1 1 100% !important;
+        margin-top: 4px !important;
+        justify-content: flex-start !important;
+    }
+    
+    .right-section {
+        order: 2 !important;
+        flex: 0 0 auto !important;
+        gap: 8px !important;
+        margin-left: auto !important;
+    }
+    
+    .address-container {
+        max-width: none !important;
+    }
+    
+    .address {
+        font-size: 12px !important;
+    }
+    
+    .mode-button {
+        padding: 4px 8px !important;
+        font-size: 11px !important;
+        white-space: nowrap !important;
+    }
+    
+    .mode-toggle {
+        gap: 1px !important;
+    }
+    
+    .lang-button {
+        padding: 3px 6px !important;
+        font-size: 11px !important;
+        min-width: 24px !important;
+    }
+    
+    .go-button {
+        padding: 4px 12px !important;
+        font-size: 12px !important;
+        min-width: 60px !important;
+        white-space: nowrap !important;
+    }
+    
+    .contact-button {
+        padding: 4px 6px !important;
+        font-size: 12px !important;
+    }
+    
+    .tab-header {
+        padding: 2px !important;
+    }
+    
+    .tab {
+        padding: 6px 2px !important;
+        font-size: 11px !important;
+    }
+}
+
+/* 超小屏幕 */
+@media (max-width: 480px) {
+    .top-bar {
+        flex-wrap: wrap !important;
+        height: auto !important;
+        min-height: 45px !important;
+        padding: 4px 8px !important;
+    }
+    
+    .left-section {
+        order: 1 !important;
+        flex: 0 0 auto !important;
+        margin-right: 4px !important;
+    }
+    
+    .left-section h1 {
+        font-size: 12px !important;
+        letter-spacing: 0.2px !important;
+    }
+    
+    .center-section {
+        order: 3 !important;
+        flex: 1 1 100% !important;
+        margin-top: 4px !important;
+        justify-content: flex-start !important;
+    }
+    
+    .right-section {
+        order: 2 !important;
+        flex: 0 0 auto !important;
+        gap: 6px !important;
+        margin-left: auto !important;
+    }
+    
+    .mode-toggle {
+        padding: 1px !important;
+        gap: 1px !important;
+    }
+    
+    .mode-button {
+        padding: 3px 6px !important;
+        font-size: 10px !important;
+    }
+    
+    .address-container {
+        max-width: none !important;
+    }
+    
+    .address {
+        font-size: 11px !important;
+    }
+    
+    .go-button {
+        padding: 3px 8px !important;
+        font-size: 11px !important;
+        min-width: 50px !important;
+    }
+    
+    .street-view-wrapper {
+        top: 60px !important; /* 调整顶部偏移以适应包装后的顶栏 */
+        bottom: 40vh !important;
+    }
+}
+
+/* 动画 */
+@keyframes slideInUp {
+    0% { transform: translateY(100%); opacity: 0; }
+    100% { transform: translateY(0); opacity: 1; }
+}
+
+/* 高分辨率屏幕优化 */
+@media (min-width: 1440px) {
+    .new-sidebar {
+        width: 360px !important;
+    }
+    
+    .street-view-wrapper {
+        right: 360px !important; /* 调整为侧边栏宽度 */
+    }
+    
+    .top-bar {
+        padding: 0 20px !important;
+    }
+    
+    .address-container {
+        max-width: 400px !important;
+    }
+} 

@@ -1,15 +1,20 @@
 import React, { useState, useEffect } from 'react';
-import { globalLoadingMessages } from '../constants/loadingMessages';
+import { useTranslation } from 'react-i18next';
 import '../styles/GlobalLoading.css';
 
 export default function GlobalLoading() {
+    const { t } = useTranslation();
     const [message, setMessage] = useState('');
 
     useEffect(() => {
-        // 随机选择一条加载文案
-        const randomIndex = Math.floor(Math.random() * globalLoadingMessages.length);
-        setMessage(globalLoadingMessages[randomIndex]);
-    }, []);
+        const messages = t('globalLoadingMessages');
+        if (Array.isArray(messages) && messages.length > 0) {
+            const randomIndex = Math.floor(Math.random() * messages.length);
+            setMessage(messages[randomIndex]);
+        } else {
+            setMessage("Loading...");
+        }
+    }, [t]);
 
     return (
         <div className="global-loading">

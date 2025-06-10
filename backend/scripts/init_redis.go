@@ -109,13 +109,6 @@ func main() {
 			}
 		}
 
-		// 更新点赞排行榜
-		if err := rdb.ZAdd(ctx, "leaderboard", redis.Z{
-			Score:  float64(loc.Likes),
-			Member: loc.PanoID,
-		}).Err(); err != nil {
-			log.Printf("更新排行榜失败 %s: %v", loc.PanoID, err)
-		}
 	}
 
 	log.Printf("成功初始化 %d 个位置数据", len(locations))

@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/go-redis/redis/v8"
 	"github.com/my-streetview-project/backend/internal/api"
 	"github.com/my-streetview-project/backend/internal/config"
 	"github.com/my-streetview-project/backend/internal/repositories"
@@ -22,10 +21,15 @@ func main() {
 	proxyType := flag.String("proxy-type", "http", "代理类型: http 或 socks5")
 	proxyUser := flag.String("proxy-user", "", "代理认证用户名")
 	proxyPass := flag.String("proxy-pass", "", "代理认证密码")
-	openaiProxy := flag.String("openai-proxy", "", "OpenAI专用代理URL")
+	openaiProxy := flag.String("openai-proxy", "", "AI专用代理URL")
 	mapsProxy := flag.String("maps-proxy", "", "Google Maps专用代理URL")
 	skipProxyCheck := flag.Bool("skip-proxy-check", false, "跳过代理健康检查")
 	flag.Parse()
+
+	// 加载配置
+	cfg := config.New()
+	// 设置 skipProxyCheck 到配置中
+	cfg.SetSkipProxyCheck(*skipProxyCheck)
 
 	// 如果指定了代理，设置环境变量
 	if *proxyURL != "" {
@@ -38,7 +42,7 @@ func main() {
 		log.Printf("使用代理: %s (类型: %s)", *proxyURL, *proxyType)
 
 		// 检查代理健康状态
-		if !*skipProxyCheck {
+		if !cfg.SkipProxyCheck() {
 			err := utils.CheckProxyHealth(*proxyURL, 5*time.Second)
 			if err != nil {
 				log.Printf("警告: 代理健康检查失败: %v", err)
@@ -51,16 +55,16 @@ func main() {
 
 	// 设置服务特定代理
 	if *openaiProxy != "" {
-		os.Setenv("OPENAI_PROXY_URL", *openaiProxy)
-		log.Printf("OpenAI使用专用代理: %s", *openaiProxy)
+		os.Setenv("AI_PROXY_URL", *openaiProxy)
+		log.Printf("AI使用专用代理: %s", *openaiProxy)
 
-		// 检查OpenAI专用代理健康状态
-		if !*skipProxyCheck {
+		// 检查AI专用代理健康状态
+		if !cfg.SkipProxyCheck() {
 			err := utils.CheckProxyHealth(*openaiProxy, 5*time.Second)
 			if err != nil {
-				log.Printf("警告: OpenAI代理健康检查失败: %v", err)
+				log.Printf("警告: AI代理健康检查失败: %v", err)
 			} else {
-				log.Printf("OpenAI代理健康检查通过")
+				log.Printf("AI代理健康检查通过")
 			}
 		}
 	}
@@ -69,7 +73,7 @@ func main() {
 		log.Printf("Google Maps使用专用代理: %s", *mapsProxy)
 
 		// 检查Maps专用代理健康状态
-		if !*skipProxyCheck {
+		if !cfg.SkipProxyCheck() {
 			err := utils.CheckProxyHealth(*mapsProxy, 5*time.Second)
 			if err != nil {
 				log.Printf("警告: Google Maps代理健康检查失败: %v", err)
@@ -79,17 +83,7 @@ func main() {
 		}
 	}
 
-	// 加载配置
-	cfg := config.New()
-
-	// 初始化 Redis 客户端
-	redisClient := redis.NewClient(&redis.Options{
-		Addr:     cfg.RedisAddress(),
-		Password: cfg.RedisPassword(),
-		DB:       0,
-	})
-
-	// 初始化 Redis 仓库
+	// 初始化 Redis 仓库 (this also initializes a redis client)
 	repo, err := repositories.NewRedisRepository(cfg)
 	if err != nil {
 		log.Fatalf("初始化仓库失败: %v", err)
@@ -122,7 +116,12 @@ func main() {
 
 	// 根据配置启用限流
 	if cfg.SecurityConfig().RateLimit.Enabled {
-		r.Use(api.RateLimitMiddleware(redisClient))
+		// Get Redis client from repository
+		redisClientForRateLimit := repo.GetRedisClient()
+		if redisClientForRateLimit == nil { // Should not happen if repo initialized correctly
+			log.Fatalf("无法从仓库获取Redis客户端用于限流")
+		}
+		r.Use(api.RateLimitMiddleware(redisClientForRateLimit))
 	}
 
 	r.Use(api.InputValidationMiddleware())
@@ -133,7 +132,7 @@ func main() {
 		// 检查代理状态
 		proxyStatus := "disabled"
 		if cfg.ProxyURL() != "" {
-			if !*skipProxyCheck {
+			if !cfg.SkipProxyCheck() {
 				err := utils.CheckProxyHealth(cfg.ProxyURL(), 2*time.Second)
 				if err != nil {
 					proxyStatus = "unhealthy"
@@ -153,7 +152,7 @@ func main() {
 				"proxy_enabled":      cfg.ProxyURL() != "",
 				"proxy_type":         os.Getenv("PROXY_TYPE"),
 				"proxy_status":       proxyStatus,
-				"openai_proxy":       os.Getenv("OPENAI_PROXY_URL") != "",
+				"ai_proxy":           os.Getenv("AI_PROXY_URL") != "",
 				"maps_proxy":         os.Getenv("MAPS_PROXY_URL") != "",
 			},
 		})
