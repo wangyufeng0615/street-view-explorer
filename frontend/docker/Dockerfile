@@ -12,14 +12,16 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # 验证并配置 yarn（Node.js 18 已自带 yarn）
-RUN yarn --version && yarn config set network-timeout 300000
+RUN yarn --version && \
+    yarn config set network-timeout 300000 && \
+    yarn config set registry https://registry.npmmirror.com
 
 # 复制 package.json 和 yarn.lock（如果存在）
 COPY package.json yarn.lock* ./
 
 # 测试网络连通性（检查 Yarn 仓库可访问性）
 RUN echo "Testing network connectivity to Yarn registry..." && \
-    curl -f --connect-timeout 10 --max-time 30 https://registry.yarnpkg.com/ && \
+    curl -f --connect-timeout 10 --max-time 30 https://registry.npmmirror.com/ && \
     echo "Network connectivity test passed!"
 
 # 安装依赖
