@@ -17,6 +17,9 @@ services:
         condition: service_started
       backend:
         condition: service_healthy
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
     restart: always
 
   backend:
@@ -33,6 +36,9 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
     restart: always
 
   frontend:
@@ -46,6 +52,9 @@ services:
       - ./frontend/.env
     volumes:
       - frontend_html:/app/html
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
     restart: always
 
   redis:
@@ -59,6 +68,9 @@ services:
       - redis_data:/data
     expose:
       - "6379"
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
     restart: always
 
 volumes:
