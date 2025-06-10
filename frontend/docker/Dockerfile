@@ -11,8 +11,8 @@ RUN apt-get update && apt-get install -y \
     git \
     && rm -rf /var/lib/apt/lists/*
 
-# 安装最新版本的 yarn
-RUN npm install -g yarn@latest
+# 检查 yarn 版本（node:18-bullseye 自带 yarn）
+RUN yarn --version
 
 # 复制 package.json 和 yarn.lock（如果存在）
 COPY package.json yarn.lock* ./
