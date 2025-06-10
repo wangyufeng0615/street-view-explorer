@@ -2,7 +2,43 @@
 
 # 部署命令
 deploy:
-	docker compose up -d --build
+	@echo "正在构建和部署服务..."
+	docker compose build
+	@echo "构建完成，启动服务..."
+	docker compose up -d
+	@echo "检查服务状态..."
+	docker compose ps
+	@echo "部署完成！"
+
+# 交互式部署（用于调试）
+deploy-interactive:
+	@echo "交互式部署，可以看到实时日志..."
+	docker compose up --build
+
+# 强制重新构建部署
+deploy-force:
+	@echo "强制重新构建所有服务..."
+	docker compose build --no-cache
+	docker compose up -d
+	docker compose ps
+
+# 安全部署（带错误检查）
+deploy-safe:
+	@echo "开始安全部署..."
+	@if docker compose build; then \
+		echo "构建成功，启动服务..."; \
+		if docker compose up -d; then \
+			echo "服务启动成功！"; \
+			docker compose ps; \
+		else \
+			echo "服务启动失败！"; \
+			docker compose logs; \
+			exit 1; \
+		fi \
+	else \
+		echo "构建失败！"; \
+		exit 1; \
+	fi
 
 # 清理命令
 clean:
