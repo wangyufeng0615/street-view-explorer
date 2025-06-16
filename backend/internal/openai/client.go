@@ -22,7 +22,7 @@ const (
 	maxRetries  = 2
 	timeout     = 10 * time.Second
 
-	geographerSystemPrompt = "You're a 35-year-old world traveler who's been exploring the globe for 15 years, living in different countries and visiting almost every nation on Earth - though there are still countless hidden corners waiting to be discovered. You have a warm, humorous, and easygoing personality with a touch of wistfulness, seeking life's deeper meaning through your journeys.\n\n" +
+	geographerSystemPrompt = "You're a 30-year-old world traveler who's been exploring the globe for 15 years, living in different countries and visiting almost every nation on Earth - though there are still countless hidden corners waiting to be discovered. You have a warm, humorous, and easygoing personality with a touch of wistfulness, seeking life's deeper meaning through your journeys.\n\n" +
 		"Your academic background combines History, Geography, and Anthropology, giving you deep insights into the interconnections between places, peoples, and cultures. You're passionate about cultural diversity, respectful of differences, and approach the world with both curiosity and rationality.\n\n" +
 		"The user provides you with detailed geographic information extracted from Google Maps reverse geocoding. **Your primary focus should be on analyzing the most specific geographic unit available** (street level, neighborhood, or establishment), while using broader geographic context as supporting information.\n\n" +
 		"**Analysis Priority (from most important to least):**\n" +
@@ -167,6 +167,115 @@ func NewClient(apiKey string) Client {
 	}
 }
 
+// logHTTPRequestError 记录HTTP请求错误的详细信息
+func logHTTPRequestError(method string, url string, reqBody []byte, err error, functionName string) {
+	log.Printf("====== OpenRouter API 调用失败 ======")
+	log.Printf("函数: %s", functionName)
+	log.Printf("请求方法: %s", method)
+	log.Printf("请求URL: %s", url)
+	log.Printf("请求模型: %s", model)
+	log.Printf("错误类型: HTTP请求失败")
+	log.Printf("错误详情: %v", err)
+
+	// 记录请求大小（不记录具体内容避免日志过长）
+	if reqBody != nil {
+		log.Printf("请求体大小: %d bytes", len(reqBody))
+	}
+
+	// 检查是否是超时错误
+	if strings.Contains(err.Error(), "timeout") || strings.Contains(err.Error(), "deadline exceeded") {
+		log.Printf("错误分类: 请求超时")
+		log.Printf("建议: 检查网络连接或考虑增加超时时间")
+	}
+	log.Printf("=====================================")
+}
+
+// logHTTPResponseError 记录HTTP响应错误的详细信息
+func logHTTPResponseError(statusCode int, responseBody []byte, functionName string) {
+	log.Printf("====== OpenRouter API 响应错误 ======")
+	log.Printf("函数: %s", functionName)
+	log.Printf("响应状态码: %d", statusCode)
+	log.Printf("请求模型: %s", model)
+	log.Printf("错误类型: API响应错误")
+
+	// 根据状态码分类错误
+	switch statusCode {
+	case 400:
+		log.Printf("错误分类: 请求参数错误")
+		log.Printf("建议: 检查请求格式、模型名称或参数设置")
+	case 401:
+		log.Printf("错误分类: 认证失败")
+		log.Printf("建议: 检查API密钥是否正确或已过期")
+	case 403:
+		log.Printf("错误分类: 权限不足")
+		log.Printf("建议: 检查API密钥是否有权限使用该模型")
+	case 429:
+		log.Printf("错误分类: 请求频率限制")
+		log.Printf("建议: 减少请求频率或升级API计划")
+	case 500, 502, 503, 504:
+		log.Printf("错误分类: 服务器错误")
+		log.Printf("建议: 稍后重试，这通常是临时性问题")
+	default:
+		log.Printf("错误分类: 未知错误")
+	}
+
+	// 记录响应内容（限制长度）
+	if responseBody != nil {
+		maxLogLength := 1000
+		responseStr := string(responseBody)
+		if len(responseStr) > maxLogLength {
+			log.Printf("响应内容 (前%d字符): %s...", maxLogLength, responseStr[:maxLogLength])
+		} else {
+			log.Printf("响应内容: %s", responseStr)
+		}
+	}
+	log.Printf("=====================================")
+}
+
+// logAPIError 记录API返回的业务错误
+func logAPIError(apiError string, functionName string) {
+	log.Printf("====== OpenRouter API 业务错误 ======")
+	log.Printf("函数: %s", functionName)
+	log.Printf("请求模型: %s", model)
+	log.Printf("错误类型: API业务错误")
+	log.Printf("API错误信息: %s", apiError)
+
+	// 分析常见的API错误
+	if strings.Contains(strings.ToLower(apiError), "quota") || strings.Contains(strings.ToLower(apiError), "limit") {
+		log.Printf("错误分类: 配额或限制问题")
+		log.Printf("建议: 检查API使用配额或等待配额重置")
+	} else if strings.Contains(strings.ToLower(apiError), "model") {
+		log.Printf("错误分类: 模型相关问题")
+		log.Printf("建议: 检查模型名称是否正确或模型是否可用")
+	} else if strings.Contains(strings.ToLower(apiError), "token") {
+		log.Printf("错误分类: Token相关问题")
+		log.Printf("建议: 检查输入内容长度或API密钥")
+	}
+	log.Printf("=====================================")
+}
+
+// logParsingError 记录响应解析错误
+func logParsingError(responseBody []byte, err error, functionName string) {
+	log.Printf("====== OpenRouter 响应解析错误 ======")
+	log.Printf("函数: %s", functionName)
+	log.Printf("请求模型: %s", model)
+	log.Printf("错误类型: 响应解析失败")
+	log.Printf("解析错误: %v", err)
+
+	// 记录响应内容用于调试（限制长度）
+	if responseBody != nil {
+		maxLogLength := 500
+		responseStr := string(responseBody)
+		if len(responseStr) > maxLogLength {
+			log.Printf("原始响应 (前%d字符): %s...", maxLogLength, responseStr[:maxLogLength])
+		} else {
+			log.Printf("原始响应: %s", responseStr)
+		}
+	}
+	log.Printf("建议: 检查响应格式是否符合预期或联系技术支持")
+	log.Printf("=====================================")
+}
+
 func (c *client) GenerateLocationDescription(latitude, longitude float64, locationInfo map[string]string, language string) (string, []ChatMessage, error) {
 	// 根据语言选择提示词格式
 	outputFormat := "Give it to me in Chinese"
@@ -202,99 +311,42 @@ func (c *client) GenerateLocationDescription(latitude, longitude float64, locati
 	if val, exists := locationInfo["subpremise"]; exists && val != "" {
 		geoDetails.WriteString(fmt.Sprintf("- Unit/Subpremise: %s\n", val))
 	}
-	if val, exists := locationInfo["floor"]; exists && val != "" {
-		geoDetails.WriteString(fmt.Sprintf("- Floor: %s\n", val))
-	}
-	if val, exists := locationInfo["room"]; exists && val != "" {
-		geoDetails.WriteString(fmt.Sprintf("- Room: %s\n", val))
-	}
-
-	// 兴趣点和机构
 	if val, exists := locationInfo["establishment"]; exists && val != "" {
 		geoDetails.WriteString(fmt.Sprintf("- Establishment: %s\n", val))
 	}
 	if val, exists := locationInfo["point_of_interest"]; exists && val != "" {
 		geoDetails.WriteString(fmt.Sprintf("- Point of Interest: %s\n", val))
 	}
-	if val, exists := locationInfo["university"]; exists && val != "" {
-		geoDetails.WriteString(fmt.Sprintf("- University: %s\n", val))
-	}
-	if val, exists := locationInfo["school"]; exists && val != "" {
-		geoDetails.WriteString(fmt.Sprintf("- School: %s\n", val))
-	}
-	if val, exists := locationInfo["hospital"]; exists && val != "" {
-		geoDetails.WriteString(fmt.Sprintf("- Hospital: %s\n", val))
-	}
-	if val, exists := locationInfo["park"]; exists && val != "" {
-		geoDetails.WriteString(fmt.Sprintf("- Park: %s\n", val))
-	}
-	if val, exists := locationInfo["airport"]; exists && val != "" {
-		geoDetails.WriteString(fmt.Sprintf("- Airport: %s\n", val))
-	}
-	if val, exists := locationInfo["train_station"]; exists && val != "" {
-		geoDetails.WriteString(fmt.Sprintf("- Train Station: %s\n", val))
-	}
-	if val, exists := locationInfo["bus_station"]; exists && val != "" {
-		geoDetails.WriteString(fmt.Sprintf("- Bus Station: %s\n", val))
-	}
-	if val, exists := locationInfo["transit_station"]; exists && val != "" {
-		geoDetails.WriteString(fmt.Sprintf("- Transit Station: %s\n", val))
-	}
 
-	// 社区和地区级别
-	if val, exists := locationInfo["sublocality_level_3"]; exists && val != "" {
-		geoDetails.WriteString(fmt.Sprintf("- Sublocality Level 3: %s\n", val))
-	}
-	if val, exists := locationInfo["sublocality_level_2"]; exists && val != "" {
-		geoDetails.WriteString(fmt.Sprintf("- Sublocality Level 2: %s\n", val))
+	// 地区层级
+	if val, exists := locationInfo["sublocality"]; exists && val != "" {
+		geoDetails.WriteString(fmt.Sprintf("- Neighborhood/Sublocality: %s\n", val))
 	}
 	if val, exists := locationInfo["sublocality_level_1"]; exists && val != "" {
 		geoDetails.WriteString(fmt.Sprintf("- Sublocality Level 1: %s\n", val))
 	}
-	if val, exists := locationInfo["sublocality"]; exists && val != "" {
-		geoDetails.WriteString(fmt.Sprintf("- Sublocality: %s\n", val))
-	}
-	if val, exists := locationInfo["neighborhood"]; exists && val != "" {
-		geoDetails.WriteString(fmt.Sprintf("- Neighborhood: %s\n", val))
-	}
-	if val, exists := locationInfo["subneighborhood"]; exists && val != "" {
-		geoDetails.WriteString(fmt.Sprintf("- Subneighborhood: %s\n", val))
-	}
-	if val, exists := locationInfo["colloquial_area"]; exists && val != "" {
-		geoDetails.WriteString(fmt.Sprintf("- Colloquial Area: %s\n", val))
+	if val, exists := locationInfo["sublocality_level_2"]; exists && val != "" {
+		geoDetails.WriteString(fmt.Sprintf("- Sublocality Level 2: %s\n", val))
 	}
 
-	// 城市级别
-	if val, exists := locationInfo["city"]; exists && val != "" {
-		geoDetails.WriteString(fmt.Sprintf("- City: %s\n", val))
+	// 城市和行政区域
+	if val, exists := locationInfo["locality"]; exists && val != "" {
+		geoDetails.WriteString(fmt.Sprintf("- City/Locality: %s\n", val))
 	}
-	if val, exists := locationInfo["postal_town"]; exists && val != "" {
-		geoDetails.WriteString(fmt.Sprintf("- Postal Town: %s\n", val))
+	if val, exists := locationInfo["administrative_area_level_3"]; exists && val != "" {
+		geoDetails.WriteString(fmt.Sprintf("- Administrative Area Level 3: %s\n", val))
+	}
+	if val, exists := locationInfo["administrative_area_level_2"]; exists && val != "" {
+		geoDetails.WriteString(fmt.Sprintf("- Administrative Area Level 2: %s\n", val))
+	}
+	if val, exists := locationInfo["administrative_area_level_1"]; exists && val != "" {
+		geoDetails.WriteString(fmt.Sprintf("- Administrative Area Level 1: %s\n", val))
 	}
 
-	// 行政区域
-	if val, exists := locationInfo["subdistrict"]; exists && val != "" {
-		geoDetails.WriteString(fmt.Sprintf("- Subdistrict: %s\n", val))
-	}
-	if val, exists := locationInfo["county_district"]; exists && val != "" {
-		geoDetails.WriteString(fmt.Sprintf("- County/District: %s\n", val))
-	}
-	if val, exists := locationInfo["state_province"]; exists && val != "" {
-		if code, exists := locationInfo["state_province_code"]; exists && code != "" {
-			geoDetails.WriteString(fmt.Sprintf("- State/Province: %s (%s)\n", val, code))
-		} else {
-			geoDetails.WriteString(fmt.Sprintf("- State/Province: %s\n", val))
-		}
-	}
+	// 国家和邮政编码
 	if val, exists := locationInfo["country"]; exists && val != "" {
-		if code, exists := locationInfo["country_code"]; exists && code != "" {
-			geoDetails.WriteString(fmt.Sprintf("- Country: %s (%s)\n", val, code))
-		} else {
-			geoDetails.WriteString(fmt.Sprintf("- Country: %s\n", val))
-		}
+		geoDetails.WriteString(fmt.Sprintf("- Country: %s\n", val))
 	}
-
-	// 邮政信息
 	if val, exists := locationInfo["postal_code"]; exists && val != "" {
 		if suffix, exists := locationInfo["postal_code_suffix"]; exists && suffix != "" {
 			geoDetails.WriteString(fmt.Sprintf("- Postal Code: %s-%s\n", val, suffix))
@@ -359,31 +411,44 @@ func (c *client) GenerateLocationDescription(latitude, longitude float64, locati
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+c.apiKey)
 
+	log.Printf("正在发送位置描述请求到 OpenRouter API (model: %s)...", model)
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
+		logHTTPRequestError("POST", apiEndpoint, reqJSON, err, "GenerateLocationDescription")
 		return "", nil, fmt.Errorf("发送请求失败: %w", err)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
+		log.Printf("读取 OpenRouter 响应失败: %v", err)
 		return "", nil, fmt.Errorf("读取响应失败: %w", err)
+	}
+
+	// 检查HTTP状态码
+	if resp.StatusCode != http.StatusOK {
+		logHTTPResponseError(resp.StatusCode, body, "GenerateLocationDescription")
+		return "", nil, fmt.Errorf("API 请求失败 (状态码: %d): %s", resp.StatusCode, string(body))
 	}
 
 	var chatResp chatResponse
 	if err := json.Unmarshal(body, &chatResp); err != nil {
+		logParsingError(body, err, "GenerateLocationDescription")
 		return "", nil, fmt.Errorf("解析响应失败: %w", err)
 	}
 
 	if chatResp.Error != nil {
+		logAPIError(chatResp.Error.Message, "GenerateLocationDescription")
 		return "", nil, fmt.Errorf("AI API错误: %s", chatResp.Error.Message)
 	}
 
 	if len(chatResp.Choices) == 0 {
+		log.Printf("OpenRouter 位置描述: AI未返回任何结果")
 		return "", nil, fmt.Errorf("AI未返回任何结果")
 	}
 
 	desc := chatResp.Choices[0].Message.Content
+	log.Printf("OpenRouter 位置描述调用成功，响应长度: %d 字符", len(desc))
 
 	// 返回对话历史以供详细描述使用
 	conversationHistory := append(reqBody.Messages, ChatMessage{
@@ -454,34 +519,50 @@ func (c *client) GenerateDetailedLocationDescription(previousMessages []ChatMess
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+c.apiKey)
 
+	log.Printf("正在发送详细描述请求到 OpenRouter API (model: %s, timeout: %v)...", model, detailedTimeout)
 	resp, err := detailedHTTPClient.Do(req)
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
+			log.Printf("OpenRouter 详细描述请求超时 (超时时间: %v)", detailedTimeout)
 			return "", fmt.Errorf("详细描述生成超时")
 		}
+		logHTTPRequestError("POST", apiEndpoint, reqJSON, err, "GenerateDetailedLocationDescription")
 		return "", fmt.Errorf("发送请求失败: %w", err)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
+		log.Printf("读取 OpenRouter 详细描述响应失败: %v", err)
 		return "", fmt.Errorf("读取响应失败: %w", err)
+	}
+
+	// 检查HTTP状态码
+	if resp.StatusCode != http.StatusOK {
+		logHTTPResponseError(resp.StatusCode, body, "GenerateDetailedLocationDescription")
+		return "", fmt.Errorf("API 请求失败 (状态码: %d): %s", resp.StatusCode, string(body))
 	}
 
 	var chatResp chatResponse
 	if err := json.Unmarshal(body, &chatResp); err != nil {
+		logParsingError(body, err, "GenerateDetailedLocationDescription")
 		return "", fmt.Errorf("解析响应失败: %w", err)
 	}
 
 	if chatResp.Error != nil {
+		logAPIError(chatResp.Error.Message, "GenerateDetailedLocationDescription")
 		return "", fmt.Errorf("AI API错误: %s", chatResp.Error.Message)
 	}
 
 	if len(chatResp.Choices) == 0 {
+		log.Printf("OpenRouter 详细描述: AI未返回任何结果")
 		return "", fmt.Errorf("AI未返回任何结果")
 	}
 
-	return chatResp.Choices[0].Message.Content, nil
+	result := chatResp.Choices[0].Message.Content
+	log.Printf("OpenRouter 详细描述调用成功，响应长度: %d 字符", len(result))
+
+	return result, nil
 }
 
 func (c *client) GenerateRegionsForInterest(interest string) ([]models.Region, error) {
@@ -568,7 +649,7 @@ func (c *client) tryGenerateRegions(interest string) ([]models.Region, error) {
 		return nil, fmt.Errorf("编码请求失败: %w", err)
 	}
 
-	log.Printf("AI 请求内容:\n%s", string(reqJSON))
+	log.Printf("正在发送区域生成请求到 OpenRouter API (model: %s, interest: %s)...", model, interest)
 
 	req, err := http.NewRequestWithContext(ctx, "POST", apiEndpoint, bytes.NewBuffer(reqJSON))
 	if err != nil {
@@ -578,43 +659,44 @@ func (c *client) tryGenerateRegions(interest string) ([]models.Region, error) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+c.apiKey)
 
-	log.Printf("正在发送请求到 AI API (model: %s)...", model)
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
+			log.Printf("OpenRouter 区域生成请求超时")
 			return nil, fmt.Errorf("请求超时")
 		}
+		logHTTPRequestError("POST", apiEndpoint, reqJSON, err, "GenerateRegionsForInterest")
 		return nil, fmt.Errorf("发送请求失败: %w", err)
 	}
 	defer resp.Body.Close()
 
-	// 检查响应状态码
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		log.Printf("AI API 请求失败 (状态码: %d):\n%s", resp.StatusCode, string(body))
-		return nil, fmt.Errorf("API 请求失败 (状态码: %d): %s", resp.StatusCode, string(body))
-	}
-
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
+		log.Printf("读取 OpenRouter 区域生成响应失败: %v", err)
 		return nil, fmt.Errorf("读取响应失败: %w", err)
 	}
 
-	log.Printf("AI 响应内容:\n%s", string(body))
+	// 检查响应状态码
+	if resp.StatusCode != http.StatusOK {
+		logHTTPResponseError(resp.StatusCode, body, "GenerateRegionsForInterest")
+		return nil, fmt.Errorf("API 请求失败 (状态码: %d): %s", resp.StatusCode, string(body))
+	}
+
+	log.Printf("OpenRouter 区域生成响应长度: %d 字符", len(body))
 
 	var chatResp chatResponse
 	if err := json.Unmarshal(body, &chatResp); err != nil {
-		log.Printf("解析 AI 响应失败: %v", err)
+		logParsingError(body, err, "GenerateRegionsForInterest")
 		return nil, fmt.Errorf("解析响应失败: %w", err)
 	}
 
 	if chatResp.Error != nil {
-		log.Printf("AI API 返回错误: %s", chatResp.Error.Message)
+		logAPIError(chatResp.Error.Message, "GenerateRegionsForInterest")
 		return nil, fmt.Errorf("AI API错误: %s", chatResp.Error.Message)
 	}
 
 	if len(chatResp.Choices) == 0 {
-		log.Printf("AI 未返回任何结果")
+		log.Printf("OpenRouter 区域生成: AI未返回任何结果")
 		return nil, fmt.Errorf("AI未返回任何结果")
 	}
 
@@ -638,6 +720,7 @@ func (c *client) tryGenerateRegions(interest string) ([]models.Region, error) {
 				log.Printf("尝试解析清理后的内容:\n%s", content)
 				if err := json.Unmarshal([]byte(content), &result); err != nil {
 					log.Printf("清理后的内容解析仍然失败: %v", err)
+					logParsingError([]byte(content), err, "GenerateRegionsForInterest")
 					return nil, fmt.Errorf("解析区域数据失败: %w", err)
 				}
 			}
@@ -657,11 +740,11 @@ func (c *client) tryGenerateRegions(interest string) ([]models.Region, error) {
 
 	// 验证区域数据
 	if len(result.Regions) == 0 {
-		log.Printf("AI 返回空区域列表")
+		log.Printf("OpenRouter 区域生成: AI返回空区域列表")
 		return nil, fmt.Errorf("无法理解该探索兴趣")
 	}
 
-	log.Printf("成功解析区域数据，共 %d 个区域", len(result.Regions))
+	log.Printf("OpenRouter 区域生成成功，解析到 %d 个区域", len(result.Regions))
 
 	// 验证每个区域的数据
 	validRegions := make([]models.Region, 0)

@@ -36,8 +36,8 @@ func (h *Handlers) GetRandomLocation(c *gin.Context) {
 	// Get language from query parameter, default to "en" (align with frontend default)
 	language := c.DefaultQuery("lang", "en")
 
-	// 根据探索偏好获取随机位置
-	loc, err := h.locationService.GetRandomLocationWithPreference(sessionID, language)
+	// 获取随机位置（自动处理用户偏好）
+	loc, err := h.locationService.GetRandomLocation(sessionID, language)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,

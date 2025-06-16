@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"os"
 
-	"github.com/my-streetview-project/backend/internal/utils"
 	"googlemaps.github.io/maps"
 )
 
@@ -203,17 +202,6 @@ func (s *MapsService) HasStreetView(ctx context.Context, latitude, longitude flo
 	}
 
 	return false, 0, 0, ""
-}
-
-// 生成有效的随机坐标（确保有街景可用）
-func (s *MapsService) GenerateValidLocation(ctx context.Context) (latitude, longitude float64, panoId string, err error) {
-	randomLat, randomLng := utils.GenerateRandomCoordinate()
-
-	if hasStreetView, streetViewLat, streetViewLng, panoId := s.HasStreetView(ctx, randomLat, randomLng, false); hasStreetView {
-		return streetViewLat, streetViewLng, panoId, nil
-	}
-
-	return 0, 0, "", fmt.Errorf("该位置没有可用的街景")
 }
 
 func (s *MapsService) GetLocationInfo(ctx context.Context, latitude, longitude float64, language string) (map[string]string, error) {

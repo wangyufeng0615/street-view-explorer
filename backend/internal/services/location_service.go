@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"log"
 	"math"
 	"time"
 
@@ -29,75 +30,59 @@ func (ls *LocationService) GetLocation(panoID string) (models.Location, error) {
 	return ls.repo.GetLocationByPanoID(panoID)
 }
 
-func (ls *LocationService) GetRandomLocation(language string) (models.Location, error) {
-	ctx := context.Background()
-	// 生成随机有效坐标
-	lat, lng, panoId, err := ls.maps.GenerateValidLocation(ctx)
-	if err != nil {
-		return models.Location{}, fmt.Errorf("生成有效坐标失败: %w", err)
+// GetRandomLocation 获取随机位置，支持用户偏好
+// 如果 sessionID 为空，则使用默认的全球随机生成
+func (ls *LocationService) GetRandomLocation(sessionID string, language string) (models.Location, error) {
+	var regions []models.Region
+
+	// 如果提供了 sessionID，尝试获取用户的探索偏好
+	if sessionID != "" {
+		pref, err := ls.repo.GetExplorationPreference(sessionID)
+		if err != nil {
+			return models.Location{}, fmt.Errorf("获取探索偏好失败: %w", err)
+		}
+
+		// 如果有探索偏好，使用用户偏好区域
+		if pref != nil {
+			regions = pref.Regions
+
+			// 更新最后使用时间
+			pref.LastUsedAt = time.Now()
+			if err := ls.repo.SaveExplorationPreference(sessionID, *pref); err != nil {
+				return models.Location{}, fmt.Errorf("更新探索偏好使用时间失败: %w", err)
+			}
+		}
 	}
 
-	// 获取位置信息, pass language
-	locationInfo, err := ls.maps.GetLocationInfo(ctx, lat, lng, language)
-	if err != nil {
-		return models.Location{}, fmt.Errorf("获取位置信息失败: %w", err)
-	}
-
-	// 创建新的位置记录
-	loc := models.Location{
-		PanoID:           panoId,
-		Latitude:         lat,
-		Longitude:        lng,
-		FormattedAddress: locationInfo["formatted_address"],
-		Country:          locationInfo["country"],
-		City:             locationInfo["city"],
-		CreatedAt:        time.Now(),
-		IsMock:           false,
-	}
-
-	// 保存位置信息
-	if err := ls.repo.SaveLocation(loc); err != nil {
-		return models.Location{}, fmt.Errorf("保存位置信息失败: %w", err)
-	}
-
-	return loc, nil
+	// 生成随机位置（regions 为 nil 时使用默认全球区域）
+	return ls.generateRandomLocation(regions, language)
 }
 
-// GetRandomLocationWithPreference 根据用户的探索偏好获取随机位置
-func (ls *LocationService) GetRandomLocationWithPreference(sessionID string, language string) (models.Location, error) {
+// generateRandomLocation 统一的随机位置生成逻辑
+// regions 为 nil 时使用默认大陆区域，否则使用用户偏好区域
+// 依赖 HasStreetView 的智能渐进式搜索策略（小范围→大范围）
+func (ls *LocationService) generateRandomLocation(regions []models.Region, language string) (models.Location, error) {
 	ctx := context.Background()
 
-	// 获取用户的探索偏好
-	pref, err := ls.repo.GetExplorationPreference(sessionID)
-	if err != nil {
-		return models.Location{}, fmt.Errorf("获取探索偏好失败: %w", err)
-	}
+	// 生成随机坐标
+	lat, lng := utils.GenerateRandomCoordinate(regions)
+	log.Printf("生成随机坐标：(%.6f, %.6f)", lat, lng)
 
-	// 如果没有探索偏好，使用默认的随机生成, pass language
-	if pref == nil {
-		return ls.GetRandomLocation(language)
-	}
-
-	// 从偏好区域生成随机坐标
-	lat, lng := utils.GenerateRandomCoordinateFromRegions(pref.Regions)
-
-	// 验证坐标是否有街景
-	hasStreetView, validLat, validLng, panoId := ls.maps.HasStreetView(ctx, lat, lng, true)
+	// 使用 HasStreetView 的渐进式搜索策略
+	// 它会自动从小范围到大范围搜索街景，大大提高成功率
+	hasStreetView, validLat, validLng, panoId := ls.maps.HasStreetView(ctx, lat, lng, regions != nil)
 	if !hasStreetView {
-		// 如果没有街景，递归重试, pass language
-		return ls.GetRandomLocationWithPreference(sessionID, language)
+		log.Printf("坐标 (%.6f, %.6f) 在所有搜索半径内都没有街景", lat, lng)
+		return models.Location{}, fmt.Errorf("坐标 (%.6f, %.6f) 附近没有可用的街景", lat, lng)
 	}
 
-	// 获取位置信息, pass language
+	log.Printf("找到街景 - 原始坐标 (%.6f, %.6f)，街景坐标 (%.6f, %.6f)",
+		lat, lng, validLat, validLng)
+
+	// 获取位置信息
 	locationInfo, err := ls.maps.GetLocationInfo(ctx, validLat, validLng, language)
 	if err != nil {
 		return models.Location{}, fmt.Errorf("获取位置信息失败: %w", err)
-	}
-
-	// 更新最后使用时间
-	pref.LastUsedAt = time.Now()
-	if err := ls.repo.SaveExplorationPreference(sessionID, *pref); err != nil {
-		return models.Location{}, fmt.Errorf("更新探索偏好使用时间失败: %w", err)
 	}
 
 	// 创建位置记录
@@ -109,6 +94,7 @@ func (ls *LocationService) GetRandomLocationWithPreference(sessionID string, lan
 		City:             locationInfo["city"],
 		FormattedAddress: locationInfo["formatted_address"],
 		CreatedAt:        time.Now(),
+		IsMock:           false,
 	}
 
 	// 保存位置记录
@@ -116,6 +102,8 @@ func (ls *LocationService) GetRandomLocationWithPreference(sessionID string, lan
 		return models.Location{}, fmt.Errorf("保存位置记录失败: %w", err)
 	}
 
+	log.Printf("成功生成随机位置：%s (%.6f, %.6f)",
+		location.FormattedAddress, location.Latitude, location.Longitude)
 	return location, nil
 }
 
