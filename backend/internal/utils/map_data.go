@@ -14,8 +14,8 @@ import (
 )
 
 const (
-	// 世界地图数据URL - 使用Natural Earth 1:10m高精度国家数据
-	WorldMapURL = "https://raw.githubusercontent.com/martynafford/natural-earth-geojson/master/10m/cultural/ne_10m_admin_0_countries.geojson"
+	// 世界地图数据URL - 使用Natural Earth 1:10m高精度国家数据（官方仓库）
+	WorldMapURL = "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_admin_0_countries.geojson"
 	// 小型岛屿数据URL - 使用Natural Earth 1:10m小型岛屿数据
 	MinorIslandsURL = "https://raw.githubusercontent.com/martynafford/natural-earth-geojson/master/10m/physical/ne_10m_minor_islands.json"
 	// 本地存储路径
