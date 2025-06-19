@@ -102,4 +102,6 @@ coverage/
 .DS_Store
 Thumbs.db
 
+# Go 可执行文件
+backend/cmd/server/server
 backend/server

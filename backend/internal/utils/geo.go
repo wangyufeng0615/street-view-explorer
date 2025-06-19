@@ -294,30 +294,45 @@ func getRegionHeight(region Region) float64 {
 
 // GenerateRandomCoordinate 统一的随机坐标生成函数
 // 支持随机场景（regions为nil或空）和用户偏好场景（传入regions）
+// 移除边界框回退机制，确保坐标在真实陆地多边形内
 func GenerateRandomCoordinate(regions []models.Region) (latitude, longitude float64) {
 	// 选择区域源（用户偏好区域 or 自然地理区域）
 	selectedRegions := selectRegionSource(regions)
 
-	// 随机选择一个区域
-	region := selectRandomRegion(selectedRegions)
+	// 最多尝试10次选择不同区域
+	const maxRegionAttempts = 10
 
-	// 尝试在实际多边形内生成坐标
-	if len(region.Polygons) > 0 {
-		// 随机选择一个多边形（对于MultiPolygon情况）
-		polygon := region.Polygons[rng.Intn(len(region.Polygons))]
+	for regionAttempt := 0; regionAttempt < maxRegionAttempts; regionAttempt++ {
+		// 随机选择一个区域
+		region := selectRandomRegion(selectedRegions)
 
-		// 在多边形内生成坐标，最多尝试100次
-		lat, lng, success := generateCoordinateInPolygon(polygon, 100)
-		if success {
-			return lat, lng
+		// 尝试在实际多边形内生成坐标
+		if len(region.Polygons) > 0 {
+			// 随机选择一个多边形（对于MultiPolygon情况）
+			polygon := region.Polygons[rng.Intn(len(region.Polygons))]
+
+			// 在多边形内生成坐标，增加尝试次数到500次
+			lat, lng, success := generateCoordinateInPolygon(polygon, 500)
+			if success {
+				return lat, lng
+			}
+
+			// 如果当前多边形失败，尝试该区域的其他多边形
+			for _, otherPolygon := range region.Polygons {
+				if &otherPolygon != &polygon { // 避免重复尝试同一个多边形
+					lat, lng, success := generateCoordinateInPolygon(otherPolygon, 300)
+					if success {
+						return lat, lng
+					}
+				}
+			}
 		}
-
-		// 如果失败，记录警告并回退到边界框方法
-		log.Printf("警告：在多边形内生成坐标失败，回退到边界框方法")
 	}
 
-	// 回退到边界框内生成随机坐标
-	return generateCoordinateInBounds(region.North, region.South, region.East, region.West)
+	// 如果所有尝试都失败，记录警告并返回一个默认坐标（这种情况极少发生）
+	log.Printf("警告：所有多边形内坐标生成尝试都失败，使用默认坐标")
+	// 返回一个相对安全的默认坐标（中国北京附近）
+	return 39.9042, 116.4074
 }
 
 // selectRegionSource 选择区域源
@@ -327,14 +342,27 @@ func selectRegionSource(userRegions []models.Region) []Region {
 		// 将用户区域转换为内部Region格式
 		regions := make([]Region, len(userRegions))
 		for i, userRegion := range userRegions {
+			// 为用户区域创建简单的矩形多边形
+			rectPolygon := orb.Polygon{
+				orb.Ring{
+					orb.Point{userRegion.Coordinates.West, userRegion.Coordinates.South}, // 左下
+					orb.Point{userRegion.Coordinates.East, userRegion.Coordinates.South}, // 右下
+					orb.Point{userRegion.Coordinates.East, userRegion.Coordinates.North}, // 右上
+					orb.Point{userRegion.Coordinates.West, userRegion.Coordinates.North}, // 左上
+					orb.Point{userRegion.Coordinates.West, userRegion.Coordinates.South}, // 闭合
+				},
+			}
+
 			regions[i] = Region{
 				North:         userRegion.Coordinates.North,
 				South:         userRegion.Coordinates.South,
 				East:          userRegion.Coordinates.East,
 				West:          userRegion.Coordinates.West,
-				IsMinorIsland: false, // 用户定义的区域默认不是小型岛屿
+				Polygons:      []orb.Polygon{rectPolygon}, // 添加矩形多边形
+				IsMinorIsland: false,                      // 用户定义的区域默认不是小型岛屿
 			}
 		}
+		log.Printf("转换了 %d 个用户偏好区域，每个区域都包含矩形多边形", len(regions))
 		return regions
 	}
 
@@ -410,6 +438,7 @@ func generateCoordinateInBounds(north, south, east, west float64) (latitude, lon
 }
 
 // pointInPolygon 判断点是否在多边形内（射线法）
+// 支持有洞的多边形，正确处理外环和内环
 func pointInPolygon(lat, lng float64, polygon orb.Polygon) bool {
 	if len(polygon) == 0 || len(polygon[0]) == 0 {
 		return false
@@ -419,10 +448,34 @@ func pointInPolygon(lat, lng float64, polygon orb.Polygon) bool {
 	// 从点向右发射一条射线，计算与多边形边的交点数
 	// 奇数个交点表示在内部，偶数个交点表示在外部
 
-	inside := false
-	ring := polygon[0] // 使用外环进行判断
+	// 首先判断是否在外环内
+	inside := pointInRing(lat, lng, polygon[0])
 
+	// 如果不在外环内，直接返回false
+	if !inside {
+		return false
+	}
+
+	// 如果在外环内，检查是否在任何内环（洞）内
+	// 如果在内环内，则实际上不在多边形内
+	for i := 1; i < len(polygon); i++ {
+		if pointInRing(lat, lng, polygon[i]) {
+			return false // 在洞内，所以不在多边形内
+		}
+	}
+
+	return true // 在外环内且不在任何洞内
+}
+
+// pointInRing 判断点是否在环内（射线法）
+func pointInRing(lat, lng float64, ring orb.Ring) bool {
+	if len(ring) == 0 {
+		return false
+	}
+
+	inside := false
 	j := len(ring) - 1
+
 	for i := 0; i < len(ring); i++ {
 		xi, yi := ring[i][0], ring[i][1]
 		xj, yj := ring[j][0], ring[j][1]
@@ -439,6 +492,7 @@ func pointInPolygon(lat, lng float64, polygon orb.Polygon) bool {
 }
 
 // generateCoordinateInPolygon 在多边形内生成随机坐标
+// 移除边界框回退机制，只返回真正在多边形内的坐标
 func generateCoordinateInPolygon(polygon orb.Polygon, maxAttempts int) (latitude, longitude float64, success bool) {
 	if len(polygon) == 0 || len(polygon[0]) == 0 {
 		return 0, 0, false
@@ -460,10 +514,8 @@ func generateCoordinateInPolygon(polygon orb.Polygon, maxAttempts int) (latitude
 		}
 	}
 
-	// 如果多次尝试都失败，回退到边界框内的随机点
-	lat := bounds.South + rng.Float64()*(bounds.North-bounds.South)
-	lng := bounds.West + rng.Float64()*(bounds.East-bounds.West)
-	return lat, lng, false
+	// 如果多次尝试都失败，返回失败状态而不是边界框坐标
+	return 0, 0, false
 }
 
 // CalculateDistance 计算两个坐标点之间的距离（单位：公里）

@@ -13,7 +13,8 @@ const TopBar = memo(function TopBar({
     onModeChange,
     onCopyEmail,
     onPreferenceChange,
-    isSavingPreference
+    isSavingPreference,
+    preferenceError
 }) {
     const { t, i18n } = useTranslation();
     const [showDropdown, setShowDropdown] = useState(false);
@@ -61,16 +62,13 @@ const TopBar = memo(function TopBar({
     const handleInterestSubmit = async () => {
         const trimmedInterest = tempInterest.trim();
         if (trimmedInterest) {
-            try {
-                const result = await onPreferenceChange(trimmedInterest);
-                if (result?.success) {
-                    setShowInterestModal(false);
-                    // 自动加载新位置
-                    onExplore(result.skipRateLimit);
-                }
-            } catch (err) {
-                console.error('Failed to save preference:', err);
+            const result = await onPreferenceChange(trimmedInterest);
+            if (result?.success) {
+                setShowInterestModal(false);
+                // 自动加载新位置
+                onExplore(result.skipRateLimit);
             }
+            // 错误处理由 useExplorationMode 钩子管理，这里不需要额外处理
         }
     };
 
@@ -229,6 +227,11 @@ const TopBar = memo(function TopBar({
                             autoFocus
                             disabled={isSavingPreference}
                         />
+                        {preferenceError && (
+                            <div style={styles.modalError}>
+                                {preferenceError}
+                            </div>
+                        )}
                         <div style={styles.modalButtons}>
                             <button
                                 style={styles.modalCancelButton}
@@ -491,7 +494,7 @@ const styles = {
     modalInput: {
         width: '100%',
         padding: '12px 16px',
-        marginBottom: '24px',
+        marginBottom: '16px',
         border: '2px solid #e0e0e0',
         borderRadius: '12px',
         fontSize: '14px',
@@ -502,6 +505,20 @@ const styles = {
         ':focus': {
             borderColor: '#FF7043'
         }
+    },
+    modalError: {
+        backgroundColor: '#fef2f2',
+        border: '1px solid #fecaca',
+        color: '#dc2626',
+        padding: '12px 16px',
+        borderRadius: '8px',
+        fontSize: '13px',
+        lineHeight: '1.4',
+        marginBottom: '16px',
+        maxHeight: '120px',
+        overflowY: 'auto',
+        wordBreak: 'break-word',
+        whiteSpace: 'pre-wrap'
     },
     modalButtons: {
         display: 'flex',

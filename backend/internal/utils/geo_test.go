@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/my-streetview-project/backend/internal/models"
 	"github.com/paulmach/orb"
 	"github.com/paulmach/orb/geojson"
 )
@@ -1083,5 +1084,192 @@ func TestSpecificCountryDensityAnalysis(t *testing.T) {
 		s := stats[i]
 		t.Logf("%-4d %-12.2f %-8d %-8.2f %-8.2f %-8.2f %-12s %-12s",
 			i+1, s.Area, s.Count, s.Expected, s.Actual, s.AspectRatio, s.LatRange, s.LngRange)
+	}
+}
+
+// TestCoordinateGenerationWithoutFallback 测试修复后的坐标生成，验证是否避免了海岸线问题
+func TestCoordinateGenerationWithoutFallback(t *testing.T) {
+	// 确保地图数据就绪
+	if err := EnsureMapDataReady(); err != nil {
+		t.Fatalf("确保地图数据就绪失败: %v", err)
+	}
+
+	// 清空缓存
+	ClearRegionCache()
+
+	t.Logf("测试修复后的坐标生成（无边界框回退）...")
+
+	// 生成一批坐标进行验证
+	const numTests = 1000
+	inPolygonCount := 0
+	totalAttempts := 0
+
+	for i := 0; i < numTests; i++ {
+		lat, lng := GenerateRandomCoordinate(nil)
+		totalAttempts++
+
+		// 检查这个坐标是否真的在某个陆地多边形内
+		regions, err := getLandMassRegions()
+		if err != nil {
+			t.Fatalf("获取陆地区域失败: %v", err)
+		}
+
+		found := false
+		for _, region := range regions {
+			for _, polygon := range region.Polygons {
+				if pointInPolygon(lat, lng, polygon) {
+					found = true
+					inPolygonCount++
+					break
+				}
+			}
+			if found {
+				break
+			}
+		}
+
+		if !found {
+			t.Logf("警告：坐标 (%.6f, %.6f) 不在任何陆地多边形内", lat, lng)
+		}
+	}
+
+	polygonRate := float64(inPolygonCount) / float64(totalAttempts) * 100
+	t.Logf("坐标生成结果统计:")
+	t.Logf("  总生成数: %d", totalAttempts)
+	t.Logf("  在多边形内: %d", inPolygonCount)
+	t.Logf("  多边形命中率: %.2f%%", polygonRate)
+
+	// 修复后应该有很高的多边形命中率（期望 > 95%）
+	if polygonRate < 95.0 {
+		t.Errorf("多边形命中率太低: %.2f%%, 期望 > 95%%", polygonRate)
+	} else {
+		t.Logf("✓ 修复后的坐标生成工作正常，避免了海岸线问题")
+	}
+}
+
+// TestPointInPolygonWithHoles 测试有洞的多边形
+func TestPointInPolygonWithHoles(t *testing.T) {
+	// 创建一个带洞的多边形：外环是大正方形，内环是小正方形（洞）
+	polygonWithHole := orb.Polygon{
+		// 外环：大正方形 (0,0) 到 (10,10)
+		orb.Ring{
+			orb.Point{0, 0},   // 左下
+			orb.Point{10, 0},  // 右下
+			orb.Point{10, 10}, // 右上
+			orb.Point{0, 10},  // 左上
+			orb.Point{0, 0},   // 闭合
+		},
+		// 内环（洞）：小正方形 (4,4) 到 (6,6)
+		orb.Ring{
+			orb.Point{4, 4}, // 左下
+			orb.Point{6, 4}, // 右下
+			orb.Point{6, 6}, // 右上
+			orb.Point{4, 6}, // 左上
+			orb.Point{4, 4}, // 闭合
+		},
+	}
+
+	// 测试用例
+	testCases := []struct {
+		lat, lng float64
+		expected bool
+		desc     string
+	}{
+		{2, 2, true, "外环内部，洞外部"},
+		{8, 8, true, "外环内部，洞外部"},
+		{5, 5, false, "洞内部"},
+		{1, 1, true, "外环内部，洞外部"},
+		{9, 9, true, "外环内部，洞外部"},
+		{4.5, 4.5, false, "洞内部"},
+		{5.5, 5.5, false, "洞内部"},
+		{-1, 5, false, "外环外部"},
+		{11, 5, false, "外环外部"},
+		{5, -1, false, "外环外部"},
+		{5, 11, false, "外环外部"},
+	}
+
+	for _, tc := range testCases {
+		result := pointInPolygon(tc.lat, tc.lng, polygonWithHole)
+		if result != tc.expected {
+			t.Errorf("点 (%.1f, %.1f) %s: 期望 %v, 实际 %v",
+				tc.lat, tc.lng, tc.desc, tc.expected, result)
+		}
+	}
+
+	t.Logf("✓ 带洞多边形的点判断算法测试通过")
+}
+
+// TestUserPreferenceRegionGeneration 测试用户偏好区域的坐标生成
+func TestUserPreferenceRegionGeneration(t *testing.T) {
+	// 创建模拟的用户偏好区域（模拟巴黎附近）
+	userRegions := []models.Region{
+		{
+			Coordinates: struct {
+				North float64 `json:"north"`
+				South float64 `json:"south"`
+				East  float64 `json:"east"`
+				West  float64 `json:"west"`
+			}{
+				North: 49.0, // 北纬49度
+				South: 48.5, // 南纬48.5度
+				East:  2.5,  // 东经2.5度
+				West:  2.0,  // 西经2度
+			},
+			RegionInfo: "巴黎附近区域",
+		},
+	}
+
+	t.Logf("测试用户偏好区域坐标生成...")
+	t.Logf("区域范围: 北纬%.1f°-南纬%.1f°, 东经%.1f°-西经%.1f°",
+		userRegions[0].Coordinates.North,
+		userRegions[0].Coordinates.South,
+		userRegions[0].Coordinates.East,
+		userRegions[0].Coordinates.West)
+
+	// 测试多次生成
+	const numTests = 100
+	successCount := 0
+	inRangeCount := 0
+
+	for i := 0; i < numTests; i++ {
+		lat, lng := GenerateRandomCoordinate(userRegions)
+
+		// 检查坐标是否不是默认的北京坐标
+		if lat != 39.9042 || lng != 116.4074 {
+			successCount++
+
+			// 检查坐标是否在期望的范围内
+			if lat >= userRegions[0].Coordinates.South && lat <= userRegions[0].Coordinates.North &&
+				lng >= userRegions[0].Coordinates.West && lng <= userRegions[0].Coordinates.East {
+				inRangeCount++
+			}
+		}
+
+		t.Logf("生成坐标 %d: (%.6f, %.6f)", i+1, lat, lng)
+
+		if i < 5 { // 只打印前5个
+			t.Logf("  坐标 %d: (%.6f, %.6f)", i+1, lat, lng)
+		}
+	}
+
+	successRate := float64(successCount) / float64(numTests) * 100
+	inRangeRate := float64(inRangeCount) / float64(numTests) * 100
+
+	t.Logf("用户偏好区域测试结果:")
+	t.Logf("  总生成数: %d", numTests)
+	t.Logf("  非默认坐标: %d (%.1f%%)", successCount, successRate)
+	t.Logf("  在指定范围内: %d (%.1f%%)", inRangeCount, inRangeRate)
+
+	// 验证修复效果
+	if successRate < 95.0 {
+		t.Errorf("用户偏好区域生成失败率过高: %.1f%% 的坐标是默认坐标", 100-successRate)
+	}
+
+	if inRangeRate < 95.0 {
+		t.Errorf("坐标范围准确率过低: 只有 %.1f%% 的坐标在指定范围内", inRangeRate)
+	}
+
+	if successRate >= 95.0 && inRangeRate >= 95.0 {
+		t.Logf("✅ 用户偏好区域坐标生成修复成功！")
 	}
 }

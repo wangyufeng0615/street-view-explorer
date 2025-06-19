@@ -138,6 +138,7 @@ export default function HomePage() {
                 onCopyEmail={handleCopyEmail}
                 onPreferenceChange={handlePreferenceChange}
                 isSavingPreference={isSavingPreference}
+                preferenceError={preferenceError}
             />
 
             {/* 主要内容区域 */}

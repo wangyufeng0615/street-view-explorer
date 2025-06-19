@@ -18,9 +18,9 @@ import (
 
 const (
 	apiEndpoint = "https://openrouter.ai/api/v1/chat/completions"
-	model       = "google/gemini-2.5-flash-preview-05-20"
+	model       = "google/gemini-2.5-flash"
 	maxRetries  = 2
-	timeout     = 10 * time.Second
+	timeout     = 15 * time.Second
 
 	geographerSystemPrompt = "You're a 30-year-old world traveler who's been exploring the globe for 15 years, living in different countries and visiting almost every nation on Earth - though there are still countless hidden corners waiting to be discovered. You have a warm, humorous, and easygoing personality with a touch of wistfulness, seeking life's deeper meaning through your journeys.\n\n" +
 		"Your academic background combines History, Geography, and Anthropology, giving you deep insights into the interconnections between places, peoples, and cultures. You're passionate about cultural diversity, respectful of differences, and approach the world with both curiosity and rationality.\n\n" +
@@ -700,18 +700,20 @@ func (c *client) tryGenerateRegions(interest string) ([]models.Region, error) {
 		return nil, fmt.Errorf("AI未返回任何结果")
 	}
 
+	responseContent := chatResp.Choices[0].Message.Content
+
 	// 先尝试解析区域数据
 	var result struct {
 		Regions     []models.Region `json:"regions"`
 		Error       string          `json:"error,omitempty"`
 		Explanation string          `json:"explanation,omitempty"`
 	}
-	if err := json.Unmarshal([]byte(chatResp.Choices[0].Message.Content), &result); err != nil {
+	if err := json.Unmarshal([]byte(responseContent), &result); err != nil {
 		// 记录原始响应内容，帮助调试
-		log.Printf("AI 原始响应内容解析失败:\n%s", chatResp.Choices[0].Message.Content)
+		log.Printf("AI 原始响应内容解析失败:\n%s", responseContent)
 
 		// 尝试清理响应内容（移除可能的前后缀文本）
-		content := chatResp.Choices[0].Message.Content
+		content := responseContent
 		if idx := strings.Index(content, "{"); idx >= 0 {
 			content = content[idx:]
 			if lastIdx := strings.LastIndex(content, "}"); lastIdx >= 0 {
@@ -721,9 +723,19 @@ func (c *client) tryGenerateRegions(interest string) ([]models.Region, error) {
 				if err := json.Unmarshal([]byte(content), &result); err != nil {
 					log.Printf("清理后的内容解析仍然失败: %v", err)
 					logParsingError([]byte(content), err, "GenerateRegionsForInterest")
-					return nil, fmt.Errorf("解析区域数据失败: %w", err)
+
+					// 直接返回AI的原始回复内容，让前端展示
+					return nil, fmt.Errorf("%s", responseContent)
 				}
+			} else {
+				// 没有找到完整的JSON结构，直接返回AI的回复
+				log.Printf("响应内容不包含有效的JSON结构")
+				return nil, fmt.Errorf("%s", responseContent)
 			}
+		} else {
+			// 没有找到JSON开始标记，直接返回AI的回复
+			log.Printf("响应内容不包含JSON格式")
+			return nil, fmt.Errorf("%s", responseContent)
 		}
 	}
 
@@ -731,10 +743,10 @@ func (c *client) tryGenerateRegions(interest string) ([]models.Region, error) {
 	if result.Error != "" {
 		if result.Explanation != "" {
 			log.Printf("AI 返回业务错误: %s\n解释: %s", result.Error, result.Explanation)
-			return nil, fmt.Errorf("无法理解该探索兴趣：%s", result.Explanation)
+			return nil, fmt.Errorf("%s", result.Explanation)
 		} else {
 			log.Printf("AI 返回业务错误: %s", result.Error)
-			return nil, fmt.Errorf("无法理解该探索兴趣")
+			return nil, fmt.Errorf("%s", result.Error)
 		}
 	}
 
