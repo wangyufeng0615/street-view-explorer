@@ -1,4 +1,4 @@
-import React, { memo } from 'react';
+import React, { memo, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import GlobalMap from './GlobalMap';
 import PreviewMap from './PreviewMap';
@@ -15,10 +15,29 @@ const NewSidebar = memo(function NewSidebar({
     onRetryDescription
 }) {
     const { t } = useTranslation();
+    const scrollContainerRef = useRef(null);
+
+    // 当组件挂载时重置滚动位置
+    useEffect(() => {
+        if (scrollContainerRef.current) {
+            scrollContainerRef.current.scrollTop = 0;
+        }
+    }, []); // 空依赖数组确保只在组件挂载时运行
+
+    // 当位置改变时也重置滚动位置
+    useEffect(() => {
+        if (scrollContainerRef.current && location?.pano_id) {
+            scrollContainerRef.current.scrollTop = 0;
+        }
+    }, [location?.pano_id]); // 当pano_id改变时重置滚动位置
 
     return (
         <div style={styles.sidebar} className="new-sidebar">
-            <div style={styles.scrollContainer} className="sidebar-scroll">
+            <div 
+                ref={scrollContainerRef}
+                style={styles.scrollContainer} 
+                className="sidebar-scroll"
+            >
                 {/* 世界地图区域 */}
                 <div style={styles.section}>
                     <div style={styles.mapContainer}>
