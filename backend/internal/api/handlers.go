@@ -1,7 +1,10 @@
 package api
 
 import (
+	"log"
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/my-streetview-project/backend/internal/services"
@@ -77,20 +80,51 @@ func (h *Handlers) GetLocationDescription(c *gin.Context) {
 		return
 	}
 
+	startTime := time.Now()
+	log.Printf("[API_CALL] action=start handler=GetLocationDescription pano_id=%s lang=%s", panoID, language)
+	
 	desc, err := h.aiService.GetDescriptionForLocation(loc, language)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
+		duration := time.Since(startTime)
+		statusCode := http.StatusInternalServerError
+		errorMsg := err.Error()
+		
+		if strings.Contains(errorMsg, "超时") || strings.Contains(errorMsg, "timeout") {
+			statusCode = http.StatusRequestTimeout
+		}
+		
+		log.Printf("[API_ERROR] action=failed handler=GetLocationDescription pano_id=%s duration=%v status=%d error=%v", panoID, duration, statusCode, err)
+		
+		c.JSON(statusCode, gin.H{
 			"success": false,
-			"error":   err.Error(),
+			"error":   errorMsg,
+			"duration": duration.String(),
 		})
 		return
 	}
+	
+	// 验证描述内容是否有效，防止返回空内容的200响应
+	if desc == "" || strings.TrimSpace(desc) == "" {
+		duration := time.Since(startTime)
+		log.Printf("[API_ERROR] action=empty_description handler=GetLocationDescription pano_id=%s duration=%v desc_length=%d", panoID, duration, len(desc))
+		
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   "AI生成的描述为空，请重试",
+			"duration": duration.String(),
+		})
+		return
+	}
+	
+	duration := time.Since(startTime)
+	log.Printf("[API_SUCCESS] action=completed handler=GetLocationDescription pano_id=%s duration=%v desc_length=%d", panoID, duration, len(desc))
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data": gin.H{
 			"description": desc,
 			"language":    language,
+			"duration":    duration.String(),
 		},
 	})
 }
@@ -118,20 +152,40 @@ func (h *Handlers) GetLocationDetailedDescription(c *gin.Context) {
 		return
 	}
 
+	startTime := time.Now()
+	log.Printf("[API_CALL] action=start handler=GetLocationDetailedDescription pano_id=%s lang=%s", panoID, language)
+	
 	desc, err := h.aiService.GetDetailedDescriptionForLocation(loc, language)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
+		duration := time.Since(startTime)
+		statusCode := http.StatusInternalServerError
+		errorMsg := err.Error()
+		
+		if strings.Contains(errorMsg, "超时") || strings.Contains(errorMsg, "timeout") {
+			statusCode = http.StatusRequestTimeout
+		} else if strings.Contains(errorMsg, "没有找到基础对话历史") {
+			statusCode = http.StatusBadRequest
+		}
+		
+		log.Printf("[API_ERROR] action=failed handler=GetLocationDetailedDescription pano_id=%s duration=%v status=%d error=%v", panoID, duration, statusCode, err)
+		
+		c.JSON(statusCode, gin.H{
 			"success": false,
-			"error":   err.Error(),
+			"error":   errorMsg,
+			"duration": duration.String(),
 		})
 		return
 	}
+	
+	duration := time.Since(startTime)
+	log.Printf("[API_SUCCESS] action=completed handler=GetLocationDetailedDescription pano_id=%s duration=%v desc_length=%d", panoID, duration, len(desc))
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data": gin.H{
 			"description": desc,
 			"language":    language,
+			"duration":    duration.String(),
 		},
 	})
 }

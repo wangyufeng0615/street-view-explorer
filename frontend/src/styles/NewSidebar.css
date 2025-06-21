@@ -1,26 +1,43 @@
-/* 侧边栏滚动条样式 - 简洁风格，常态化显示 */
+/* 侧边栏滚动条样式 - 简洁风格，始终显示 */
 .sidebar-scroll {
-    /* Firefox */
+    /* Firefox - 始终显示滚动条 */
     scrollbar-width: thin;
     scrollbar-color: #999 #f0f0f0;
+    overflow-y: scroll !important; /* 强制始终显示垂直滚动条 */
 }
 
-/* WebKit browsers (Chrome, Safari, Edge) */
+/* WebKit browsers (Chrome, Safari, Edge) - 始终显示滚动条 */
 .sidebar-scroll::-webkit-scrollbar {
-    width: 6px;
+    width: 8px; /* 略微增加宽度，让滚动条更明显 */
+    -webkit-appearance: none; /* 移除默认样式 */
 }
 
 .sidebar-scroll::-webkit-scrollbar-track {
     background: #f0f0f0;
-    border-radius: 3px;
+    border-radius: 4px;
+    /* 确保轨道始终可见 */
+    -webkit-box-shadow: inset 0 0 2px rgba(0,0,0,0.1);
 }
 
 .sidebar-scroll::-webkit-scrollbar-thumb {
     background: #999;
-    border-radius: 3px;
-    min-height: 20px;
+    border-radius: 4px;
+    min-height: 30px; /* 增加最小高度，确保滚动把手更明显 */
+    /* 添加轻微阴影，增强视觉效果 */
+    -webkit-box-shadow: inset 0 0 2px rgba(0,0,0,0.2);
 }
 
 .sidebar-scroll::-webkit-scrollbar-thumb:hover {
     background: #666;
+    /* 悬停时的阴影效果 */
+    -webkit-box-shadow: inset 0 0 3px rgba(0,0,0,0.3);
+}
+
+.sidebar-scroll::-webkit-scrollbar-thumb:active {
+    background: #555;
+}
+
+/* 确保滚动条在所有状态下都可见 */
+.sidebar-scroll::-webkit-scrollbar-corner {
+    background: #f0f0f0;
 } 

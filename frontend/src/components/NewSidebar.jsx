@@ -36,7 +36,7 @@ const NewSidebar = memo(function NewSidebar({
             <div 
                 ref={scrollContainerRef}
                 style={styles.scrollContainer} 
-                className="sidebar-scroll"
+                className="sidebar-scroll force-scrollbar"
             >
                 {/* 世界地图区域 */}
                 <div style={styles.section}>
@@ -103,9 +103,12 @@ const styles = {
     },
     scrollContainer: {
         flex: 1,
-        overflowY: 'auto',
+        // 强制显示滚动条 - 内联样式确保优先级
+        overflowY: 'scroll',
         overflowX: 'hidden',
-        padding: '16px'
+        padding: '16px',
+        // WebKit浏览器强制显示滚动条
+        WebkitOverflowScrolling: 'touch'
     },
     section: {
         marginBottom: '16px'

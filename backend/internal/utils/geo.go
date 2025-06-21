@@ -26,6 +26,9 @@ type Region struct {
 	Polygons []orb.Polygon
 	// 标识是否为小型岛屿（用于加权）
 	IsMinorIsland bool
+	// 国家信息，用于按国家等概率选择
+	CountryName string
+	CountryCode string
 }
 
 // 陆地区域缓存
@@ -106,11 +109,27 @@ func extractLandRegionsFromGeoJSON(fc *geojson.FeatureCollection, isMinorIsland 
 			continue
 		}
 
+		// 提取国家信息
+		countryName := ""
+		countryCode := ""
+		if feature.Properties != nil {
+			if name, exists := feature.Properties["NAME"]; exists {
+				if nameStr, ok := name.(string); ok {
+					countryName = nameStr
+				}
+			}
+			if code, exists := feature.Properties["ISO_A3"]; exists {
+				if codeStr, ok := code.(string); ok {
+					countryCode = codeStr
+				}
+			}
+		}
+
 		switch geom := feature.Geometry.(type) {
 		case orb.Polygon:
-			regions = append(regions, extractRegionsFromPolygon(geom, isMinorIsland)...)
+			regions = append(regions, extractRegionsFromPolygon(geom, isMinorIsland, countryName, countryCode)...)
 		case orb.MultiPolygon:
-			regions = append(regions, extractRegionsFromMultiPolygon(geom, isMinorIsland)...)
+			regions = append(regions, extractRegionsFromMultiPolygon(geom, isMinorIsland, countryName, countryCode)...)
 		}
 	}
 
@@ -126,7 +145,7 @@ func extractLandRegionsFromGeoJSON(fc *geojson.FeatureCollection, isMinorIsland 
 }
 
 // extractRegionsFromPolygon 从多边形提取区域边界
-func extractRegionsFromPolygon(polygon orb.Polygon, isMinorIsland bool) []Region {
+func extractRegionsFromPolygon(polygon orb.Polygon, isMinorIsland bool, countryName, countryCode string) []Region {
 	if len(polygon) == 0 || len(polygon[0]) == 0 {
 		return nil
 	}
@@ -144,6 +163,8 @@ func extractRegionsFromPolygon(polygon orb.Polygon, isMinorIsland bool) []Region
 		West:          bounds.West,
 		Polygons:      []orb.Polygon{polygon},
 		IsMinorIsland: isMinorIsland,
+		CountryName:   countryName,
+		CountryCode:   countryCode,
 	}
 
 	return []Region{region}
@@ -151,7 +172,7 @@ func extractRegionsFromPolygon(polygon orb.Polygon, isMinorIsland bool) []Region
 
 // extractRegionsFromMultiPolygon 从多多边形提取区域边界
 // 将每个多边形作为独立区域，避免大国家的岛屿导致坐标密度不均
-func extractRegionsFromMultiPolygon(multiPolygon orb.MultiPolygon, isMinorIsland bool) []Region {
+func extractRegionsFromMultiPolygon(multiPolygon orb.MultiPolygon, isMinorIsland bool, countryName, countryCode string) []Region {
 	if len(multiPolygon) == 0 {
 		return nil
 	}
@@ -177,6 +198,8 @@ func extractRegionsFromMultiPolygon(multiPolygon orb.MultiPolygon, isMinorIsland
 			West:          bounds.West,
 			Polygons:      []orb.Polygon{polygon},
 			IsMinorIsland: isMinorIsland,
+			CountryName:   countryName,
+			CountryCode:   countryCode,
 		}
 
 		regions = append(regions, region)
@@ -294,45 +317,36 @@ func getRegionHeight(region Region) float64 {
 
 // GenerateRandomCoordinate 统一的随机坐标生成函数
 // 支持随机场景（regions为nil或空）和用户偏好场景（传入regions）
-// 移除边界框回退机制，确保坐标在真实陆地多边形内
+// 简化逻辑，依赖街景搜索的兜底机制来处理无街景区域
 func GenerateRandomCoordinate(regions []models.Region) (latitude, longitude float64) {
 	// 选择区域源（用户偏好区域 or 自然地理区域）
 	selectedRegions := selectRegionSource(regions)
 
-	// 最多尝试10次选择不同区域
-	const maxRegionAttempts = 10
+	// 随机选择一个区域
+	region := selectRandomRegion(selectedRegions)
 
-	for regionAttempt := 0; regionAttempt < maxRegionAttempts; regionAttempt++ {
-		// 随机选择一个区域
-		region := selectRandomRegion(selectedRegions)
+	// 尝试在实际多边形内生成坐标
+	if len(region.Polygons) > 0 {
+		// 随机选择一个多边形（对于MultiPolygon情况）
+		polygon := region.Polygons[rng.Intn(len(region.Polygons))]
 
-		// 尝试在实际多边形内生成坐标
-		if len(region.Polygons) > 0 {
-			// 随机选择一个多边形（对于MultiPolygon情况）
-			polygon := region.Polygons[rng.Intn(len(region.Polygons))]
-
-			// 在多边形内生成坐标，增加尝试次数到500次
-			lat, lng, success := generateCoordinateInPolygon(polygon, 500)
-			if success {
-				return lat, lng
-			}
-
-			// 如果当前多边形失败，尝试该区域的其他多边形
-			for _, otherPolygon := range region.Polygons {
-				if &otherPolygon != &polygon { // 避免重复尝试同一个多边形
-					lat, lng, success := generateCoordinateInPolygon(otherPolygon, 300)
-					if success {
-						return lat, lng
-					}
-				}
-			}
+		// 在多边形内生成坐标，减少尝试次数因为有街景兜底
+		lat, lng, success := generateCoordinateInPolygon(polygon, 100)
+		if success {
+			log.Printf("[COORD_SUCCESS] action=polygon_coordinate country=%s coords=(%.6f,%.6f)", region.CountryName, lat, lng)
+			return lat, lng
 		}
+
+		// 如果多边形内生成失败，回退到边界框内生成
+		log.Printf("[COORD_FALLBACK] action=bbox_coordinate country=%s", region.CountryName)
+		lat, lng = generateCoordinateInBounds(region.North, region.South, region.East, region.West)
+		return lat, lng
 	}
 
-	// 如果所有尝试都失败，记录警告并返回一个默认坐标（这种情况极少发生）
-	log.Printf("警告：所有多边形内坐标生成尝试都失败，使用默认坐标")
-	// 返回一个相对安全的默认坐标（中国北京附近）
-	return 39.9042, 116.4074
+	// 如果没有多边形数据，直接使用边界框
+	log.Printf("[COORD_BBOX] action=bbox_only country=%s", region.CountryName)
+	lat, lng := generateCoordinateInBounds(region.North, region.South, region.East, region.West)
+	return lat, lng
 }
 
 // selectRegionSource 选择区域源
@@ -376,7 +390,8 @@ func selectRegionSource(userRegions []models.Region) []Region {
 	return landRegions
 }
 
-// selectRandomRegion 从区域列表中按面积加权随机选择一个区域
+// selectRandomRegion 按国家等概率选择一个区域
+// 每个国家被选中的概率相同，然后在该国家内按面积加权选择区域
 func selectRandomRegion(regions []Region) Region {
 	if len(regions) == 0 {
 		// 如果没有区域，返回一个默认的全球区域
@@ -389,35 +404,79 @@ func selectRandomRegion(regions []Region) Region {
 		return regions[0]
 	}
 
-	// 计算所有区域的面积和累积面积
-	areas := make([]float64, len(regions))
-	totalArea := 0.0
+	// 按国家分组区域
+	countryRegions := make(map[string][]Region)
+	for _, region := range regions {
+		countryKey := region.CountryCode
+		if countryKey == "" {
+			countryKey = region.CountryName
+		}
+		if countryKey == "" {
+			countryKey = "UNKNOWN" // 为未知国家设置默认key
+		}
+		countryRegions[countryKey] = append(countryRegions[countryKey], region)
+	}
+
+	// 如果只有一个国家，直接在该国家内选择
+	if len(countryRegions) == 1 {
+		for _, countryRegionList := range countryRegions {
+			return selectRegionWithinCountry(countryRegionList)
+		}
+	}
+
+	// 随机选择一个国家（等概率）
+	countryKeys := make([]string, 0, len(countryRegions))
+	for key := range countryRegions {
+		countryKeys = append(countryKeys, key)
+	}
+	selectedCountryKey := countryKeys[rng.Intn(len(countryKeys))]
+	selectedCountryRegions := countryRegions[selectedCountryKey]
+
+	// 在选中的国家内选择区域
+	return selectRegionWithinCountry(selectedCountryRegions)
+}
+
+// selectRegionWithinCountry 在同一国家内按面积加权选择区域
+func selectRegionWithinCountry(regions []Region) Region {
+	if len(regions) == 0 {
+		log.Printf("警告：国家内没有可用区域")
+		return Region{North: 85.0, South: -85.0, East: 180.0, West: -180.0}
+	}
+
+	if len(regions) == 1 {
+		return regions[0]
+	}
+
+	// 计算每个区域的面积权重
+	weights := make([]float64, len(regions))
+	totalWeight := 0.0
 
 	for i, region := range regions {
 		area := getRegionArea(region)
+		weight := area
 
-		// 如果是小型岛屿，应用1.5倍权重
+		// 如果是小型岛屿，应用1.2倍权重以稍微增加多样性
 		if region.IsMinorIsland {
-			area *= 1.5
+			weight *= 1.2
 		}
 
-		areas[i] = area
-		totalArea += area
+		weights[i] = weight
+		totalWeight += weight
 	}
 
-	// 如果总面积为0，回退到均匀随机选择
-	if totalArea == 0 {
+	// 如果总权重为0，回退到均匀随机选择
+	if totalWeight == 0 {
 		return regions[rng.Intn(len(regions))]
 	}
 
-	// 生成0到totalArea之间的随机数
-	randomValue := rng.Float64() * totalArea
+	// 生成0到totalWeight之间的随机数
+	randomValue := rng.Float64() * totalWeight
 
-	// 使用累积面积找到对应的区域
-	cumulativeArea := 0.0
-	for i, area := range areas {
-		cumulativeArea += area
-		if randomValue <= cumulativeArea {
+	// 使用累积权重找到对应的区域
+	cumulativeWeight := 0.0
+	for i, weight := range weights {
+		cumulativeWeight += weight
+		if randomValue <= cumulativeWeight {
 			return regions[i]
 		}
 	}
@@ -561,6 +620,7 @@ func GetRegionInfo() map[string]interface{} {
 
 	if err != nil {
 		info["error"] = err.Error()
+		return info
 	}
 
 	// 添加一些统计信息
@@ -570,6 +630,10 @@ func GetRegionInfo() map[string]interface{} {
 		var minWidth, maxWidth float64 = math.MaxFloat64, 0
 		var minHeight, maxHeight float64 = math.MaxFloat64, 0
 		var minorIslandCount int
+
+		// 按国家分组统计
+		countryRegions := make(map[string][]Region)
+		countryStats := make(map[string]int)
 
 		for _, region := range regions {
 			area := getRegionArea(region)
@@ -603,6 +667,17 @@ func GetRegionInfo() map[string]interface{} {
 			if region.IsMinorIsland {
 				minorIslandCount++
 			}
+
+			// 按国家分组
+			countryKey := region.CountryCode
+			if countryKey == "" {
+				countryKey = region.CountryName
+			}
+			if countryKey == "" {
+				countryKey = "UNKNOWN"
+			}
+			countryRegions[countryKey] = append(countryRegions[countryKey], region)
+			countryStats[countryKey]++
 		}
 
 		info["total_area"] = totalArea
@@ -615,6 +690,8 @@ func GetRegionInfo() map[string]interface{} {
 		info["max_height"] = maxHeight
 		info["minor_islands_count"] = minorIslandCount
 		info["regular_regions_count"] = len(regions) - minorIslandCount
+		info["total_countries"] = len(countryRegions)
+		info["country_stats"] = countryStats
 	}
 
 	return info

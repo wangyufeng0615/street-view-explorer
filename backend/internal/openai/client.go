@@ -52,7 +52,7 @@ const (
 
 type Client interface {
 	GenerateLocationDescription(latitude, longitude float64, locationInfo map[string]string, language string) (string, []ChatMessage, error)
-	GenerateDetailedLocationDescription(previousMessages []ChatMessage, language string) (string, error)
+	GenerateDetailedLocationDescription(latitude, longitude float64, locationInfo map[string]string, language string) (string, error)
 	GenerateRegionsForInterest(interest string) ([]models.Region, error)
 }
 
@@ -167,125 +167,26 @@ func NewClient(apiKey string) Client {
 	}
 }
 
-// logHTTPRequestError 记录HTTP请求错误的详细信息
-func logHTTPRequestError(method string, url string, reqBody []byte, err error, functionName string) {
-	log.Printf("====== OpenRouter API 调用失败 ======")
-	log.Printf("函数: %s", functionName)
-	log.Printf("请求方法: %s", method)
-	log.Printf("请求URL: %s", url)
-	log.Printf("请求模型: %s", model)
-	log.Printf("错误类型: HTTP请求失败")
-	log.Printf("错误详情: %v", err)
-
-	// 记录请求大小（不记录具体内容避免日志过长）
-	if reqBody != nil {
-		log.Printf("请求体大小: %d bytes", len(reqBody))
+// truncateString 截断字符串到指定长度
+func truncateString(s string, maxLength int) string {
+	if len(s) <= maxLength {
+		return s
 	}
-
-	// 检查是否是超时错误
-	if strings.Contains(err.Error(), "timeout") || strings.Contains(err.Error(), "deadline exceeded") {
-		log.Printf("错误分类: 请求超时")
-		log.Printf("建议: 检查网络连接或考虑增加超时时间")
-	}
-	log.Printf("=====================================")
+	return s[:maxLength] + "..."
 }
 
-// logHTTPResponseError 记录HTTP响应错误的详细信息
-func logHTTPResponseError(statusCode int, responseBody []byte, functionName string) {
-	log.Printf("====== OpenRouter API 响应错误 ======")
-	log.Printf("函数: %s", functionName)
-	log.Printf("响应状态码: %d", statusCode)
-	log.Printf("请求模型: %s", model)
-	log.Printf("错误类型: API响应错误")
 
-	// 根据状态码分类错误
-	switch statusCode {
-	case 400:
-		log.Printf("错误分类: 请求参数错误")
-		log.Printf("建议: 检查请求格式、模型名称或参数设置")
-	case 401:
-		log.Printf("错误分类: 认证失败")
-		log.Printf("建议: 检查API密钥是否正确或已过期")
-	case 403:
-		log.Printf("错误分类: 权限不足")
-		log.Printf("建议: 检查API密钥是否有权限使用该模型")
-	case 429:
-		log.Printf("错误分类: 请求频率限制")
-		log.Printf("建议: 减少请求频率或升级API计划")
-	case 500, 502, 503, 504:
-		log.Printf("错误分类: 服务器错误")
-		log.Printf("建议: 稍后重试，这通常是临时性问题")
-	default:
-		log.Printf("错误分类: 未知错误")
-	}
 
-	// 记录响应内容（限制长度）
-	if responseBody != nil {
-		maxLogLength := 1000
-		responseStr := string(responseBody)
-		if len(responseStr) > maxLogLength {
-			log.Printf("响应内容 (前%d字符): %s...", maxLogLength, responseStr[:maxLogLength])
-		} else {
-			log.Printf("响应内容: %s", responseStr)
-		}
-	}
-	log.Printf("=====================================")
-}
-
-// logAPIError 记录API返回的业务错误
-func logAPIError(apiError string, functionName string) {
-	log.Printf("====== OpenRouter API 业务错误 ======")
-	log.Printf("函数: %s", functionName)
-	log.Printf("请求模型: %s", model)
-	log.Printf("错误类型: API业务错误")
-	log.Printf("API错误信息: %s", apiError)
-
-	// 分析常见的API错误
-	if strings.Contains(strings.ToLower(apiError), "quota") || strings.Contains(strings.ToLower(apiError), "limit") {
-		log.Printf("错误分类: 配额或限制问题")
-		log.Printf("建议: 检查API使用配额或等待配额重置")
-	} else if strings.Contains(strings.ToLower(apiError), "model") {
-		log.Printf("错误分类: 模型相关问题")
-		log.Printf("建议: 检查模型名称是否正确或模型是否可用")
-	} else if strings.Contains(strings.ToLower(apiError), "token") {
-		log.Printf("错误分类: Token相关问题")
-		log.Printf("建议: 检查输入内容长度或API密钥")
-	}
-	log.Printf("=====================================")
-}
-
-// logParsingError 记录响应解析错误
-func logParsingError(responseBody []byte, err error, functionName string) {
-	log.Printf("====== OpenRouter 响应解析错误 ======")
-	log.Printf("函数: %s", functionName)
-	log.Printf("请求模型: %s", model)
-	log.Printf("错误类型: 响应解析失败")
-	log.Printf("解析错误: %v", err)
-
-	// 记录响应内容用于调试（限制长度）
-	if responseBody != nil {
-		maxLogLength := 500
-		responseStr := string(responseBody)
-		if len(responseStr) > maxLogLength {
-			log.Printf("原始响应 (前%d字符): %s...", maxLogLength, responseStr[:maxLogLength])
-		} else {
-			log.Printf("原始响应: %s", responseStr)
-		}
-	}
-	log.Printf("建议: 检查响应格式是否符合预期或联系技术支持")
-	log.Printf("=====================================")
-}
 
 func (c *client) GenerateLocationDescription(latitude, longitude float64, locationInfo map[string]string, language string) (string, []ChatMessage, error) {
+	startTime := time.Now()
+	log.Printf("[AI_CALL] action=start function=GenerateLocationDescription coords=(%.6f,%.6f) lang=%s model=%s timeout=%v", latitude, longitude, language, model, timeout)
+
 	// 根据语言选择提示词格式
 	outputFormat := "Give it to me in Chinese"
 	if language != "zh" {
 		outputFormat = "Give it to me in English"
 	}
-
-	// 添加调试日志 - 记录传递给AI的原始地理位置信息
-	log.Printf("AI调用 - 传递的完整locationInfo: %+v", locationInfo)
-	log.Printf("AI调用 - 坐标: (%.6f, %.6f), 语言: %s", latitude, longitude, language)
 
 	// 构建详细的地理信息字符串
 	var geoDetails strings.Builder
@@ -403,7 +304,11 @@ func (c *client) GenerateLocationDescription(latitude, longitude float64, locati
 		return "", nil, fmt.Errorf("编码请求失败: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", apiEndpoint, bytes.NewBuffer(reqJSON))
+	// 为基础描述也添加context超时控制
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	
+	req, err := http.NewRequestWithContext(ctx, "POST", apiEndpoint, bytes.NewBuffer(reqJSON))
 	if err != nil {
 		return "", nil, fmt.Errorf("创建请求失败: %w", err)
 	}
@@ -411,44 +316,48 @@ func (c *client) GenerateLocationDescription(latitude, longitude float64, locati
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+c.apiKey)
 
-	log.Printf("正在发送位置描述请求到 OpenRouter API (model: %s)...", model)
+	_ = time.Now() // Request sent time (unused in simplified logging)
+	
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		logHTTPRequestError("POST", apiEndpoint, reqJSON, err, "GenerateLocationDescription")
+		if ctx.Err() == context.DeadlineExceeded {
+			log.Printf("[AI_ERROR] action=timeout function=GenerateLocationDescription duration=%v timeout=%v error=request_timeout", time.Since(startTime), timeout)
+			return "", nil, fmt.Errorf("位置描述生成超时")
+		}
+		log.Printf("[AI_ERROR] action=request_failed function=GenerateLocationDescription duration=%v error=%v", time.Since(startTime), err)
 		return "", nil, fmt.Errorf("发送请求失败: %w", err)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Printf("读取 OpenRouter 响应失败: %v", err)
+		log.Printf("[AI_ERROR] action=read_response_failed function=GenerateLocationDescription duration=%v error=%v", time.Since(startTime), err)
 		return "", nil, fmt.Errorf("读取响应失败: %w", err)
 	}
 
-	// 检查HTTP状态码
 	if resp.StatusCode != http.StatusOK {
-		logHTTPResponseError(resp.StatusCode, body, "GenerateLocationDescription")
+		log.Printf("[AI_ERROR] action=api_error function=GenerateLocationDescription duration=%v status=%d response=%s", time.Since(startTime), resp.StatusCode, truncateString(string(body), 200))
 		return "", nil, fmt.Errorf("API 请求失败 (状态码: %d): %s", resp.StatusCode, string(body))
 	}
 
 	var chatResp chatResponse
 	if err := json.Unmarshal(body, &chatResp); err != nil {
-		logParsingError(body, err, "GenerateLocationDescription")
+		log.Printf("[AI_ERROR] action=parse_failed function=GenerateLocationDescription duration=%v error=%v response=%s", time.Since(startTime), err, truncateString(string(body), 200))
 		return "", nil, fmt.Errorf("解析响应失败: %w", err)
 	}
 
 	if chatResp.Error != nil {
-		logAPIError(chatResp.Error.Message, "GenerateLocationDescription")
+		log.Printf("[AI_ERROR] action=api_business_error function=GenerateLocationDescription duration=%v error=%s", time.Since(startTime), chatResp.Error.Message)
 		return "", nil, fmt.Errorf("AI API错误: %s", chatResp.Error.Message)
 	}
 
 	if len(chatResp.Choices) == 0 {
-		log.Printf("OpenRouter 位置描述: AI未返回任何结果")
+		log.Printf("[AI_ERROR] action=empty_response function=GenerateLocationDescription duration=%v error=no_choices_returned", time.Since(startTime))
 		return "", nil, fmt.Errorf("AI未返回任何结果")
 	}
 
 	desc := chatResp.Choices[0].Message.Content
-	log.Printf("OpenRouter 位置描述调用成功，响应长度: %d 字符", len(desc))
+	log.Printf("[AI_SUCCESS] action=completed function=GenerateLocationDescription duration=%v response_length=%d", time.Since(startTime), len(desc))
 
 	// 返回对话历史以供详细描述使用
 	conversationHistory := append(reqBody.Messages, ChatMessage{
@@ -459,47 +368,77 @@ func (c *client) GenerateLocationDescription(latitude, longitude float64, locati
 	return desc, conversationHistory, nil
 }
 
-func (c *client) GenerateDetailedLocationDescription(previousMessages []ChatMessage, language string) (string, error) {
+func (c *client) GenerateDetailedLocationDescription(latitude, longitude float64, locationInfo map[string]string, language string) (string, error) {
+	// 记录API调用开始时间
+	startTime := time.Now()
+	log.Printf("[AI_CALL] action=start function=GenerateDetailedLocationDescription coords=(%.6f,%.6f) lang=%s model=%s", latitude, longitude, language, model)
+	
 	// 详细描述需要更长的超时时间
 	detailedTimeout := 30 * time.Second
 	ctx, cancel := context.WithTimeout(context.Background(), detailedTimeout)
 	defer cancel()
 
 	// 为详细描述创建一个临时的HTTP客户端，使用更长的超时时间
+	// 重要：避免超时冲突，确保HTTP客户端超时比context超时稍长
+	httpTimeout := detailedTimeout + 5*time.Second
 	detailedHTTPClient := &http.Client{
-		Timeout:   detailedTimeout,
+		Timeout:   httpTimeout,
 		Transport: c.httpClient.Transport, // 复用原客户端的代理设置
 	}
 
-	// 根据语言选择提示词格式
-	outputFormat := "Now provide a comprehensive, professional analysis in Chinese"
-	if language != "zh" {
-		outputFormat = "Now provide a comprehensive, professional analysis in English"
+	// 构建位置信息字符串
+	var locationStrings []string
+	for key, value := range locationInfo {
+		if value != "" {
+			locationStrings = append(locationStrings, fmt.Sprintf("%s: %s", key, value))
+		}
+	}
+	locationText := strings.Join(locationStrings, ", ")
+	if locationText == "" {
+		locationText = fmt.Sprintf("Coordinates: %.6f, %.6f", latitude, longitude)
 	}
 
-	// 构建详细分析请求 - 基于之前的对话继续
-	detailedPrompt := fmt.Sprintf(
-		"Thank you for that insightful introduction! Now I'd like you to continue our conversation with a much more detailed, professional analysis of this location. "+
-			"Please provide comprehensive insights covering multiple aspects:\n\n"+
-			"1. **Historical Context & Development**: Trace the historical evolution, significant events, and cultural development\n"+
-			"2. **Architectural & Urban Characteristics**: Analyze building styles, urban planning, infrastructure\n"+
-			"3. **Cultural & Social Dynamics**: Examine local customs, demographics, lifestyle, and social patterns\n"+
-			"4. **Economic Profile**: Discuss major industries, economic drivers, and commercial activities\n"+
-			"5. **Geographic & Environmental Context**: Describe natural features, climate, and ecological aspects\n"+
-			"6. **Transportation & Connectivity**: Analyze transport networks and regional connections\n"+
-			"7. **Regional Significance**: Explain the location's role within its broader region\n\n"+
-			"Focus primarily on the most specific geographic level available, using broader context as supporting information. "+
-			"Be informative, professional, and provide insights that go beyond basic tourist information. "+
-			"Length: Aim for 3-5 detailed paragraphs with substantial depth.\n\n"+
-			"%s",
-		outputFormat,
-	)
+	// 根据语言构建详细分析请求
+	var detailedPrompt string
+	if language == "zh" {
+		detailedPrompt = fmt.Sprintf(
+			"请为以下地理位置提供详细、专业的分析报告：\n"+
+				"坐标：%.6f, %.6f\n"+
+				"位置信息：%s\n\n"+
+				"请从以下几个方面进行全面分析：\n"+
+				"1. **历史背景与发展**：追溯历史演变、重要事件和文化发展\n"+
+				"2. **建筑与城市特色**：分析建筑风格、城市规划、基础设施\n"+
+				"3. **文化与社会动态**：探讨当地习俗、人口构成、生活方式和社会模式\n"+
+				"4. **经济概况**：讨论主要产业、经济驱动力和商业活动\n"+
+				"5. **地理与环境背景**：描述自然特征、气候和生态环境\n"+
+				"6. **交通与连通性**：分析交通网络和区域连接\n"+
+				"7. **区域重要性**：解释该位置在更广泛区域中的作用\n\n"+
+				"请提供专业、深入的见解，超越基础的旅游信息。篇幅：3-5个详细段落。",
+			latitude, longitude, locationText)
+	} else {
+		detailedPrompt = fmt.Sprintf(
+			"Please provide a comprehensive, professional analysis report for the following geographic location:\n"+
+				"Coordinates: %.6f, %.6f\n"+
+				"Location Info: %s\n\n"+
+				"Please analyze from the following aspects:\n"+
+				"1. **Historical Context & Development**: Trace the historical evolution, significant events, and cultural development\n"+
+				"2. **Architectural & Urban Characteristics**: Analyze building styles, urban planning, infrastructure\n"+
+				"3. **Cultural & Social Dynamics**: Examine local customs, demographics, lifestyle, and social patterns\n"+
+				"4. **Economic Profile**: Discuss major industries, economic drivers, and commercial activities\n"+
+				"5. **Geographic & Environmental Context**: Describe natural features, climate, and ecological aspects\n"+
+				"6. **Transportation & Connectivity**: Analyze transport networks and regional connections\n"+
+				"7. **Regional Significance**: Explain the location's role within its broader region\n\n"+
+				"Provide professional, in-depth insights that go beyond basic tourist information. Length: 3-5 detailed paragraphs.",
+			latitude, longitude, locationText)
+	}
 
-	// 继续之前的对话
-	messages := append(previousMessages, ChatMessage{
-		Role:    "user",
-		Content: detailedPrompt,
-	})
+	// 构建消息
+	messages := []ChatMessage{
+		{
+			Role:    "user",
+			Content: detailedPrompt,
+		},
+	}
 
 	reqBody := chatRequest{
 		Model:    model,
@@ -520,37 +459,52 @@ func (c *client) GenerateDetailedLocationDescription(previousMessages []ChatMess
 	req.Header.Set("Authorization", "Bearer "+c.apiKey)
 
 	log.Printf("正在发送详细描述请求到 OpenRouter API (model: %s, timeout: %v)...", model, detailedTimeout)
+	
+	// 记录请求发送时间
+	requestSentTime := time.Now()
+	log.Printf("详细描述请求发送时间: %s", requestSentTime.Format("2006-01-02 15:04:05.000"))
+	
 	resp, err := detailedHTTPClient.Do(req)
 	if err != nil {
+		log.Printf("详细描述请求总耗时: %v", time.Since(startTime))
 		if ctx.Err() == context.DeadlineExceeded {
-			log.Printf("OpenRouter 详细描述请求超时 (超时时间: %v)", detailedTimeout)
+			log.Printf("====== OpenRouter 详细描述请求超时 ======")
+			log.Printf("函数: GenerateDetailedLocationDescription")
+			log.Printf("超时时间: %v", detailedTimeout)
+			log.Printf("实际耗时: %v", time.Since(startTime))
+			log.Printf("错误类型: 请求超时")
+			log.Printf("========================================")
 			return "", fmt.Errorf("详细描述生成超时")
 		}
-		logHTTPRequestError("POST", apiEndpoint, reqJSON, err, "GenerateDetailedLocationDescription")
 		return "", fmt.Errorf("发送请求失败: %w", err)
 	}
 	defer resp.Body.Close()
+	
+	// 记录响应接收时间
+	responseReceivedTime := time.Now()
+	log.Printf("详细描述响应接收时间: %s (网络耗时: %v)", responseReceivedTime.Format("2006-01-02 15:04:05.000"), responseReceivedTime.Sub(requestSentTime))
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Printf("读取 OpenRouter 详细描述响应失败: %v", err)
+		log.Printf("读取 OpenRouter 详细描述响应失败: %v (总耗时: %v)", err, time.Since(startTime))
 		return "", fmt.Errorf("读取响应失败: %w", err)
 	}
+	
+	// 记录响应读取完成时间
+	responseReadTime := time.Now()
+	log.Printf("详细描述响应读取完成时间: %s (响应体大小: %d bytes)", responseReadTime.Format("2006-01-02 15:04:05.000"), len(body))
 
 	// 检查HTTP状态码
 	if resp.StatusCode != http.StatusOK {
-		logHTTPResponseError(resp.StatusCode, body, "GenerateDetailedLocationDescription")
 		return "", fmt.Errorf("API 请求失败 (状态码: %d): %s", resp.StatusCode, string(body))
 	}
 
 	var chatResp chatResponse
 	if err := json.Unmarshal(body, &chatResp); err != nil {
-		logParsingError(body, err, "GenerateDetailedLocationDescription")
 		return "", fmt.Errorf("解析响应失败: %w", err)
 	}
 
 	if chatResp.Error != nil {
-		logAPIError(chatResp.Error.Message, "GenerateDetailedLocationDescription")
 		return "", fmt.Errorf("AI API错误: %s", chatResp.Error.Message)
 	}
 
@@ -560,7 +514,16 @@ func (c *client) GenerateDetailedLocationDescription(previousMessages []ChatMess
 	}
 
 	result := chatResp.Choices[0].Message.Content
-	log.Printf("OpenRouter 详细描述调用成功，响应长度: %d 字符", len(result))
+	
+	// 记录详细描述API调用完成信息
+	totalDuration := time.Since(startTime)
+	log.Printf("====== OpenRouter 详细描述 API 调用成功 ======")
+	log.Printf("函数: GenerateDetailedLocationDescription")
+	log.Printf("完成时间: %s", time.Now().Format("2006-01-02 15:04:05.000"))
+	log.Printf("总耗时: %v", totalDuration)
+	log.Printf("响应长度: %d 字符", len(result))
+	log.Printf("API调用状态: 成功")
+	log.Printf("=============================================")
 
 	return result, nil
 }
@@ -665,7 +628,6 @@ func (c *client) tryGenerateRegions(interest string) ([]models.Region, error) {
 			log.Printf("OpenRouter 区域生成请求超时")
 			return nil, fmt.Errorf("请求超时")
 		}
-		logHTTPRequestError("POST", apiEndpoint, reqJSON, err, "GenerateRegionsForInterest")
 		return nil, fmt.Errorf("发送请求失败: %w", err)
 	}
 	defer resp.Body.Close()
@@ -678,7 +640,6 @@ func (c *client) tryGenerateRegions(interest string) ([]models.Region, error) {
 
 	// 检查响应状态码
 	if resp.StatusCode != http.StatusOK {
-		logHTTPResponseError(resp.StatusCode, body, "GenerateRegionsForInterest")
 		return nil, fmt.Errorf("API 请求失败 (状态码: %d): %s", resp.StatusCode, string(body))
 	}
 
@@ -686,12 +647,10 @@ func (c *client) tryGenerateRegions(interest string) ([]models.Region, error) {
 
 	var chatResp chatResponse
 	if err := json.Unmarshal(body, &chatResp); err != nil {
-		logParsingError(body, err, "GenerateRegionsForInterest")
 		return nil, fmt.Errorf("解析响应失败: %w", err)
 	}
 
 	if chatResp.Error != nil {
-		logAPIError(chatResp.Error.Message, "GenerateRegionsForInterest")
 		return nil, fmt.Errorf("AI API错误: %s", chatResp.Error.Message)
 	}
 
@@ -722,7 +681,6 @@ func (c *client) tryGenerateRegions(interest string) ([]models.Region, error) {
 				log.Printf("尝试解析清理后的内容:\n%s", content)
 				if err := json.Unmarshal([]byte(content), &result); err != nil {
 					log.Printf("清理后的内容解析仍然失败: %v", err)
-					logParsingError([]byte(content), err, "GenerateRegionsForInterest")
 
 					// 直接返回AI的原始回复内容，让前端展示
 					return nil, fmt.Errorf("%s", responseContent)

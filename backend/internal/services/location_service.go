@@ -60,28 +60,27 @@ func (ls *LocationService) GetRandomLocation(sessionID string, language string) 
 
 // generateRandomLocation 统一的随机位置生成逻辑
 // regions 为 nil 时使用默认大陆区域，否则使用用户偏好区域
-// 依赖 HasStreetView 的智能渐进式搜索策略（小范围→大范围）
+// 使用带兜底机制的街景搜索，确保总是能找到可用位置
 func (ls *LocationService) generateRandomLocation(regions []models.Region, language string) (models.Location, error) {
 	ctx := context.Background()
 
 	// 生成随机坐标
 	lat, lng := utils.GenerateRandomCoordinate(regions)
-	log.Printf("生成随机坐标：(%.6f, %.6f)", lat, lng)
+	log.Printf("[COORD_GENERATED] action=random_coordinate coords=(%.6f,%.6f) has_preference=%t", lat, lng, regions != nil)
 
-	// 使用 HasStreetView 的渐进式搜索策略
-	// 它会自动从小范围到大范围搜索街景，大大提高成功率
+	// 使用带兜底机制的街景搜索，总是能找到可用街景
 	hasStreetView, validLat, validLng, panoId := ls.maps.HasStreetView(ctx, lat, lng, regions != nil)
+	
+	// 由于有兜底机制，这里应该总是成功，但保留检查以防万一
 	if !hasStreetView {
-		log.Printf("坐标 (%.6f, %.6f) 在所有搜索半径内都没有街景", lat, lng)
-		return models.Location{}, fmt.Errorf("坐标 (%.6f, %.6f) 附近没有可用的街景", lat, lng)
+		log.Printf("[STREETVIEW_CRITICAL_ERROR] action=fallback_failed coords=(%.6f,%.6f)", lat, lng)
+		return models.Location{}, fmt.Errorf("严重错误：即使使用兜底机制也无法找到街景")
 	}
-
-	log.Printf("找到街景 - 原始坐标 (%.6f, %.6f)，街景坐标 (%.6f, %.6f)",
-		lat, lng, validLat, validLng)
 
 	// 获取位置信息
 	locationInfo, err := ls.maps.GetLocationInfo(ctx, validLat, validLng, language)
 	if err != nil {
+		log.Printf("[GEOCODING_ERROR] action=get_location_info coords=(%.6f,%.6f) error=%v", validLat, validLng, err)
 		return models.Location{}, fmt.Errorf("获取位置信息失败: %w", err)
 	}
 
@@ -99,11 +98,12 @@ func (ls *LocationService) generateRandomLocation(regions []models.Region, langu
 
 	// 保存位置记录
 	if err := ls.repo.SaveLocation(location); err != nil {
+		log.Printf("[STORAGE_ERROR] action=save_location pano_id=%s error=%v", panoId, err)
 		return models.Location{}, fmt.Errorf("保存位置记录失败: %w", err)
 	}
 
-	log.Printf("成功生成随机位置：%s (%.6f, %.6f)",
-		location.FormattedAddress, location.Latitude, location.Longitude)
+	log.Printf("[LOCATION_SUCCESS] action=generated coords=(%.6f,%.6f) address=%s country=%s pano_id=%s", 
+		location.Latitude, location.Longitude, location.FormattedAddress, location.Country, location.PanoID)
 	return location, nil
 }
 

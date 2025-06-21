@@ -251,10 +251,11 @@
     transition: box-shadow 0.2s ease;
 }
 
-/* 自定义滚动条样式 */
+/* 自定义滚动条样式 - 始终显示 */
 .sidebar-scroll {
     scrollbar-width: thin;
     scrollbar-color: #FF7043 rgba(0, 0, 0, 0.1);
+    overflow-y: scroll !important; /* 强制始终显示垂直滚动条 */
 }
 
 .sidebar-scroll::-webkit-scrollbar {
@@ -262,9 +263,11 @@
 }
 
 .sidebar-scroll::-webkit-scrollbar-track {
-    background: rgba(0, 0, 0, 0.05);
+    background: rgba(0, 0, 0, 0.08);
     border-radius: 4px;
     margin: 4px;
+    /* 确保轨道始终可见 */
+    -webkit-box-shadow: inset 0 0 2px rgba(0,0,0,0.1);
 }
 
 .sidebar-scroll::-webkit-scrollbar-thumb {
@@ -277,6 +280,22 @@
 .sidebar-scroll::-webkit-scrollbar-thumb:hover {
     background: #FF8A65;
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+
+/* 强制显示滚动条的附加样式 */
+.sidebar-scroll::-webkit-scrollbar-thumb:window-inactive {
+    background: #FF7043; /* 即使窗口不活跃时也显示 */
+}
+
+.sidebar-scroll::-webkit-scrollbar-corner {
+    background: rgba(0, 0, 0, 0.05);
+}
+
+/* 确保在任何情况下都显示滚动条 */
+.force-scrollbar {
+    overflow-y: scroll !important;
+    scrollbar-width: thin !important;
+    scrollbar-color: #FF7043 rgba(0, 0, 0, 0.1) !important;
 }
 
 .ai-icon {
