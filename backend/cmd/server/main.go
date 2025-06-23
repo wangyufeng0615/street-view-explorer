@@ -110,7 +110,7 @@ func main() {
 
 	// 添加中间件
 	r.Use(gin.Recovery())
-	r.Use(gin.Logger())
+	r.Use(api.RequestLoggingMiddleware()) // 使用结构化日志替代默认日志
 	r.Use(api.ErrorHandler())
 	r.Use(api.CORSMiddleware())
 
@@ -163,8 +163,19 @@ func main() {
 	api.SetupRoutes(r, handlers)
 
 	addr := cfg.ServerAddress()
+	logger := utils.SystemLogger()
+	
+	logger.Info("server_starting", "Starting HTTP server", map[string]interface{}{
+		"address":     addr,
+		"rate_limit":  cfg.SecurityConfig().RateLimit.Enabled,
+		"proxy_enabled": cfg.ProxyURL() != "",
+	})
+	
 	fmt.Printf("服务器运行在 %s\n", addr)
 	if err := r.Run(addr); err != nil {
+		logger.Error("server_failed", "Server failed to start", err, map[string]interface{}{
+			"address": addr,
+		})
 		log.Fatalf("服务器运行失败: %v", err)
 	}
 }

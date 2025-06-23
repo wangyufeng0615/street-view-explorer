@@ -1,13 +1,13 @@
 package api
 
 import (
-	"log"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/my-streetview-project/backend/internal/services"
+	"github.com/my-streetview-project/backend/internal/utils"
 )
 
 type Handlers struct {
@@ -81,32 +81,41 @@ func (h *Handlers) GetLocationDescription(c *gin.Context) {
 	}
 
 	startTime := time.Now()
-	log.Printf("[API_CALL] action=start handler=GetLocationDescription pano_id=%s lang=%s", panoID, language)
+	logger := utils.APILogger()
 	
 	desc, err := h.aiService.GetDescriptionForLocation(loc, language)
 	if err != nil {
 		duration := time.Since(startTime)
 		statusCode := http.StatusInternalServerError
-		errorMsg := err.Error()
 		
-		if strings.Contains(errorMsg, "超时") || strings.Contains(errorMsg, "timeout") {
+		if strings.Contains(err.Error(), "超时") || strings.Contains(err.Error(), "timeout") {
 			statusCode = http.StatusRequestTimeout
 		}
 		
-		log.Printf("[API_ERROR] action=failed handler=GetLocationDescription pano_id=%s duration=%v status=%d error=%v", panoID, duration, statusCode, err)
+		logger.Error("get_description_failed", "Failed to get AI description", err, map[string]interface{}{
+			"pano_id":  panoID,
+			"language": language,
+			"duration": duration.String(),
+			"status":   statusCode,
+		})
 		
 		c.JSON(statusCode, gin.H{
 			"success": false,
-			"error":   errorMsg,
+			"error":   err.Error(),
 			"duration": duration.String(),
 		})
 		return
 	}
 	
-	// 验证描述内容是否有效，防止返回空内容的200响应
+	// 验证描述内容是否有效
 	if desc == "" || strings.TrimSpace(desc) == "" {
 		duration := time.Since(startTime)
-		log.Printf("[API_ERROR] action=empty_description handler=GetLocationDescription pano_id=%s duration=%v desc_length=%d", panoID, duration, len(desc))
+		logger.Warn("empty_description", "AI generated empty description", map[string]interface{}{
+			"pano_id":    panoID,
+			"language":   language,
+			"duration":   duration.String(),
+			"desc_length": len(desc),
+		})
 		
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
@@ -116,15 +125,18 @@ func (h *Handlers) GetLocationDescription(c *gin.Context) {
 		return
 	}
 	
-	duration := time.Since(startTime)
-	log.Printf("[API_SUCCESS] action=completed handler=GetLocationDescription pano_id=%s duration=%v desc_length=%d", panoID, duration, len(desc))
+	logger.LogRequest("get_description_success", time.Since(startTime), map[string]interface{}{
+		"pano_id":     panoID,
+		"language":    language,
+		"desc_length": len(desc),
+	})
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data": gin.H{
 			"description": desc,
 			"language":    language,
-			"duration":    duration.String(),
+			"duration":    time.Since(startTime).String(),
 		},
 	})
 }
@@ -153,7 +165,7 @@ func (h *Handlers) GetLocationDetailedDescription(c *gin.Context) {
 	}
 
 	startTime := time.Now()
-	log.Printf("[API_CALL] action=start handler=GetLocationDetailedDescription pano_id=%s lang=%s", panoID, language)
+	logger := utils.APILogger()
 	
 	desc, err := h.aiService.GetDetailedDescriptionForLocation(loc, language)
 	if err != nil {
@@ -167,7 +179,12 @@ func (h *Handlers) GetLocationDetailedDescription(c *gin.Context) {
 			statusCode = http.StatusBadRequest
 		}
 		
-		log.Printf("[API_ERROR] action=failed handler=GetLocationDetailedDescription pano_id=%s duration=%v status=%d error=%v", panoID, duration, statusCode, err)
+		logger.Error("get_detailed_description_failed", "Failed to get detailed AI description", err, map[string]interface{}{
+			"pano_id":  panoID,
+			"language": language,
+			"duration": time.Since(startTime).String(),
+			"status":   statusCode,
+		})
 		
 		c.JSON(statusCode, gin.H{
 			"success": false,
@@ -177,15 +194,18 @@ func (h *Handlers) GetLocationDetailedDescription(c *gin.Context) {
 		return
 	}
 	
-	duration := time.Since(startTime)
-	log.Printf("[API_SUCCESS] action=completed handler=GetLocationDetailedDescription pano_id=%s duration=%v desc_length=%d", panoID, duration, len(desc))
+	logger.LogRequest("get_detailed_description_success", time.Since(startTime), map[string]interface{}{
+		"pano_id":     panoID,
+		"language":    language,
+		"desc_length": len(desc),
+	})
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data": gin.H{
 			"description": desc,
 			"language":    language,
-			"duration":    duration.String(),
+			"duration":    time.Since(startTime).String(),
 		},
 	})
 }

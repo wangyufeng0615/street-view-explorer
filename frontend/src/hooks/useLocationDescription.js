@@ -142,9 +142,15 @@ export default function useLocationDescription() {
                 }, Math.min(2000 * (descRetries + 1), 5000));
             }
         } finally {
-            if (abortControllerRef.current && locationRef.current?.pano_id === panoId) {
+            // 确保loading状态始终被正确重置，即使在竞争条件下
+            if (locationRef.current?.pano_id === panoId) {
                 isLoadingRef.current = false;
-                setIsLoadingDesc(false);
+                // 使用 setTimeout 确保状态更新在下一个事件循环中执行
+                setTimeout(() => {
+                    if (locationRef.current?.pano_id === panoId) {
+                        setIsLoadingDesc(false);
+                    }
+                }, 0);
             }
         }
     }, [cleanup, timeoutPromise, i18n.language]);
@@ -167,8 +173,11 @@ export default function useLocationDescription() {
             networkStateRef.current = false;
             if (isLoadingRef.current) {
                 setDescError('网络连接已断开');
-                setIsLoadingDesc(false);
                 isLoadingRef.current = false;
+                // 使用 setTimeout 确保状态更新在下一个事件循环中执行
+                setTimeout(() => {
+                    setIsLoadingDesc(false);
+                }, 0);
             }
         };
 

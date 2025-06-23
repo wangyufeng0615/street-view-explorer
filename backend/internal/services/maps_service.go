@@ -401,10 +401,5 @@ func (s *MapsService) GetLocationInfo(ctx context.Context, latitude, longitude f
 		result["plus_code_compound"] = resp[0].PlusCode.CompoundCode
 	}
 
-	// 添加调试日志 - 记录从Google API获取的完整地理位置信息
-	log.Printf("Google Maps API - 原始响应的第一个结果: FormattedAddress=%s, AddressComponents数量=%d", resp[0].FormattedAddress, len(resp[0].AddressComponents))
-	log.Printf("Google Maps API - PlusCode: Global=%s, Compound=%s", resp[0].PlusCode.GlobalCode, resp[0].PlusCode.CompoundCode)
-	log.Printf("Google Maps API - 提取的完整result: %+v", result)
-
 	return result, nil
 }

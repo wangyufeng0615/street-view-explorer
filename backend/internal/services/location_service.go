@@ -3,7 +3,6 @@ package services
 import (
 	"context"
 	"fmt"
-	"log"
 	"math"
 	"time"
 
@@ -55,32 +54,48 @@ func (ls *LocationService) GetRandomLocation(sessionID string, language string) 
 	}
 
 	// 生成随机位置（regions 为 nil 时使用默认全球区域）
-	return ls.generateRandomLocation(regions, language)
+	return ls.generateRandomLocation(regions, language, sessionID)
 }
 
 // generateRandomLocation 统一的随机位置生成逻辑
 // regions 为 nil 时使用默认大陆区域，否则使用用户偏好区域
 // 使用带兜底机制的街景搜索，确保总是能找到可用位置
-func (ls *LocationService) generateRandomLocation(regions []models.Region, language string) (models.Location, error) {
+func (ls *LocationService) generateRandomLocation(regions []models.Region, language string, sessionID string) (models.Location, error) {
 	ctx := context.Background()
 
 	// 生成随机坐标
 	lat, lng := utils.GenerateRandomCoordinate(regions)
-	log.Printf("[COORD_GENERATED] action=random_coordinate coords=(%.6f,%.6f) has_preference=%t", lat, lng, regions != nil)
+	logger := utils.LocationLogger()
+	
+	logger.Debug("coordinate_generated", "Generated random coordinate", map[string]interface{}{
+		"latitude":       lat,
+		"longitude":      lng,
+		"has_preference": regions != nil,
+		"session_id":     sessionID,
+	})
 
 	// 使用带兜底机制的街景搜索，总是能找到可用街景
 	hasStreetView, validLat, validLng, panoId := ls.maps.HasStreetView(ctx, lat, lng, regions != nil)
 	
 	// 由于有兜底机制，这里应该总是成功，但保留检查以防万一
 	if !hasStreetView {
-		log.Printf("[STREETVIEW_CRITICAL_ERROR] action=fallback_failed coords=(%.6f,%.6f)", lat, lng)
+		logger.Error("streetview_fallback_failed", "Critical error: fallback mechanism failed", nil, map[string]interface{}{
+			"original_lat": lat,
+			"original_lng": lng,
+			"session_id":   sessionID,
+		})
 		return models.Location{}, fmt.Errorf("严重错误：即使使用兜底机制也无法找到街景")
 	}
 
 	// 获取位置信息
 	locationInfo, err := ls.maps.GetLocationInfo(ctx, validLat, validLng, language)
 	if err != nil {
-		log.Printf("[GEOCODING_ERROR] action=get_location_info coords=(%.6f,%.6f) error=%v", validLat, validLng, err)
+		logger.Error("geocoding_failed", "Failed to get location info", err, map[string]interface{}{
+			"latitude":   validLat,
+			"longitude":  validLng,
+			"language":   language,
+			"session_id": sessionID,
+		})
 		return models.Location{}, fmt.Errorf("获取位置信息失败: %w", err)
 	}
 
@@ -98,12 +113,22 @@ func (ls *LocationService) generateRandomLocation(regions []models.Region, langu
 
 	// 保存位置记录
 	if err := ls.repo.SaveLocation(location); err != nil {
-		log.Printf("[STORAGE_ERROR] action=save_location pano_id=%s error=%v", panoId, err)
+		logger.Error("save_location_failed", "Failed to save location record", err, map[string]interface{}{
+			"pano_id":    panoId,
+			"session_id": sessionID,
+		})
 		return models.Location{}, fmt.Errorf("保存位置记录失败: %w", err)
 	}
 
-	log.Printf("[LOCATION_SUCCESS] action=generated coords=(%.6f,%.6f) address=%s country=%s pano_id=%s", 
-		location.Latitude, location.Longitude, location.FormattedAddress, location.Country, location.PanoID)
+	logger.Info("location_generated", "Successfully generated random location", map[string]interface{}{
+		"pano_id":     location.PanoID,
+		"latitude":    location.Latitude,
+		"longitude":   location.Longitude,
+		"country":     location.Country,
+		"address":     location.FormattedAddress,
+		"session_id":  sessionID,
+		"language":    language,
+	})
 	return location, nil
 }
 

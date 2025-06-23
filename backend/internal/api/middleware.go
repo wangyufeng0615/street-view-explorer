@@ -6,10 +6,12 @@ import (
 	"net/http"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
+	"github.com/my-streetview-project/backend/internal/utils"
 )
 
 // RateLimitMiddleware 实现基于 Redis 的请求限流
@@ -160,4 +162,33 @@ func generateSecureSessionID() string {
 		return ""
 	}
 	return hex.EncodeToString(b)
+}
+
+// RequestLoggingMiddleware 记录请求日志
+func RequestLoggingMiddleware() gin.HandlerFunc {
+	logger := utils.APILogger()
+	
+	return gin.LoggerWithFormatter(func(param gin.LogFormatterParams) string {
+		// 只记录关键请求信息，避免过于详细
+		if param.StatusCode >= 400 {
+			logger.Error("request_failed", "HTTP request failed", nil, map[string]interface{}{
+				"method":     param.Method,
+				"path":       param.Path,
+				"status":     param.StatusCode,
+				"duration":   param.Latency.String(),
+				"client_ip":  param.ClientIP,
+				"user_agent": param.Request.UserAgent(),
+			})
+		} else if param.Path == "/api/v1/locations/random" || strings.Contains(param.Path, "/description") {
+			// 只记录核心API的成功请求
+			logger.LogRequest("request_success", param.Latency, map[string]interface{}{
+				"method":    param.Method,
+				"path":      param.Path,
+				"status":    param.StatusCode,
+				"client_ip": param.ClientIP,
+			})
+		}
+		
+		return "" // 返回空字符串避免重复日志
+	})
 }

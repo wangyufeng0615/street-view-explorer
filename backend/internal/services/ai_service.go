@@ -3,7 +3,6 @@ package services
 import (
 	"context"
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
@@ -11,6 +10,7 @@ import (
 	"github.com/my-streetview-project/backend/internal/models"
 	"github.com/my-streetview-project/backend/internal/openai"
 	"github.com/my-streetview-project/backend/internal/repositories"
+	"github.com/my-streetview-project/backend/internal/utils"
 )
 
 type AIService struct {
@@ -36,7 +36,7 @@ func NewAIService(cfg config.Config, repo repositories.Repository) (*AIService, 
 
 func (ai *AIService) GetDescriptionForLocation(loc models.Location, language string) (string, error) {
 	startTime := time.Now()
-	log.Printf("[SERVICE_CALL] action=start service=AIService method=GetDescriptionForLocation pano_id=%s lang=%s coords=(%.6f,%.6f)", loc.PanoID, language, loc.Latitude, loc.Longitude)
+	logger := utils.AILogger()
 
 	// Get location info
 	var locationInfo map[string]string
@@ -45,7 +45,12 @@ func (ai *AIService) GetDescriptionForLocation(loc models.Location, language str
 	if ai.config.EnableGoogleAPI() {
 		locationInfo, err = ai.maps.GetLocationInfo(context.Background(), loc.Latitude, loc.Longitude, language)
 		if err != nil {
-			log.Printf("[SERVICE_ERROR] action=maps_failed service=AIService pano_id=%s error=%v", loc.PanoID, err)
+			logger.Error("maps_failed", "Failed to get location info from Google Maps", err, map[string]interface{}{
+				"pano_id":   loc.PanoID,
+				"language":  language,
+				"latitude":  loc.Latitude,
+				"longitude": loc.Longitude,
+			})
 			return "", fmt.Errorf("获取位置信息失败: %v", err)
 		}
 	} else {
@@ -57,7 +62,11 @@ func (ai *AIService) GetDescriptionForLocation(loc models.Location, language str
 	if ai.config.EnableOpenAI() {
 		description, _, err := ai.openAI.GenerateLocationDescription(loc.Latitude, loc.Longitude, locationInfo, language)
 		if err != nil {
-			log.Printf("[SERVICE_ERROR] action=ai_failed service=AIService pano_id=%s duration=%v error=%v", loc.PanoID, time.Since(startTime), err)
+			logger.Error("ai_generation_failed", "Failed to generate AI description", err, map[string]interface{}{
+				"pano_id":  loc.PanoID,
+				"language": language,
+				"duration": time.Since(startTime).String(),
+			})
 			return "", fmt.Errorf("AI 描述生成失败: %v", err)
 		}
 		desc = description
@@ -67,19 +76,26 @@ func (ai *AIService) GetDescriptionForLocation(loc models.Location, language str
 
 	// 验证生成的描述是否有效
 	if desc == "" || strings.TrimSpace(desc) == "" {
-		log.Printf("[SERVICE_ERROR] action=empty_description service=AIService pano_id=%s desc_length=%d", loc.PanoID, len(desc))
+		logger.Warn("empty_description", "Generated empty AI description", map[string]interface{}{
+			"pano_id":     loc.PanoID,
+			"language":    language,
+			"desc_length": len(desc),
+		})
 		return "", fmt.Errorf("生成的AI描述为空或无效")
 	}
 
-	totalDuration := time.Since(startTime)
-	log.Printf("[SERVICE_SUCCESS] action=completed service=AIService method=GetDescriptionForLocation pano_id=%s duration=%v desc_length=%d", loc.PanoID, totalDuration, len(desc))
+	logger.LogRequest("description_generated", time.Since(startTime), map[string]interface{}{
+		"pano_id":     loc.PanoID,
+		"language":    language,
+		"desc_length": len(desc),
+	})
 	return desc, nil
 }
 
 // GetDetailedDescriptionForLocation 获取位置的详细AI描述
 func (ai *AIService) GetDetailedDescriptionForLocation(loc models.Location, language string) (string, error) {
 	startTime := time.Now()
-	log.Printf("[SERVICE_CALL] action=start service=AIService method=GetDetailedDescriptionForLocation pano_id=%s lang=%s coords=(%.6f,%.6f)", loc.PanoID, language, loc.Latitude, loc.Longitude)
+	logger := utils.AILogger()
 
 	// Get location info
 	var locationInfo map[string]string
@@ -88,7 +104,10 @@ func (ai *AIService) GetDetailedDescriptionForLocation(loc models.Location, lang
 	if ai.config.EnableGoogleAPI() {
 		locationInfo, err = ai.maps.GetLocationInfo(context.Background(), loc.Latitude, loc.Longitude, language)
 		if err != nil {
-			log.Printf("[SERVICE_ERROR] action=maps_failed service=AIService pano_id=%s error=%v", loc.PanoID, err)
+			logger.Error("maps_failed", "Failed to get location info for detailed description", err, map[string]interface{}{
+				"pano_id": loc.PanoID,
+				"language": language,
+			})
 			return "", fmt.Errorf("获取位置信息失败: %v", err)
 		}
 	} else {
@@ -100,7 +119,11 @@ func (ai *AIService) GetDetailedDescriptionForLocation(loc models.Location, lang
 	if ai.config.EnableOpenAI() {
 		desc, err = ai.openAI.GenerateDetailedLocationDescription(loc.Latitude, loc.Longitude, locationInfo, language)
 		if err != nil {
-			log.Printf("[SERVICE_ERROR] action=detailed_ai_failed service=AIService pano_id=%s duration=%v error=%v", loc.PanoID, time.Since(startTime), err)
+			logger.Error("detailed_ai_failed", "Failed to generate detailed AI description", err, map[string]interface{}{
+				"pano_id": loc.PanoID,
+				"language": language,
+				"duration": time.Since(startTime).String(),
+			})
 			return "", fmt.Errorf("AI 详细描述生成失败: %v", err)
 		}
 	} else {
@@ -109,12 +132,19 @@ func (ai *AIService) GetDetailedDescriptionForLocation(loc models.Location, lang
 
 	// 验证生成的描述是否有效
 	if desc == "" || strings.TrimSpace(desc) == "" {
-		log.Printf("[SERVICE_ERROR] action=empty_detailed_description service=AIService pano_id=%s desc_length=%d", loc.PanoID, len(desc))
+		logger.Warn("empty_detailed_description", "Generated empty detailed AI description", map[string]interface{}{
+			"pano_id": loc.PanoID,
+			"language": language,
+			"desc_length": len(desc),
+		})
 		return "", fmt.Errorf("生成的AI详细描述为空或无效")
 	}
 
-	totalDuration := time.Since(startTime)
-	log.Printf("[SERVICE_SUCCESS] action=completed service=AIService method=GetDetailedDescriptionForLocation pano_id=%s duration=%v desc_length=%d", loc.PanoID, totalDuration, len(desc))
+	logger.LogRequest("detailed_description_generated", time.Since(startTime), map[string]interface{}{
+		"pano_id": loc.PanoID,
+		"language": language,
+		"desc_length": len(desc),
+	})
 	return desc, nil
 }
 

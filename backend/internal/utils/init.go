@@ -1,9 +1,5 @@
 package utils
 
-import (
-	"fmt"
-	"log"
-)
 
 // 全局地图数据管理器
 var globalMapManager *MapDataManager
@@ -13,35 +9,45 @@ func init() {
 	// 创建地图数据管理器
 	globalMapManager = NewMapDataManager()
 
+	logger := SystemLogger()
+	
 	// 确保世界地图数据存在
 	if err := globalMapManager.EnsureWorldMapData(); err != nil {
-		log.Printf("警告：初始化世界地图数据失败: %v", err)
-		log.Printf("程序将继续运行，但地图相关功能可能受影响")
+		logger.Warn("map_data_init_failed", "Failed to initialize world map data", map[string]interface{}{
+			"error": err.Error(),
+		})
 	} else {
 		// 获取并显示地图数据信息
 		info, err := globalMapManager.GetMapDataInfo()
 		if err != nil {
-			log.Printf("获取地图数据信息失败: %v", err)
+			logger.Error("map_data_info_failed", "Failed to get map data info", err)
 		} else {
 			if exists, ok := info["exists"].(bool); ok && exists {
 				sizeKB, _ := info["size_kb"].(float64)
 				featuresCount, _ := info["features_count"].(int)
-				fmt.Printf("✓ 世界地图数据已就绪 (%.1f KB, %d 个特征)\n", sizeKB, featuresCount)
+				logger.Info("map_data_ready", "World map data initialized", map[string]interface{}{
+					"size_kb":         sizeKB,
+					"features_count":  featuresCount,
+				})
 			}
 		}
 	}
 
 	// 确保小型岛屿数据存在
 	if err := globalMapManager.EnsureMinorIslandsData(); err != nil {
-		log.Printf("警告：初始化小型岛屿数据失败: %v", err)
-		log.Printf("程序将继续运行，但小型岛屿数据不可用")
+		logger.Warn("minor_islands_init_failed", "Failed to initialize minor islands data", map[string]interface{}{
+			"error": err.Error(),
+		})
 	} else {
 		// 尝试获取小型岛屿数据信息
 		minorIslandsData, err := globalMapManager.LoadMinorIslandsData()
 		if err != nil {
-			log.Printf("获取小型岛屿数据信息失败: %v", err)
+			logger.Error("minor_islands_load_failed", "Failed to load minor islands data", err)
 		} else {
-			fmt.Printf("✓ 小型岛屿数据已就绪 (%d 个岛屿)\n", len(minorIslandsData.Features))
+			islandCount := len(minorIslandsData.Features)
+			logger.Info("minor_islands_ready", "Minor islands data initialized", map[string]interface{}{
+				"island_count": islandCount,
+			})
 		}
 	}
 }

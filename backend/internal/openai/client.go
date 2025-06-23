@@ -282,9 +282,6 @@ func (c *client) GenerateLocationDescription(latitude, longitude float64, locati
 		outputFormat,
 	)
 
-	// 添加调试日志 - 记录传递给AI的完整prompt
-	log.Printf("AI调用 - 完整的prompt内容:\n%s", prompt)
-
 	reqBody := chatRequest{
 		Model: model,
 		Messages: []chatMessage{
