@@ -1,5 +1,7 @@
 # Street View Explorer
 
+https://earth.wangyufeng.org/
+
 A web application for randomly exploring global street views with AI-generated descriptions.
 
 ## Features
