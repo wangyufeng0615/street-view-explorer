@@ -92,5 +92,6 @@
   "go_explore": "Go Explorer!",
   "site_tagline": "Exploring the Earth with AI",
   "message.emailCopied": "Email address copied",
-  "message.pleaseManualCopyEmail": "Please manually copy email address"
+  "message.pleaseManualCopyEmail": "Please manually copy email address",
+  "streetview.interactionTip": "You can manually rotate and move the street view~"
 } 

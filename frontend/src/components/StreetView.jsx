@@ -8,6 +8,31 @@ const styles = {
         height: '100%',
         position: 'relative'
     },
+    interactionTip: {
+        position: 'absolute',
+        top: '20px',
+        left: '50%',
+        transform: 'translateX(-50%)',
+        backgroundColor: 'rgba(0, 0, 0, 0.75)',
+        color: 'rgba(255, 255, 255, 0.95)',
+        padding: '10px 18px',
+        borderRadius: '24px',
+        fontSize: '13px',
+        fontWeight: '400',
+        zIndex: 100,
+        backdropFilter: 'blur(12px)',
+        boxShadow: '0 4px 16px rgba(0, 0, 0, 0.25), 0 2px 4px rgba(0, 0, 0, 0.1)',
+        whiteSpace: 'nowrap',
+        pointerEvents: 'none',
+        userSelect: 'none',
+        opacity: 0.9,
+        transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+        lineHeight: '1.4',
+        textShadow: '0 1px 3px rgba(0, 0, 0, 0.4)',
+        border: '1px solid rgba(255, 255, 255, 0.1)',
+        animation: 'tipFadeIn 0.6s ease-out',
+        letterSpacing: '0.02em'
+    },
     errorContainer: {
         position: 'absolute',
         top: 0,
@@ -54,6 +79,7 @@ export default function StreetView({ latitude, longitude, onPovChanged }) {
     const lastUserInteractionRef = useRef(0); // 记录最后一次用户交互时间
     const [error, setError] = useState(null);
     const [isNetworkError, setIsNetworkError] = useState(false);
+    const [showInteractionTip, setShowInteractionTip] = useState(false);
     const { t } = useTranslation();
 
     // 自动旋转函数 - 使用 requestAnimationFrame 实现丝滑效果
@@ -63,7 +89,7 @@ export default function StreetView({ latitude, longitude, onPovChanged }) {
         }
         
         let currentHeading = panorama.getPov().heading; // 从当前角度开始
-        const rotateSpeed = 0.1; // 每帧旋转0.1度，更细腻的增量
+        const rotateSpeed = 0.03; // 每帧旋转0.03度
         let lastTime = performance.now();
         let animationId;
 
@@ -127,6 +153,11 @@ export default function StreetView({ latitude, longitude, onPovChanged }) {
 
     // 处理用户交互
     const handleUserInteraction = () => {
+        // 隐藏操作提示
+        if (showInteractionTip) {
+            setShowInteractionTip(false);
+        }
+        
         if (isAutoRotatingRef.current) {
             stopAutoRotate();
             
@@ -231,6 +262,19 @@ export default function StreetView({ latitude, longitude, onPovChanged }) {
                             startAutoRotate(panorama);
                         }
                     }, 2000); // 街景加载完成后等待2秒再开始旋转
+                    
+                    // 延迟显示操作提示
+                    setTimeout(() => {
+                        if (isMounted) {
+                            setShowInteractionTip(true);
+                            // 8秒后自动隐藏提示
+                            setTimeout(() => {
+                                if (isMounted) {
+                                    setShowInteractionTip(false);
+                                }
+                            }, 8000);
+                        }
+                    }, 3000); // 街景加载完成后等待3秒再显示提示
                 });
                 listeners.push(panoListener);
 
@@ -309,6 +353,8 @@ export default function StreetView({ latitude, longitude, onPovChanged }) {
                 clearTimeout(userInteractionTimerRef.current);
                 userInteractionTimerRef.current = null;
             }
+            // 重置提示状态
+            setShowInteractionTip(false);
             panoramaInstanceRef.current = null;
             // 调用清理函数（如果存在）
             if (cleanup) {
@@ -320,6 +366,13 @@ export default function StreetView({ latitude, longitude, onPovChanged }) {
     return (
         <div style={styles.container}>
             <div ref={panoramaRef} style={{ width: '100%', height: '100%' }} />
+            
+            {/* 操作提示气泡 */}
+            {showInteractionTip && !error && (
+                <div style={styles.interactionTip}>
+                    {t('streetview.interactionTip')}
+                </div>
+            )}
             
             {error && (
                 <div style={styles.errorContainer}>

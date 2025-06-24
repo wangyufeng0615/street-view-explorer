@@ -92,5 +92,6 @@
   "go_explore": "去探险！",
   "site_tagline": "探索地球，和AI一起",
   "message.emailCopied": "邮箱地址已复制",
-  "message.pleaseManualCopyEmail": "请手动复制邮箱地址"
+  "message.pleaseManualCopyEmail": "请手动复制邮箱地址",
+  "streetview.interactionTip": "街景可以手动旋转和移动的哦~"
 } 
