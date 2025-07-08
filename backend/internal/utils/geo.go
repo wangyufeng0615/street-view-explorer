@@ -85,18 +85,16 @@ func getLandMassRegions() ([]Region, error) {
 		// 从小型岛屿数据提取区域并合并
 		minorIslandRegions := extractLandRegionsFromGeoJSON(minorIslandsData, true) // true表示是小型岛屿
 		regions = append(regions, minorIslandRegions...)
-		log.Printf("成功加载 %d 个小型岛屿区域", len(minorIslandRegions))
 	}
 
 	if len(regions) == 0 {
 		return nil, fmt.Errorf("未能从地图数据中提取到陆地区域")
 	}
 
-	// 更新缓存
+	// 缓存结果
 	cachedLandRegions = regions
 	regionCacheTime = time.Now()
 
-	log.Printf("从Natural Earth数据集加载了 %d 个陆地区域（包含小型岛屿）", len(regions))
 	return regions, nil
 }
 
@@ -333,18 +331,15 @@ func GenerateRandomCoordinate(regions []models.Region) (latitude, longitude floa
 		// 在多边形内生成坐标，减少尝试次数因为有街景兜底
 		lat, lng, success := generateCoordinateInPolygon(polygon, 100)
 		if success {
-			log.Printf("[COORD_SUCCESS] action=polygon_coordinate country=%s coords=(%.6f,%.6f)", region.CountryName, lat, lng)
 			return lat, lng
 		}
 
 		// 如果多边形内生成失败，回退到边界框内生成
-		log.Printf("[COORD_FALLBACK] action=bbox_coordinate country=%s", region.CountryName)
 		lat, lng = generateCoordinateInBounds(region.North, region.South, region.East, region.West)
 		return lat, lng
 	}
 
 	// 如果没有多边形数据，直接使用边界框
-	log.Printf("[COORD_BBOX] action=bbox_only country=%s", region.CountryName)
 	lat, lng := generateCoordinateInBounds(region.North, region.South, region.East, region.West)
 	return lat, lng
 }
@@ -376,7 +371,6 @@ func selectRegionSource(userRegions []models.Region) []Region {
 				IsMinorIsland: false,                      // 用户定义的区域默认不是小型岛屿
 			}
 		}
-		log.Printf("转换了 %d 个用户偏好区域，每个区域都包含矩形多边形", len(regions))
 		return regions
 	}
 

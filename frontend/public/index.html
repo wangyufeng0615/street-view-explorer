@@ -42,7 +42,6 @@
     <meta name="msapplication-TileColor" content="#4285F4" />
     <meta name="application-name" content="Explore Earth with AI" />
     <meta name="apple-mobile-web-app-title" content="Explore Earth with AI" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     
     <!-- Favicon -->
@@ -86,11 +85,19 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     
-    <!-- Cloudflare Analytics -->
-    <script defer src="https://static.cloudflareinsights.com/beacon.min.js/vcd15cbe7772f49c399c6a5babf22c1241717689176015" 
-            integrity="sha512-ZpsOmlRQV6y907TI0dKBHq9Md29nnaEIPlkf84rnaERnq6zvWvPUqr2ft8M1aS28oN72PdrCzSjY4U6VaAw1EQ==" 
-            crossorigin="anonymous"
-            data-cf-beacon='{"rayId":"8fd5a55099dee2ec","version":"2024.10.5","r":1,"token":"c9d9355b377f4299a186ea48fd6bbc39","serverTiming":{"name":{"cfExtPri":true,"cfL4":true,"cfSpeedBrain":true,"cfCacheStatus":true}}}'></script>
+    <!-- Cloudflare Analytics (Production Only) -->
+    <script>
+        // Only load Cloudflare Analytics in production environment
+        if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+            const script = document.createElement('script');
+            script.defer = true;
+            script.src = 'https://static.cloudflareinsights.com/beacon.min.js/vcd15cbe7772f49c399c6a5babf22c1241717689176015';
+            script.integrity = 'sha512-ZpsOmlRQV6y907TI0dKBHq9Md29nnaEIPlkf84rnaERnq6zvWvPUqr2ft8M1aS28oN72PdrCzSjY4U6VaAw1EQ==';
+            script.crossOrigin = 'anonymous';
+            script.setAttribute('data-cf-beacon', '{"rayId":"8fd5a55099dee2ec","version":"2024.10.5","r":1,"token":"c9d9355b377f4299a186ea48fd6bbc39","serverTiming":{"name":{"cfExtPri":true,"cfL4":true,"cfSpeedBrain":true,"cfCacheStatus":true}}}');
+            document.head.appendChild(script);
+        }
+    </script>
 </head>
 <body>
     <div id="root"></div>

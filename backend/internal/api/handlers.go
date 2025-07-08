@@ -82,54 +82,48 @@ func (h *Handlers) GetLocationDescription(c *gin.Context) {
 
 	startTime := time.Now()
 	logger := utils.APILogger()
-	
+
 	desc, err := h.aiService.GetDescriptionForLocation(loc, language)
 	if err != nil {
 		duration := time.Since(startTime)
 		statusCode := http.StatusInternalServerError
-		
+
 		if strings.Contains(err.Error(), "超时") || strings.Contains(err.Error(), "timeout") {
 			statusCode = http.StatusRequestTimeout
 		}
-		
+
 		logger.Error("get_description_failed", "Failed to get AI description", err, map[string]interface{}{
 			"pano_id":  panoID,
 			"language": language,
 			"duration": duration.String(),
 			"status":   statusCode,
 		})
-		
+
 		c.JSON(statusCode, gin.H{
-			"success": false,
-			"error":   err.Error(),
+			"success":  false,
+			"error":    err.Error(),
 			"duration": duration.String(),
 		})
 		return
 	}
-	
+
 	// 验证描述内容是否有效
 	if desc == "" || strings.TrimSpace(desc) == "" {
 		duration := time.Since(startTime)
-		logger.Warn("empty_description", "AI generated empty description", map[string]interface{}{
-			"pano_id":    panoID,
-			"language":   language,
-			"duration":   duration.String(),
+		logger.Error("empty_description", "AI generated empty description", nil, map[string]interface{}{
+			"pano_id":     panoID,
+			"language":    language,
+			"duration":    duration.String(),
 			"desc_length": len(desc),
 		})
-		
+
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"error":   "AI生成的描述为空，请重试",
+			"success":  false,
+			"error":    "AI生成的描述为空，请重试",
 			"duration": duration.String(),
 		})
 		return
 	}
-	
-	logger.LogRequest("get_description_success", time.Since(startTime), map[string]interface{}{
-		"pano_id":     panoID,
-		"language":    language,
-		"desc_length": len(desc),
-	})
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -166,39 +160,33 @@ func (h *Handlers) GetLocationDetailedDescription(c *gin.Context) {
 
 	startTime := time.Now()
 	logger := utils.APILogger()
-	
+
 	desc, err := h.aiService.GetDetailedDescriptionForLocation(loc, language)
 	if err != nil {
 		duration := time.Since(startTime)
 		statusCode := http.StatusInternalServerError
 		errorMsg := err.Error()
-		
+
 		if strings.Contains(errorMsg, "超时") || strings.Contains(errorMsg, "timeout") {
 			statusCode = http.StatusRequestTimeout
 		} else if strings.Contains(errorMsg, "没有找到基础对话历史") {
 			statusCode = http.StatusBadRequest
 		}
-		
+
 		logger.Error("get_detailed_description_failed", "Failed to get detailed AI description", err, map[string]interface{}{
 			"pano_id":  panoID,
 			"language": language,
 			"duration": time.Since(startTime).String(),
 			"status":   statusCode,
 		})
-		
+
 		c.JSON(statusCode, gin.H{
-			"success": false,
-			"error":   errorMsg,
+			"success":  false,
+			"error":    errorMsg,
 			"duration": duration.String(),
 		})
 		return
 	}
-	
-	logger.LogRequest("get_detailed_description_success", time.Since(startTime), map[string]interface{}{
-		"pano_id":     panoID,
-		"language":    language,
-		"desc_length": len(desc),
-	})
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/my-streetview-project/backend/internal/models"
+	"github.com/my-streetview-project/backend/internal/utils"
 )
 
 const (
@@ -175,7 +176,16 @@ func truncateString(s string, maxLength int) string {
 
 func (c *client) GenerateLocationDescription(latitude, longitude float64, locationInfo map[string]string, language string) (string, []ChatMessage, error) {
 	startTime := time.Now()
-	log.Printf("[AI_CALL] action=start function=GenerateLocationDescription coords=(%.6f,%.6f) lang=%s model=%s timeout=%v", latitude, longitude, language, model, timeout)
+	timeout := 15 * time.Second
+
+	logger := utils.AILogger()
+	logger.Info("ai_request_start", "Starting AI description generation", map[string]interface{}{
+		"function": "GenerateLocationDescription",
+		"coords":   fmt.Sprintf("(%.6f,%.6f)", latitude, longitude),
+		"language": language,
+		"model":    model,
+		"timeout":  timeout.String(),
+	})
 
 	// 根据语言选择提示词格式
 	outputFormat := "Give it to me in Chinese"
@@ -296,7 +306,6 @@ func (c *client) GenerateLocationDescription(latitude, longitude float64, locati
 		return "", nil, fmt.Errorf("编码请求失败: %w", err)
 	}
 
-	// 为基础描述也添加context超时控制
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
@@ -307,8 +316,6 @@ func (c *client) GenerateLocationDescription(latitude, longitude float64, locati
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+c.apiKey)
-
-	_ = time.Now() // Request sent time (unused in simplified logging)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -349,7 +356,11 @@ func (c *client) GenerateLocationDescription(latitude, longitude float64, locati
 	}
 
 	desc := chatResp.Choices[0].Message.Content
-	log.Printf("[AI_SUCCESS] action=completed function=GenerateLocationDescription duration=%v response_length=%d", time.Since(startTime), len(desc))
+	logger.Info("ai_request_completed", "AI description generation completed", map[string]interface{}{
+		"function":        "GenerateLocationDescription",
+		"duration":        time.Since(startTime).String(),
+		"response_length": len(desc),
+	})
 
 	// 返回对话历史以供详细描述使用
 	conversationHistory := append(reqBody.Messages, ChatMessage{
@@ -361,12 +372,18 @@ func (c *client) GenerateLocationDescription(latitude, longitude float64, locati
 }
 
 func (c *client) GenerateDetailedLocationDescription(latitude, longitude float64, locationInfo map[string]string, language string) (string, error) {
-	// 记录API调用开始时间
 	startTime := time.Now()
-	log.Printf("[AI_CALL] action=start function=GenerateDetailedLocationDescription coords=(%.6f,%.6f) lang=%s model=%s", latitude, longitude, language, model)
-
-	// 详细描述需要更长的超时时间
 	detailedTimeout := 30 * time.Second
+
+	logger := utils.AILogger()
+	logger.Info("ai_request_start", "Starting AI detailed description generation", map[string]interface{}{
+		"function": "GenerateDetailedLocationDescription",
+		"coords":   fmt.Sprintf("(%.6f,%.6f)", latitude, longitude),
+		"language": language,
+		"model":    model,
+		"timeout":  detailedTimeout.String(),
+	})
+
 	ctx, cancel := context.WithTimeout(context.Background(), detailedTimeout)
 	defer cancel()
 
@@ -439,78 +456,65 @@ func (c *client) GenerateDetailedLocationDescription(latitude, longitude float64
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+c.apiKey)
 
-	log.Printf("正在发送详细描述请求到 OpenRouter API (model: %s, timeout: %v)...", model, detailedTimeout)
-
-	// 记录请求发送时间
-	requestSentTime := time.Now()
-	log.Printf("详细描述请求发送时间: %s", requestSentTime.Format("2006-01-02 15:04:05.000"))
-
 	resp, err := detailedHTTPClient.Do(req)
 	if err != nil {
-		log.Printf("详细描述请求总耗时: %v", time.Since(startTime))
 		if ctx.Err() == context.DeadlineExceeded {
-			log.Printf("====== OpenRouter 详细描述请求超时 ======")
-			log.Printf("函数: GenerateDetailedLocationDescription")
-			log.Printf("超时时间: %v", detailedTimeout)
-			log.Printf("实际耗时: %v", time.Since(startTime))
-			log.Printf("错误类型: 请求超时")
-			log.Printf("========================================")
+			log.Printf("[AI_ERROR] action=timeout function=GenerateDetailedLocationDescription duration=%v timeout=%v",
+				time.Since(startTime), detailedTimeout)
 			return "", fmt.Errorf("详细描述生成超时")
 		}
+		log.Printf("[AI_ERROR] action=request_failed function=GenerateDetailedLocationDescription duration=%v error=%v",
+			time.Since(startTime), err)
 		return "", fmt.Errorf("发送请求失败: %w", err)
 	}
 	defer resp.Body.Close()
 
-	// 记录响应接收时间
-	responseReceivedTime := time.Now()
-	log.Printf("详细描述响应接收时间: %s (网络耗时: %v)", responseReceivedTime.Format("2006-01-02 15:04:05.000"), responseReceivedTime.Sub(requestSentTime))
-
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Printf("读取 OpenRouter 详细描述响应失败: %v (总耗时: %v)", err, time.Since(startTime))
+		log.Printf("[AI_ERROR] action=read_response_failed function=GenerateDetailedLocationDescription duration=%v error=%v",
+			time.Since(startTime), err)
 		return "", fmt.Errorf("读取响应失败: %w", err)
 	}
 
-	// 记录响应读取完成时间
-	responseReadTime := time.Now()
-	log.Printf("详细描述响应读取完成时间: %s (响应体大小: %d bytes)", responseReadTime.Format("2006-01-02 15:04:05.000"), len(body))
-
 	// 检查HTTP状态码
 	if resp.StatusCode != http.StatusOK {
+		log.Printf("[AI_ERROR] action=api_error function=GenerateDetailedLocationDescription duration=%v status=%d",
+			time.Since(startTime), resp.StatusCode)
 		return "", fmt.Errorf("API 请求失败 (状态码: %d): %s", resp.StatusCode, string(body))
 	}
 
 	var chatResp chatResponse
 	if err := json.Unmarshal(body, &chatResp); err != nil {
+		log.Printf("[AI_ERROR] action=parse_failed function=GenerateDetailedLocationDescription duration=%v error=%v",
+			time.Since(startTime), err)
 		return "", fmt.Errorf("解析响应失败: %w", err)
 	}
 
 	if chatResp.Error != nil {
+		log.Printf("[AI_ERROR] action=api_business_error function=GenerateDetailedLocationDescription duration=%v error=%s",
+			time.Since(startTime), chatResp.Error.Message)
 		return "", fmt.Errorf("AI API错误: %s", chatResp.Error.Message)
 	}
 
 	if len(chatResp.Choices) == 0 {
-		log.Printf("OpenRouter 详细描述: AI未返回任何结果")
+		log.Printf("[AI_ERROR] action=empty_response function=GenerateDetailedLocationDescription duration=%v",
+			time.Since(startTime))
 		return "", fmt.Errorf("AI未返回任何结果")
 	}
 
 	result := chatResp.Choices[0].Message.Content
 
-	// 记录详细描述API调用完成信息
-	totalDuration := time.Since(startTime)
-	log.Printf("====== OpenRouter 详细描述 API 调用成功 ======")
-	log.Printf("函数: GenerateDetailedLocationDescription")
-	log.Printf("完成时间: %s", time.Now().Format("2006-01-02 15:04:05.000"))
-	log.Printf("总耗时: %v", totalDuration)
-	log.Printf("响应长度: %d 字符", len(result))
-	log.Printf("API调用状态: 成功")
-	log.Printf("=============================================")
+	// 简化的成功日志
+	logger.Info("ai_request_completed", "AI detailed description generation completed", map[string]interface{}{
+		"function":        "GenerateDetailedLocationDescription",
+		"duration":        time.Since(startTime).String(),
+		"response_length": len(result),
+	})
 
 	return result, nil
 }
 
 func (c *client) GenerateRegionsForInterest(interest string) ([]models.Region, error) {
-	log.Printf("开始为兴趣 '%s' 生成地理区域", interest)
 	return c.tryGenerateRegions(interest)
 }
 
@@ -593,8 +597,6 @@ func (c *client) tryGenerateRegions(interest string) ([]models.Region, error) {
 		return nil, fmt.Errorf("编码请求失败: %w", err)
 	}
 
-	log.Printf("正在发送区域生成请求到 OpenRouter API (model: %s, interest: %s)...", model, interest)
-
 	req, err := http.NewRequestWithContext(ctx, "POST", apiEndpoint, bytes.NewBuffer(reqJSON))
 	if err != nil {
 		return nil, fmt.Errorf("创建请求失败: %w", err)
@@ -606,7 +608,6 @@ func (c *client) tryGenerateRegions(interest string) ([]models.Region, error) {
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
-			log.Printf("OpenRouter 区域生成请求超时")
 			return nil, fmt.Errorf("请求超时")
 		}
 		return nil, fmt.Errorf("发送请求失败: %w", err)
@@ -615,7 +616,6 @@ func (c *client) tryGenerateRegions(interest string) ([]models.Region, error) {
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Printf("读取 OpenRouter 区域生成响应失败: %v", err)
 		return nil, fmt.Errorf("读取响应失败: %w", err)
 	}
 
@@ -623,8 +623,6 @@ func (c *client) tryGenerateRegions(interest string) ([]models.Region, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("API 请求失败 (状态码: %d): %s", resp.StatusCode, string(body))
 	}
-
-	log.Printf("OpenRouter 区域生成响应长度: %d 字符", len(body))
 
 	var chatResp chatResponse
 	if err := json.Unmarshal(body, &chatResp); err != nil {
@@ -636,7 +634,6 @@ func (c *client) tryGenerateRegions(interest string) ([]models.Region, error) {
 	}
 
 	if len(chatResp.Choices) == 0 {
-		log.Printf("OpenRouter 区域生成: AI未返回任何结果")
 		return nil, fmt.Errorf("AI未返回任何结果")
 	}
 
@@ -649,9 +646,6 @@ func (c *client) tryGenerateRegions(interest string) ([]models.Region, error) {
 		Explanation string          `json:"explanation,omitempty"`
 	}
 	if err := json.Unmarshal([]byte(responseContent), &result); err != nil {
-		// 记录原始响应内容，帮助调试
-		log.Printf("AI 原始响应内容解析失败:\n%s", responseContent)
-
 		// 尝试清理响应内容（移除可能的前后缀文本）
 		content := responseContent
 		if idx := strings.Index(content, "{"); idx >= 0 {
@@ -659,21 +653,16 @@ func (c *client) tryGenerateRegions(interest string) ([]models.Region, error) {
 			if lastIdx := strings.LastIndex(content, "}"); lastIdx >= 0 {
 				content = content[:lastIdx+1]
 				// 再次尝试解析清理后的内容
-				log.Printf("尝试解析清理后的内容:\n%s", content)
 				if err := json.Unmarshal([]byte(content), &result); err != nil {
-					log.Printf("清理后的内容解析仍然失败: %v", err)
-
 					// 直接返回AI的原始回复内容，让前端展示
 					return nil, fmt.Errorf("%s", responseContent)
 				}
 			} else {
 				// 没有找到完整的JSON结构，直接返回AI的回复
-				log.Printf("响应内容不包含有效的JSON结构")
 				return nil, fmt.Errorf("%s", responseContent)
 			}
 		} else {
 			// 没有找到JSON开始标记，直接返回AI的回复
-			log.Printf("响应内容不包含JSON格式")
 			return nil, fmt.Errorf("%s", responseContent)
 		}
 	}
@@ -681,46 +670,27 @@ func (c *client) tryGenerateRegions(interest string) ([]models.Region, error) {
 	// 检查是否返回了错误信息
 	if result.Error != "" {
 		if result.Explanation != "" {
-			log.Printf("AI 返回业务错误: %s\n解释: %s", result.Error, result.Explanation)
 			return nil, fmt.Errorf("%s", result.Explanation)
 		} else {
-			log.Printf("AI 返回业务错误: %s", result.Error)
 			return nil, fmt.Errorf("%s", result.Error)
 		}
 	}
 
 	// 验证区域数据
 	if len(result.Regions) == 0 {
-		log.Printf("OpenRouter 区域生成: AI返回空区域列表")
 		return nil, fmt.Errorf("无法理解该探索兴趣")
 	}
 
-	log.Printf("OpenRouter 区域生成成功，解析到 %d 个区域", len(result.Regions))
-
 	// 验证每个区域的数据
 	validRegions := make([]models.Region, 0)
-	for i, region := range result.Regions {
-		// 记录详细的验证日志
-		log.Printf("验证区域 %d:\n"+
-			"  信息: %s\n"+
-			"  坐标: 北纬=%.3f, 南纬=%.3f, 东经=%.3f, 西经=%.3f",
-			i+1,
-			region.RegionInfo,
-			region.Coordinates.North,
-			region.Coordinates.South,
-			region.Coordinates.East,
-			region.Coordinates.West,
-		)
-
+	for _, region := range result.Regions {
 		// 基本验证
 		if region.RegionInfo == "" {
-			log.Printf("区域 %d 缺少描述信息", i+1)
 			continue
 		}
 
 		// 坐标范围验证
 		if !isValidCoordinates(region.Coordinates) {
-			log.Printf("区域 %d 坐标无效", i+1)
 			continue
 		}
 
@@ -729,21 +699,7 @@ func (c *client) tryGenerateRegions(interest string) ([]models.Region, error) {
 
 	// 如果没有有效区域，返回错误
 	if len(validRegions) == 0 {
-		log.Printf("没有找到有效的区域数据")
 		return nil, fmt.Errorf("无法生成有效的探索区域")
-	}
-
-	// 输出最终的有效区域
-	log.Printf("最终有效区域数量: %d", len(validRegions))
-	for i, region := range validRegions {
-		log.Printf("有效区域 %d: %s (北纬: %.3f, 南纬: %.3f, 东经: %.3f, 西经: %.3f)",
-			i+1,
-			region.RegionInfo,
-			region.Coordinates.North,
-			region.Coordinates.South,
-			region.Coordinates.East,
-			region.Coordinates.West,
-		)
 	}
 
 	return validRegions, nil
@@ -759,24 +715,19 @@ func isValidCoordinates(coords struct {
 	// 纬度范围检查 (-90 到 90)
 	if coords.North < -90 || coords.North > 90 ||
 		coords.South < -90 || coords.South > 90 {
-		log.Printf("坐标验证失败: 纬度超出范围 (北纬=%.3f, 南纬=%.3f)", coords.North, coords.South)
 		return false
 	}
 
 	// 确保南北纬度关系正确
 	if coords.South > coords.North {
-		log.Printf("坐标验证失败: 南北纬度关系错误 (北纬=%.3f, 南纬=%.3f)", coords.North, coords.South)
 		return false
 	}
 
 	// 经度范围检查 (-180 到 180)
 	if coords.East < -180 || coords.East > 180 ||
 		coords.West < -180 || coords.West > 180 {
-		log.Printf("坐标验证失败: 经度超出范围 (东经=%.3f, 西经=%.3f)", coords.East, coords.West)
 		return false
 	}
 
-	log.Printf("坐标验证通过: 北纬=%.3f, 南纬=%.3f, 东经=%.3f, 西经=%.3f",
-		coords.North, coords.South, coords.East, coords.West)
 	return true
 }

@@ -5,14 +5,6 @@ import React from 'react';
  * Initializes Sentry for error tracking and performance monitoring.
  */
 export const initSentry = () => {
-  // The following block can be uncommented to disable Sentry in development
-  /*
-  if (process.env.NODE_ENV !== 'production') {
-    console.log('Sentry is disabled in development mode.');
-    return;
-  }
-  */
-
   Sentry.init({
     dsn: process.env.REACT_APP_SENTRY_DSN,
     environment: process.env.NODE_ENV,
@@ -50,8 +42,6 @@ export const initSentry = () => {
       return event;
     },
   });
-
-  console.log(`Sentry initialized for ${process.env.NODE_ENV} environment.`);
 };
 
 /**

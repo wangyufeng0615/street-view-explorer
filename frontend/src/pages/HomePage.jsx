@@ -56,6 +56,7 @@ export default function HomePage() {
         explorationInterest,
         isSavingPreference,
         preferenceError,
+        isInitialized,
         handleModeChange,
         handlePreferenceChange
     } = useExplorationMode(lastRefreshTimeRef, loadingRef);
@@ -109,8 +110,13 @@ export default function HomePage() {
         };
     }, [descError, location?.pano_id, loadLocationDescription, networkStateRef]);
     
-    // 页面加载时根据当前模式加载位置
+    // 页面加载时根据当前模式加载位置 - 等待状态初始化完成
     useEffect(() => {
+        // 等待状态完全初始化
+        if (!isInitialized) {
+            return;
+        }
+        
         if (explorationMode === EXPLORATION_MODES.CUSTOM && !explorationInterest) {
             // 如果是特定兴趣模式但没有兴趣，切换到随机模式
             handleModeChange(EXPLORATION_MODES.RANDOM);
@@ -118,7 +124,7 @@ export default function HomePage() {
             // 首次加载时跳过限流检查
             loadRandomLocation(true);
         }
-    }, [explorationMode, explorationInterest, handleModeChange, loadRandomLocation]);
+    }, [isInitialized, explorationMode, explorationInterest, handleModeChange, loadRandomLocation]);
     
     // 如果有错误，显示错误页面
     if (error) {

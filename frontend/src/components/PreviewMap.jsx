@@ -1,37 +1,50 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { loadGoogleMapsScript } from '../utils/googleMaps';
 
 export default function PreviewMap({ latitude, longitude }) {
     const mapRef = useRef(null);
+    const mapInstanceRef = useRef(null);
+    const markerInstanceRef = useRef(null);
     const [error, setError] = useState(null);
     const { t } = useTranslation();
 
-    useEffect(() => {
-        let isMounted = true;
+    const initMap = useCallback(async () => {
+        if (!mapRef.current) return;
+        
+        try {
+            const maps = await loadGoogleMapsScript();
+            if (!mapRef.current) return;
 
-        const initMap = async () => {
-            try {
-                const maps = await loadGoogleMapsScript();
-                if (!isMounted) return;
+            // 清理之前的实例
+            if (mapInstanceRef.current) {
+                mapInstanceRef.current = null;
+            }
+            if (markerInstanceRef.current) {
+                markerInstanceRef.current.map = null;
+                markerInstanceRef.current = null;
+            }
 
-                const map = new maps.Map(mapRef.current, {
-                    mapId: process.env.REACT_APP_GOOGLE_MAPS_MAP_ID,
-                    center: { lat: latitude, lng: longitude },
-                    zoom: 13,
-                    mapTypeId: 'roadmap',
-                    mapTypeControl: false,
-                    streetViewControl: false,
-                    fullscreenControl: false,
-                    zoomControl: true,
-                    disableDefaultUI: true,
-                    zoomControlOptions: {
-                        position: maps.ControlPosition.RIGHT_TOP
-                    }
-                });
+            // 创建地图实例
+            mapInstanceRef.current = new maps.Map(mapRef.current, {
+                mapId: process.env.REACT_APP_GOOGLE_MAPS_MAP_ID,
+                center: { lat: latitude, lng: longitude },
+                zoom: 13,
+                mapTypeId: 'roadmap',
+                mapTypeControl: false,
+                streetViewControl: false,
+                fullscreenControl: false,
+                zoomControl: true,
+                disableDefaultUI: true,
+                zoomControlOptions: {
+                    position: maps.ControlPosition.RIGHT_TOP
+                }
+            });
 
-                // 隐藏 Google logo 和版权信息
+            // 只添加一次样式
+            if (!document.querySelector('#previewmap-styles')) {
                 const style = document.createElement('style');
+                style.id = 'previewmap-styles';
                 style.textContent = `
                     .gm-style-cc { display: none; }
                     a[href^="http://maps.google.com/maps"]{display:none !important}
@@ -44,43 +57,64 @@ export default function PreviewMap({ latitude, longitude }) {
                     }
                 `;
                 document.head.appendChild(style);
-
-                // 创建图钉标记
-                const pin = document.createElement('div');
-                pin.innerHTML = `
-                    <svg width="32" height="32" viewBox="0 0 32 32" style="position: absolute; left: -16px; top: -32px;">
-                        <path d="M16 0C10.477 0 6 4.477 6 10c0 7 10 22 10 22s10-15 10-22c0-5.523-4.477-10-10-10zm0 14a4 4 0 110-8 4 4 0 010 8z" 
-                              fill="#FF4444" 
-                              stroke="#FFFFFF" 
-                              stroke-width="1.5"/>
-                    </svg>
-                `;
-                pin.style.position = 'relative';
-                pin.style.width = '0';
-                pin.style.height = '0';
-
-                const markerView = new maps.marker.AdvancedMarkerElement({
-                    map,
-                    position: { lat: latitude, lng: longitude },
-                    content: pin,
-                    zIndex: 1000
-                });
-
-                // 确保地图中心点和标记位置一致
-                map.setCenter({ lat: latitude, lng: longitude });
-            } catch (err) {
-                if (isMounted) {
-                    setError(t('error.mapLoadFailed'));
-                }
             }
-        };
 
-        initMap();
+            // 创建图钉标记
+            const pin = document.createElement('div');
+            pin.innerHTML = `
+                <svg width="32" height="32" viewBox="0 0 32 32" style="position: absolute; left: -16px; top: -32px;">
+                    <path d="M16 0C10.477 0 6 4.477 6 10c0 7 10 22 10 22s10-15 10-22c0-5.523-4.477-10-10-10zm0 14a4 4 0 110-8 4 4 0 010 8z" 
+                          fill="#FF4444" 
+                          stroke="#FFFFFF" 
+                          stroke-width="1.5"/>
+                </svg>
+            `;
+            pin.style.position = 'relative';
+            pin.style.width = '0';
+            pin.style.height = '0';
+
+            markerInstanceRef.current = new maps.marker.AdvancedMarkerElement({
+                map: mapInstanceRef.current,
+                position: { lat: latitude, lng: longitude },
+                content: pin,
+                zIndex: 1000
+            });
+
+            // 确保地图中心点和标记位置一致
+            mapInstanceRef.current.setCenter({ lat: latitude, lng: longitude });
+            
+            // 清除错误状态
+            setError(null);
+        } catch (err) {
+            console.error('PreviewMap initialization error:', err);
+            setError(t('error.mapLoadFailed'));
+        }
+    }, [latitude, longitude, t]);
+
+    useEffect(() => {
+        let isMounted = true;
+        
+        // 延迟执行以避免与其他地图组件的竞态条件
+        const timeoutId = setTimeout(() => {
+            if (isMounted) {
+                initMap();
+            }
+        }, 100); // 比GlobalMap稍微延迟一点
 
         return () => {
             isMounted = false;
+            clearTimeout(timeoutId);
+            
+            // 清理地图实例
+            if (markerInstanceRef.current) {
+                markerInstanceRef.current.map = null;
+                markerInstanceRef.current = null;
+            }
+            if (mapInstanceRef.current) {
+                mapInstanceRef.current = null;
+            }
         };
-    }, [latitude, longitude, t]);
+    }, [initMap]);
 
     if (error) {
         return (

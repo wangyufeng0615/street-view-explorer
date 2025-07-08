@@ -74,35 +74,28 @@ func (m *MapDataManager) EnsureWorldMapData() error {
 
 	// 检查文件是否存在
 	if !m.fileExists(worldMapPath) {
-		fmt.Println("世界地图数据不存在，开始下载...")
 		return m.downloadWorldMapData()
 	}
 
 	// 检查文件是否需要更新
 	if m.shouldUpdate(worldMapPath) {
-		fmt.Println("检查世界地图数据更新...")
-
 		// 获取远程文件的MD5
 		remoteMD5, err := m.getRemoteFileMD5()
 		if err != nil {
-			fmt.Printf("获取远程文件MD5失败，使用本地文件: %v\n", err)
+			// 如果无法获取远程文件，继续使用本地文件
 			return nil
 		}
 
 		// 获取本地文件的MD5
 		localMD5, err := m.getLocalFileMD5(md5Path)
 		if err != nil {
-			fmt.Printf("获取本地文件MD5失败，重新下载: %v\n", err)
 			return m.downloadWorldMapData()
 		}
 
 		// 比较MD5，如果不同则更新
 		if remoteMD5 != localMD5 {
-			fmt.Println("发现新版本，开始更新世界地图数据...")
 			return m.downloadWorldMapData()
 		}
-
-		fmt.Println("世界地图数据已是最新版本")
 	}
 
 	return nil
@@ -138,7 +131,6 @@ func (m *MapDataManager) downloadWorldMapData() error {
 	}
 
 	// 下载数据
-	fmt.Printf("正在从 %s 下载世界地图数据...\n", WorldMapURL)
 	resp, err := http.Get(WorldMapURL)
 	if err != nil {
 		return fmt.Errorf("下载世界地图数据失败: %w", err)
@@ -173,10 +165,6 @@ func (m *MapDataManager) downloadWorldMapData() error {
 	if err := os.WriteFile(md5Path, []byte(md5Hash), 0644); err != nil {
 		return fmt.Errorf("保存MD5文件失败: %w", err)
 	}
-
-	fmt.Printf("世界地图数据下载完成，保存到: %s\n", worldMapPath)
-	fmt.Printf("数据大小: %.2f KB\n", float64(len(data))/1024)
-	fmt.Printf("特征数量: %d\n", len(fc.Features))
 
 	return nil
 }
@@ -270,35 +258,28 @@ func (m *MapDataManager) EnsureMinorIslandsData() error {
 
 	// 检查文件是否存在
 	if !m.fileExists(minorIslandsPath) {
-		fmt.Println("小型岛屿数据不存在，开始下载...")
 		return m.downloadMinorIslandsData()
 	}
 
 	// 检查文件是否需要更新
 	if m.shouldUpdate(minorIslandsPath) {
-		fmt.Println("检查小型岛屿数据更新...")
-
 		// 获取远程文件的MD5
 		remoteMD5, err := m.getRemoteMinorIslandsMD5()
 		if err != nil {
-			fmt.Printf("获取远程小型岛屿MD5失败，使用本地文件: %v\n", err)
+			// 如果无法获取远程文件，继续使用本地文件
 			return nil
 		}
 
 		// 获取本地文件的MD5
 		localMD5, err := m.getLocalFileMD5(md5Path)
 		if err != nil {
-			fmt.Printf("获取本地小型岛屿MD5失败，重新下载: %v\n", err)
 			return m.downloadMinorIslandsData()
 		}
 
 		// 比较MD5，如果不同则更新
 		if remoteMD5 != localMD5 {
-			fmt.Println("发现新版本，开始更新小型岛屿数据...")
 			return m.downloadMinorIslandsData()
 		}
-
-		fmt.Println("小型岛屿数据已是最新版本")
 	}
 
 	return nil
@@ -334,7 +315,6 @@ func (m *MapDataManager) downloadMinorIslandsData() error {
 	}
 
 	// 下载数据
-	fmt.Printf("正在从 %s 下载小型岛屿数据...\n", MinorIslandsURL)
 	resp, err := http.Get(MinorIslandsURL)
 	if err != nil {
 		return fmt.Errorf("下载小型岛屿数据失败: %w", err)
@@ -369,10 +349,6 @@ func (m *MapDataManager) downloadMinorIslandsData() error {
 	if err := os.WriteFile(md5Path, []byte(md5Hash), 0644); err != nil {
 		return fmt.Errorf("保存小型岛屿MD5文件失败: %w", err)
 	}
-
-	fmt.Printf("小型岛屿数据下载完成，保存到: %s\n", minorIslandsPath)
-	fmt.Printf("数据大小: %.2f KB\n", float64(len(data))/1024)
-	fmt.Printf("特征数量: %d\n", len(fc.Features))
 
 	return nil
 }

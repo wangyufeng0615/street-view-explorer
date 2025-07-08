@@ -5,24 +5,75 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"os"
+	"sync"
 
+	"github.com/my-streetview-project/backend/internal/utils"
 	"googlemaps.github.io/maps"
 )
 
 type MapsService struct {
-	client *maps.Client
-	apiKey string
+	client          *maps.Client
+	apiKey          string
+	httpClient      *http.Client
+	proxyConfigured bool
+	mu              sync.RWMutex
 }
 
 func NewMapsService(apiKey string) (*MapsService, error) {
+	logger := utils.MapsLogger()
+
+	// 创建基础的Maps服务实例
+	service := &MapsService{
+		apiKey: apiKey,
+	}
+
+	// 配置HTTP客户端和代理
+	httpClient, proxyConfigured := service.configureHTTPClient()
+	service.httpClient = httpClient
+	service.proxyConfigured = proxyConfigured
+
+	// 如果配置了代理，记录一次日志
+	if proxyConfigured {
+		proxyURL := os.Getenv("MAPS_PROXY_URL")
+		if proxyURL == "" {
+			proxyURL = os.Getenv("PROXY_URL")
+		}
+		logger.Info("proxy_configured", "Maps service configured with proxy", map[string]interface{}{
+			"proxy_url": proxyURL,
+		})
+	}
+
+	// 创建Maps客户端选项
+	var opts []maps.ClientOption
+	opts = append(opts, maps.WithAPIKey(apiKey))
+
+	if httpClient != nil {
+		opts = append(opts, maps.WithHTTPClient(httpClient))
+	}
+
+	client, err := maps.NewClient(opts...)
+	if err != nil {
+		return nil, fmt.Errorf("创建 Google Maps 客户端失败: %w", err)
+	}
+
+	service.client = client
+	return service, nil
+}
+
+// configureHTTPClient 配置HTTP客户端和代理设置
+func (s *MapsService) configureHTTPClient() (*http.Client, bool) {
 	// 从环境变量获取代理URL
 	proxyURL := os.Getenv("MAPS_PROXY_URL")
 	if proxyURL == "" {
 		proxyURL = os.Getenv("PROXY_URL")
+	}
+
+	// 如果没有代理配置，返回默认客户端
+	if proxyURL == "" {
+		return &http.Client{}, false
 	}
 
 	proxyType := os.Getenv("PROXY_TYPE")
@@ -33,77 +84,41 @@ func NewMapsService(apiKey string) (*MapsService, error) {
 	proxyUser := os.Getenv("PROXY_USER")
 	proxyPass := os.Getenv("PROXY_PASS")
 
-	var opts []maps.ClientOption
-	opts = append(opts, maps.WithAPIKey(apiKey))
-
-	// 如果设置了代理，配置HTTP客户端使用代理
-	if proxyURL != "" {
-		var transport *http.Transport
-
-		// 根据代理类型创建不同的代理URL
-		var proxyFunc func(*http.Request) (*url.URL, error)
-
-		if proxyType == "socks5" {
-			// 对于SOCKS5代理，我们需要使用golang.org/x/net/proxy包
-			// 这里简化处理，仅构建代理URL
-			proxyURLWithAuth := proxyURL
-			if proxyUser != "" && proxyPass != "" {
-				// 从URL中解析出协议、主机和端口
-				parsedURL, err := url.Parse(proxyURL)
-				if err == nil {
-					// 重建带认证的URL
-					parsedURL.User = url.UserPassword(proxyUser, proxyPass)
-					proxyURLWithAuth = parsedURL.String()
-				}
-			}
-
-			log.Printf("Maps服务使用SOCKS5代理: %s", proxyURLWithAuth)
-
-			// 注意：这里需要额外的库支持SOCKS5
-			// 简化起见，我们仍然使用http.ProxyURL，但实际使用时需要使用SOCKS5专用的库
-			proxy, err := url.Parse(proxyURLWithAuth)
-			if err != nil {
-				log.Printf("解析代理URL失败: %v，将不使用代理", err)
-				proxyFunc = nil
-			} else {
-				proxyFunc = http.ProxyURL(proxy)
-			}
-		} else {
-			// 默认HTTP代理
-			proxy, err := url.Parse(proxyURL)
-			if err != nil {
-				log.Printf("解析代理URL失败: %v，将不使用代理", err)
-				proxyFunc = nil
-			} else {
-				// 如果提供了用户名和密码，添加到代理URL
-				if proxyUser != "" && proxyPass != "" {
-					proxy.User = url.UserPassword(proxyUser, proxyPass)
-				}
-				proxyFunc = http.ProxyURL(proxy)
-				log.Printf("Maps服务使用HTTP代理: %s", proxy.String())
-			}
-		}
-
-		// 创建带有代理的Transport
-		if proxyFunc != nil {
-			transport = &http.Transport{
-				Proxy: proxyFunc,
-			}
-			httpClient := &http.Client{
-				Transport: transport,
-			}
-			opts = append(opts, maps.WithHTTPClient(httpClient))
-		}
-	}
-
-	client, err := maps.NewClient(opts...)
+	// 创建代理URL
+	proxy, err := url.Parse(proxyURL)
 	if err != nil {
-		return nil, fmt.Errorf("创建 Google Maps 客户端失败: %w", err)
+		utils.MapsLogger().Error("proxy_parse_failed", "Failed to parse proxy URL, using direct connection", err, map[string]interface{}{
+			"proxy_url": proxyURL,
+		})
+		return &http.Client{}, false
 	}
-	return &MapsService{
-		client: client,
-		apiKey: apiKey,
-	}, nil
+
+	// 如果提供了用户名和密码，添加到代理URL
+	if proxyUser != "" && proxyPass != "" {
+		proxy.User = url.UserPassword(proxyUser, proxyPass)
+	}
+
+	// 创建带有代理的Transport
+	transport := &http.Transport{
+		Proxy: http.ProxyURL(proxy),
+	}
+
+	httpClient := &http.Client{
+		Transport: transport,
+	}
+
+	return httpClient, true
+}
+
+// getHTTPClient 获取配置好的HTTP客户端
+func (s *MapsService) getHTTPClient() *http.Client {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if s.httpClient != nil {
+		return s.httpClient
+	}
+	return &http.Client{}
 }
 
 // 检查坐标是否有街景可用，并返回街景坐标
@@ -133,47 +148,15 @@ func (s *MapsService) HasStreetView(ctx context.Context, latitude, longitude flo
 		// 创建请求
 		req, err := http.NewRequestWithContext(ctx, "GET", streetViewURL, nil)
 		if err != nil {
-			log.Printf("创建街景请求失败 (半径=%dkm): %v", radius/1000, err)
 			continue
 		}
 
-		// 创建HTTP客户端，如果有代理则使用代理
-		client := &http.Client{}
-
-		// 从环境变量获取代理URL
-		proxyURLStr := os.Getenv("MAPS_PROXY_URL")
-		if proxyURLStr == "" {
-			proxyURLStr = os.Getenv("PROXY_URL")
-		}
-
-		if proxyURLStr != "" {
-			proxyType := os.Getenv("PROXY_TYPE")
-			if proxyType == "" {
-				proxyType = "http"
-			}
-
-			proxyUser := os.Getenv("PROXY_USER")
-			proxyPass := os.Getenv("PROXY_PASS")
-
-			// 创建代理URL
-			proxyURL, err := url.Parse(proxyURLStr)
-			if err == nil {
-				// 如果提供了用户名和密码，添加到代理URL
-				if proxyUser != "" && proxyPass != "" {
-					proxyURL.User = url.UserPassword(proxyUser, proxyPass)
-				}
-
-				transport := &http.Transport{
-					Proxy: http.ProxyURL(proxyURL),
-				}
-				client.Transport = transport
-			}
-		}
+		// 使用预配置的HTTP客户端
+		client := s.getHTTPClient()
 
 		// 发送请求
 		resp, err := client.Do(req)
 		if err != nil {
-			log.Printf("街景API请求失败 (半径=%dkm): %v", radius/1000, err)
 			continue
 		}
 		defer resp.Body.Close()
@@ -181,7 +164,6 @@ func (s *MapsService) HasStreetView(ctx context.Context, latitude, longitude flo
 		// 读取完整的响应体
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
-			log.Printf("读取街景响应失败 (半径=%dkm): %v", radius/1000, err)
 			continue
 		}
 
@@ -197,23 +179,15 @@ func (s *MapsService) HasStreetView(ctx context.Context, latitude, longitude flo
 			PanoId    string `json:"pano_id"`
 		}
 		if err := json.Unmarshal(body, &result); err != nil {
-			log.Printf("解析街景响应失败 (半径=%dkm): %v", radius/1000, err)
 			continue
 		}
 
 		if result.Status == "OK" {
-			log.Printf("[STREETVIEW_SUCCESS] action=found original_coords=(%.6f,%.6f) found_coords=(%.6f,%.6f) radius=%dkm pano_id=%s", 
-				latitude, longitude, result.Location.Lat, result.Location.Lng, radius/1000, result.PanoId)
 			return true, result.Location.Lat, result.Location.Lng, result.PanoId
 		}
-
-		log.Printf("[STREETVIEW_SEARCH] action=no_result coords=(%.6f,%.6f) radius=%dkm status=%s", 
-			latitude, longitude, radius/1000, result.Status)
 	}
 
 	// 如果所有半径都失败了，尝试最后的兜底策略：去除坐标限制
-	log.Printf("[STREETVIEW_FALLBACK] action=trying_global_search original_coords=(%.6f,%.6f)", latitude, longitude)
-	
 	fallbackURL := fmt.Sprintf(
 		"https://maps.googleapis.com/maps/api/streetview/metadata"+
 			"?location=%.6f,%.6f"+
@@ -225,28 +199,7 @@ func (s *MapsService) HasStreetView(ctx context.Context, latitude, longitude flo
 
 	req, err := http.NewRequestWithContext(ctx, "GET", fallbackURL, nil)
 	if err == nil {
-		client := &http.Client{}
-		
-		// 使用代理（如果配置）
-		proxyURLStr := os.Getenv("MAPS_PROXY_URL")
-		if proxyURLStr == "" {
-			proxyURLStr = os.Getenv("PROXY_URL")
-		}
-
-		if proxyURLStr != "" {
-			proxyURL, err := url.Parse(proxyURLStr)
-			if err == nil {
-				proxyUser := os.Getenv("PROXY_USER")
-				proxyPass := os.Getenv("PROXY_PASS")
-				if proxyUser != "" && proxyPass != "" {
-					proxyURL.User = url.UserPassword(proxyUser, proxyPass)
-				}
-				transport := &http.Transport{
-					Proxy: http.ProxyURL(proxyURL),
-				}
-				client.Transport = transport
-			}
-		}
+		client := s.getHTTPClient()
 
 		resp, err := client.Do(req)
 		if err == nil {
@@ -262,8 +215,6 @@ func (s *MapsService) HasStreetView(ctx context.Context, latitude, longitude flo
 					PanoId string `json:"pano_id"`
 				}
 				if json.Unmarshal(body, &result) == nil && result.Status == "OK" {
-					log.Printf("[STREETVIEW_FALLBACK_SUCCESS] action=found original_coords=(%.6f,%.6f) found_coords=(%.6f,%.6f) pano_id=%s", 
-						latitude, longitude, result.Location.Lat, result.Location.Lng, result.PanoId)
 					return true, result.Location.Lat, result.Location.Lng, result.PanoId
 				}
 			}
@@ -271,7 +222,10 @@ func (s *MapsService) HasStreetView(ctx context.Context, latitude, longitude flo
 	}
 
 	// 如果真的都失败了，记录严重错误但返回一个默认位置（这种情况极少发生）
-	log.Printf("[STREETVIEW_ERROR] action=all_failed coords=(%.6f,%.6f) using_default_location", latitude, longitude)
+	logger := utils.MapsLogger()
+	logger.Error("streetview_complete_failure", "All street view searches failed, using default location", nil, map[string]interface{}{
+		"coords": fmt.Sprintf("(%.6f,%.6f)", latitude, longitude),
+	})
 	// 返回纽约时代广场作为默认位置（有街景保证）
 	return true, 40.758896, -73.985130, "default-location"
 }

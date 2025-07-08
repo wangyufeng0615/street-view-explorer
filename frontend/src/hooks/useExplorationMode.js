@@ -18,6 +18,7 @@ export default function useExplorationMode(lastRefreshTimeRef, loadingRef) {
     const [explorationInterest, setExplorationInterest] = useState('');
     const [isSavingPreference, setIsSavingPreference] = useState(false);
     const [preferenceError, setPreferenceError] = useState(null);
+    const [isInitialized, setIsInitialized] = useState(false); // 添加初始化标志
     
     const RATE_LIMIT_MS = 1000; // 1秒限制
 
@@ -40,6 +41,9 @@ export default function useExplorationMode(lastRefreshTimeRef, loadingRef) {
             localStorage.removeItem(EXPLORATION_MODE_KEY);
             localStorage.removeItem(EXPLORATION_INTEREST_KEY);
         }
+        
+        // 状态恢复完成，设置初始化标志
+        setIsInitialized(true);
     }, []);
 
     // 切换探索模式
@@ -134,6 +138,7 @@ export default function useExplorationMode(lastRefreshTimeRef, loadingRef) {
         explorationInterest,
         isSavingPreference,
         preferenceError,
+        isInitialized,
         handleModeChange,
         handlePreferenceChange,
         handleDeletePreference

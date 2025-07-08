@@ -179,6 +179,7 @@ export default function StreetView({ latitude, longitude, onPovChanged }) {
         let isMounted = true;
         let panorama = null;
         let cleanup = null;
+        let timeoutId = null;
 
         const initStreetView = async () => {
             try {
@@ -342,12 +343,21 @@ export default function StreetView({ latitude, longitude, onPovChanged }) {
         };
 
         if (latitude && longitude) {
-            initStreetView();
+            // 延迟执行以避免与其他地图组件的竞态条件
+            timeoutId = setTimeout(() => {
+                if (isMounted) {
+                    initStreetView();
+                }
+            }, 200); // StreetView延迟最多，因为它通常更耗资源
         }
 
         return () => {
             isMounted = false;
             stopAutoRotate();
+            // 清理初始化延迟定时器
+            if (timeoutId) {
+                clearTimeout(timeoutId);
+            }
             // 清理用户交互定时器
             if (userInteractionTimerRef.current) {
                 clearTimeout(userInteractionTimerRef.current);

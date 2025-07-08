@@ -76,7 +76,7 @@ func (ai *AIService) GetDescriptionForLocation(loc models.Location, language str
 
 	// 验证生成的描述是否有效
 	if desc == "" || strings.TrimSpace(desc) == "" {
-		logger.Warn("empty_description", "Generated empty AI description", map[string]interface{}{
+		logger.Error("empty_description", "Generated empty AI description", nil, map[string]interface{}{
 			"pano_id":     loc.PanoID,
 			"language":    language,
 			"desc_length": len(desc),
@@ -84,11 +84,6 @@ func (ai *AIService) GetDescriptionForLocation(loc models.Location, language str
 		return "", fmt.Errorf("生成的AI描述为空或无效")
 	}
 
-	logger.LogRequest("description_generated", time.Since(startTime), map[string]interface{}{
-		"pano_id":     loc.PanoID,
-		"language":    language,
-		"desc_length": len(desc),
-	})
 	return desc, nil
 }
 
@@ -105,7 +100,7 @@ func (ai *AIService) GetDetailedDescriptionForLocation(loc models.Location, lang
 		locationInfo, err = ai.maps.GetLocationInfo(context.Background(), loc.Latitude, loc.Longitude, language)
 		if err != nil {
 			logger.Error("maps_failed", "Failed to get location info for detailed description", err, map[string]interface{}{
-				"pano_id": loc.PanoID,
+				"pano_id":  loc.PanoID,
 				"language": language,
 			})
 			return "", fmt.Errorf("获取位置信息失败: %v", err)
@@ -120,7 +115,7 @@ func (ai *AIService) GetDetailedDescriptionForLocation(loc models.Location, lang
 		desc, err = ai.openAI.GenerateDetailedLocationDescription(loc.Latitude, loc.Longitude, locationInfo, language)
 		if err != nil {
 			logger.Error("detailed_ai_failed", "Failed to generate detailed AI description", err, map[string]interface{}{
-				"pano_id": loc.PanoID,
+				"pano_id":  loc.PanoID,
 				"language": language,
 				"duration": time.Since(startTime).String(),
 			})
@@ -132,19 +127,14 @@ func (ai *AIService) GetDetailedDescriptionForLocation(loc models.Location, lang
 
 	// 验证生成的描述是否有效
 	if desc == "" || strings.TrimSpace(desc) == "" {
-		logger.Warn("empty_detailed_description", "Generated empty detailed AI description", map[string]interface{}{
-			"pano_id": loc.PanoID,
-			"language": language,
+		logger.Error("empty_detailed_description", "Generated empty detailed AI description", nil, map[string]interface{}{
+			"pano_id":     loc.PanoID,
+			"language":    language,
 			"desc_length": len(desc),
 		})
 		return "", fmt.Errorf("生成的AI详细描述为空或无效")
 	}
 
-	logger.LogRequest("detailed_description_generated", time.Since(startTime), map[string]interface{}{
-		"pano_id": loc.PanoID,
-		"language": language,
-		"desc_length": len(desc),
-	})
 	return desc, nil
 }
 
@@ -172,4 +162,3 @@ func getDefaultDetailedDescription(locationInfo map[string]string) string {
 	}
 	return fmt.Sprintf("[MOCK DATA] This is a detailed analysis of the location at %s. Here you would find comprehensive information about the area's history, culture, architecture, and significance.", address)
 }
-

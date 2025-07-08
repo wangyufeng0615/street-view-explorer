@@ -1,6 +1,5 @@
 package utils
 
-
 // 全局地图数据管理器
 var globalMapManager *MapDataManager
 
@@ -10,12 +9,10 @@ func init() {
 	globalMapManager = NewMapDataManager()
 
 	logger := SystemLogger()
-	
+
 	// 确保世界地图数据存在
 	if err := globalMapManager.EnsureWorldMapData(); err != nil {
-		logger.Warn("map_data_init_failed", "Failed to initialize world map data", map[string]interface{}{
-			"error": err.Error(),
-		})
+		logger.Error("map_data_init_failed", "Failed to initialize world map data", err, map[string]interface{}{})
 	} else {
 		// 获取并显示地图数据信息
 		info, err := globalMapManager.GetMapDataInfo()
@@ -26,8 +23,8 @@ func init() {
 				sizeKB, _ := info["size_kb"].(float64)
 				featuresCount, _ := info["features_count"].(int)
 				logger.Info("map_data_ready", "World map data initialized", map[string]interface{}{
-					"size_kb":         sizeKB,
-					"features_count":  featuresCount,
+					"size_kb":        sizeKB,
+					"features_count": featuresCount,
 				})
 			}
 		}
@@ -35,9 +32,7 @@ func init() {
 
 	// 确保小型岛屿数据存在
 	if err := globalMapManager.EnsureMinorIslandsData(); err != nil {
-		logger.Warn("minor_islands_init_failed", "Failed to initialize minor islands data", map[string]interface{}{
-			"error": err.Error(),
-		})
+		logger.Error("minor_islands_init_failed", "Failed to initialize minor islands data", err, map[string]interface{}{})
 	} else {
 		// 尝试获取小型岛屿数据信息
 		minorIslandsData, err := globalMapManager.LoadMinorIslandsData()

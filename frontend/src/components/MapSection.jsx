@@ -5,12 +5,10 @@ import PreviewMap from './PreviewMap';
 
 const MapSection = memo(function MapSection({ latitude, longitude, heading }) {
     const { i18n } = useTranslation();
-    // Add a state to track forces rerenders
     const [renderKey, setRenderKey] = useState(0);
     
-    // When language changes, update renderKey to force a complete remount
+    // Force remount when language changes
     useEffect(() => {
-        console.log(`MapSection detected language change to: ${i18n.language}`);
         setRenderKey(prev => prev + 1);
     }, [i18n.language]);
 

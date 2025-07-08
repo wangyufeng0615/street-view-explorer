@@ -4,7 +4,7 @@ import LanguageDetector from 'i18next-browser-languagedetector';
 import HttpBackend from 'i18next-http-backend';
 
 i18n
-  // load translation using http -> see /public/locales (i.e. https://github.com/i18next/react-i18next/tree/master/example/react/public/locales)
+  // load translation using http -> see /public/locales (i.e. https://github.com/i18next/react-i18next/tree/master/example/react/i18next)
   // learn more: https://github.com/i18next/i18next-http-backend
   .use(HttpBackend)
   // detect user language
@@ -17,7 +17,7 @@ i18n
   .init({
     supportedLngs: ['en', 'zh'],
     fallbackLng: 'en',
-    debug: process.env.NODE_ENV === 'development', // 在开发环境中开启 debug
+    debug: false, // 完全禁用debug，减少控制台噪音
     interpolation: {
       escapeValue: false, // not needed for react as it escapes by default
     },

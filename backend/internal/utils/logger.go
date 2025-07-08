@@ -2,7 +2,6 @@ package utils
 
 import (
 	"log"
-	"os"
 	"time"
 )
 
@@ -10,9 +9,7 @@ type LogLevel string
 
 const (
 	INFO  LogLevel = "INFO"
-	WARN  LogLevel = "WARN"
 	ERROR LogLevel = "ERROR"
-	DEBUG LogLevel = "DEBUG"
 )
 
 type LogEntry struct {
@@ -60,30 +57,12 @@ func (l *Logger) Info(action, message string, fields ...map[string]interface{}) 
 	l.log(INFO, action, message, f, nil)
 }
 
-func (l *Logger) Warn(action, message string, fields ...map[string]interface{}) {
-	var f map[string]interface{}
-	if len(fields) > 0 {
-		f = fields[0]
-	}
-	l.log(WARN, action, message, f, nil)
-}
-
 func (l *Logger) Error(action, message string, err error, fields ...map[string]interface{}) {
 	var f map[string]interface{}
 	if len(fields) > 0 {
 		f = fields[0]
 	}
 	l.log(ERROR, action, message, f, err)
-}
-
-func (l *Logger) Debug(action, message string, fields ...map[string]interface{}) {
-	if os.Getenv("LOG_LEVEL") == "DEBUG" {
-		var f map[string]interface{}
-		if len(fields) > 0 {
-			f = fields[0]
-		}
-		l.log(DEBUG, action, message, f, nil)
-	}
 }
 
 // Request logging with duration
@@ -107,4 +86,3 @@ func LocationLogger() *Logger { return locationLogger }
 func AILogger() *Logger       { return aiLogger }
 func MapsLogger() *Logger     { return mapsLogger }
 func SystemLogger() *Logger   { return systemLogger }
-

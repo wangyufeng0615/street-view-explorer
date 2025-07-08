@@ -66,17 +66,10 @@ func (ls *LocationService) generateRandomLocation(regions []models.Region, langu
 	// 生成随机坐标
 	lat, lng := utils.GenerateRandomCoordinate(regions)
 	logger := utils.LocationLogger()
-	
-	logger.Debug("coordinate_generated", "Generated random coordinate", map[string]interface{}{
-		"latitude":       lat,
-		"longitude":      lng,
-		"has_preference": regions != nil,
-		"session_id":     sessionID,
-	})
 
 	// 使用带兜底机制的街景搜索，总是能找到可用街景
 	hasStreetView, validLat, validLng, panoId := ls.maps.HasStreetView(ctx, lat, lng, regions != nil)
-	
+
 	// 由于有兜底机制，这里应该总是成功，但保留检查以防万一
 	if !hasStreetView {
 		logger.Error("streetview_fallback_failed", "Critical error: fallback mechanism failed", nil, map[string]interface{}{
@@ -121,13 +114,13 @@ func (ls *LocationService) generateRandomLocation(regions []models.Region, langu
 	}
 
 	logger.Info("location_generated", "Successfully generated random location", map[string]interface{}{
-		"pano_id":     location.PanoID,
-		"latitude":    location.Latitude,
-		"longitude":   location.Longitude,
-		"country":     location.Country,
-		"address":     location.FormattedAddress,
-		"session_id":  sessionID,
-		"language":    language,
+		"original_coords": fmt.Sprintf("(%.6f,%.6f)", lat, lng),
+		"final_coords":    fmt.Sprintf("(%.6f,%.6f)", location.Latitude, location.Longitude),
+		"pano_id":         location.PanoID,
+		"country":         location.Country,
+		"address":         location.FormattedAddress,
+		"session_id":      sessionID,
+		"language":        language,
 	})
 	return location, nil
 }

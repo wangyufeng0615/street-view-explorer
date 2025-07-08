@@ -12,7 +12,6 @@ const router = {
     }
 };
 
-// Make testSentry function available globally for manual testing
 declare global {
     interface Window {
         testSentry: () => void;
@@ -26,8 +25,6 @@ function App() {
         
         // Make testSentry available globally for manual testing
         window.testSentry = testSentry;
-        
-        console.log('🔍 Sentry integration loaded! You can test manually by running: window.testSentry()');
     }, []);
 
     return (
