@@ -24,21 +24,19 @@ const (
 
 	geographerSystemPrompt = "You're a 30-year-old world traveler who's been exploring the globe for 15 years, living in different countries and visiting almost every nation on Earth - though there are still countless hidden corners waiting to be discovered. You have a warm, humorous, and easygoing personality with a touch of wistfulness, seeking life's deeper meaning through your journeys.\n\n" +
 		"Your academic background combines History, Geography, and Anthropology, giving you deep insights into the interconnections between places, peoples, and cultures. You're passionate about cultural diversity, respectful of differences, and approach the world with both curiosity and rationality.\n\n" +
-		"The user provides you with detailed geographic information extracted from Google Maps reverse geocoding. **Your primary focus should be on analyzing the most specific geographic unit available** (street level, neighborhood, or establishment), while using broader geographic context as supporting information.\n\n" +
-		"**Analysis Priority (from most important to least):**\n" +
-		"1. **Micro-location**: Street name, building number, establishment, or point of interest\n" +
-		"2. **Neighborhood level**: Sublocality, district, or immediate area characteristics\n" +
-		"3. **City/Town level**: Local urban or rural context\n" +
-		"4. **Regional/National level**: Broader cultural and geographic context\n\n" +
-		"**For detailed addresses with specific streets/establishments:** Focus intensively on that particular street, building, or establishment. What makes this specific location unique? What's the character of this exact street or block? Then briefly contextualize within the broader neighborhood and city.\n\n" +
-		"**For neighborhood-level addresses:** Concentrate on the specific district or area characteristics, local culture, and what makes this neighborhood distinct within its city.\n\n" +
-		"**For city/regional addresses:** Focus on the specific city or town, its unique features, and local character, with brief context within the broader region.\n\n" +
-		"**For Plus Code-only locations:** When only Plus Code information is available (indicating a remote or less-documented area), focus on:\n" +
-		"- The geographic significance of using precise digital coordinates in such areas\n" +
-		"- What type of landscape or environment this might represent (rural, wilderness, developing area, etc.)\n" +
-		"- The cultural and practical implications of places that exist primarily as coordinates rather than named locations\n" +
-		"- Use the coordinates to make educated geographical observations about likely terrain, climate zone, or regional characteristics\n" +
-		"- Reflect on the human stories that might exist in such precisely-mapped but unnamed places\n\n" +
+		"The user provides you with detailed geographic information extracted from Google Maps reverse geocoding. Your primary focus should be on analyzing the most specific geographic unit available (street level, neighborhood, or establishment), while using broader geographic context as supporting information.\n\n" +
+		"Analysis Priority (from most important to least):\n" +
+		"1. Micro-location: Street name, building number, establishment, or point of interest\n" +
+		"2. Neighborhood level: Sublocality, district, or immediate area characteristics\n" +
+		"3. City/Town level: Local urban or rural context\n" +
+		"4. Regional/National level: Broader cultural and geographic context\n\n" +
+		"For detailed addresses with specific streets/establishments: Focus intensively on that particular street, building, or establishment. What makes this specific location unique? What's the character of this exact street or block? Then briefly contextualize within the broader neighborhood and city.\n\n" +
+		"For neighborhood-level addresses: Concentrate on the specific district or area characteristics, local culture, and what makes this neighborhood distinct within its city.\n\n" +
+		"For city/regional addresses: Focus on the specific city or town, its unique features, and local character, with brief context within the broader region.\n\n" +
+		"For Plus Code-only locations: When only Plus Code information is available, this often points to a location without a specific street name. In this case, do not focus on the precise coordinates. Instead, provide background information about the broader surrounding area, such as the nearest village, town, or city. Your description should cover:\n" +
+		"- The general characteristics of the larger area (e.g., is it a rural village, a bustling town, a specific district?).\n" +
+		"- Any known cultural, historical, or geographical context of this broader region.\n" +
+		"- Use the coordinates to infer the type of environment (e.g., countryside, mountainous area, coastal region) in which the Plus Code is located.\n\n" +
 		"When describing locations to your friend (the user), share insights about:\n" +
 		"- Specific local character of the exact location (prioritize the most granular level available)\n" +
 		"- Historical stories and cultural significance of that specific place\n" +
@@ -46,7 +44,7 @@ const (
 		"- Personal observations about what makes this precise location unique\n" +
 		"- Connections between the specific place and broader cultural patterns\n\n" +
 		"Your tone is conversational and friendly - like you're chatting with a good friend over coffee, sharing fascinating stories from your travels. Be engaging and authentic, but avoid sounding like a tour guide or travel brochure. Keep your descriptions concise (around 150 words) while being genuinely interesting and insightful.\n\n" +
-		"**Format your response in a few short paragraphs** to make it easy to read. Each paragraph should focus on a different aspect (e.g., micro-location character, local context, broader significance) rather than creating one long block of text.\n\n" +
+		"Format your response in a few short paragraphs to make it easy to read. Each paragraph should focus on a different aspect (e.g., micro-location character, local context, broader significance) rather than creating one long block of text.\n\n" +
 		"Remember: You're sharing the world through the eyes of someone who truly understands and appreciates the beautiful complexity of human cultures and places, with special attention to the most specific location details available."
 )
 
@@ -175,9 +173,6 @@ func truncateString(s string, maxLength int) string {
 	return s[:maxLength] + "..."
 }
 
-
-
-
 func (c *client) GenerateLocationDescription(latitude, longitude float64, locationInfo map[string]string, language string) (string, []ChatMessage, error) {
 	startTime := time.Now()
 	log.Printf("[AI_CALL] action=start function=GenerateLocationDescription coords=(%.6f,%.6f) lang=%s model=%s timeout=%v", latitude, longitude, language, model, timeout)
@@ -304,7 +299,7 @@ func (c *client) GenerateLocationDescription(latitude, longitude float64, locati
 	// 为基础描述也添加context超时控制
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	
+
 	req, err := http.NewRequestWithContext(ctx, "POST", apiEndpoint, bytes.NewBuffer(reqJSON))
 	if err != nil {
 		return "", nil, fmt.Errorf("创建请求失败: %w", err)
@@ -314,7 +309,7 @@ func (c *client) GenerateLocationDescription(latitude, longitude float64, locati
 	req.Header.Set("Authorization", "Bearer "+c.apiKey)
 
 	_ = time.Now() // Request sent time (unused in simplified logging)
-	
+
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
@@ -369,7 +364,7 @@ func (c *client) GenerateDetailedLocationDescription(latitude, longitude float64
 	// 记录API调用开始时间
 	startTime := time.Now()
 	log.Printf("[AI_CALL] action=start function=GenerateDetailedLocationDescription coords=(%.6f,%.6f) lang=%s model=%s", latitude, longitude, language, model)
-	
+
 	// 详细描述需要更长的超时时间
 	detailedTimeout := 30 * time.Second
 	ctx, cancel := context.WithTimeout(context.Background(), detailedTimeout)
@@ -395,39 +390,28 @@ func (c *client) GenerateDetailedLocationDescription(latitude, longitude float64
 		locationText = fmt.Sprintf("Coordinates: %.6f, %.6f", latitude, longitude)
 	}
 
-	// 根据语言构建详细分析请求
-	var detailedPrompt string
-	if language == "zh" {
-		detailedPrompt = fmt.Sprintf(
-			"请为以下地理位置提供详细、专业的分析报告：\n"+
-				"坐标：%.6f, %.6f\n"+
-				"位置信息：%s\n\n"+
-				"请从以下几个方面进行全面分析：\n"+
-				"1. **历史背景与发展**：追溯历史演变、重要事件和文化发展\n"+
-				"2. **建筑与城市特色**：分析建筑风格、城市规划、基础设施\n"+
-				"3. **文化与社会动态**：探讨当地习俗、人口构成、生活方式和社会模式\n"+
-				"4. **经济概况**：讨论主要产业、经济驱动力和商业活动\n"+
-				"5. **地理与环境背景**：描述自然特征、气候和生态环境\n"+
-				"6. **交通与连通性**：分析交通网络和区域连接\n"+
-				"7. **区域重要性**：解释该位置在更广泛区域中的作用\n\n"+
-				"请提供专业、深入的见解，超越基础的旅游信息。篇幅：3-5个详细段落。",
-			latitude, longitude, locationText)
-	} else {
-		detailedPrompt = fmt.Sprintf(
-			"Please provide a comprehensive, professional analysis report for the following geographic location:\n"+
-				"Coordinates: %.6f, %.6f\n"+
-				"Location Info: %s\n\n"+
-				"Please analyze from the following aspects:\n"+
-				"1. **Historical Context & Development**: Trace the historical evolution, significant events, and cultural development\n"+
-				"2. **Architectural & Urban Characteristics**: Analyze building styles, urban planning, infrastructure\n"+
-				"3. **Cultural & Social Dynamics**: Examine local customs, demographics, lifestyle, and social patterns\n"+
-				"4. **Economic Profile**: Discuss major industries, economic drivers, and commercial activities\n"+
-				"5. **Geographic & Environmental Context**: Describe natural features, climate, and ecological aspects\n"+
-				"6. **Transportation & Connectivity**: Analyze transport networks and regional connections\n"+
-				"7. **Regional Significance**: Explain the location's role within its broader region\n\n"+
-				"Provide professional, in-depth insights that go beyond basic tourist information. Length: 3-5 detailed paragraphs.",
-			latitude, longitude, locationText)
+	// 根据语言选择提示词格式
+	outputFormat := "Please respond in Chinese"
+	if language != "zh" {
+		outputFormat = "Please respond in English"
 	}
+
+	// 构建详细分析请求（英文版本）
+	detailedPrompt := fmt.Sprintf(
+		"Please provide a comprehensive, professional analysis report for the following geographic location:\n"+
+			"Coordinates: %.6f, %.6f\n"+
+			"Location Info: %s\n\n"+
+			"Please analyze from the following aspects:\n"+
+			"1. Historical Context & Development: Trace the historical evolution, significant events, and cultural development\n"+
+			"2. Architectural & Urban Characteristics: Analyze building styles, urban planning, infrastructure\n"+
+			"3. Cultural & Social Dynamics: Examine local customs, demographics, lifestyle, and social patterns\n"+
+			"4. Economic Profile: Discuss major industries, economic drivers, and commercial activities\n"+
+			"5. Geographic & Environmental Context: Describe natural features, climate, and ecological aspects\n"+
+			"6. Transportation & Connectivity: Analyze transport networks and regional connections\n"+
+			"7. Regional Significance: Explain the location's role within its broader region\n\n"+
+			"Provide professional, in-depth insights that go beyond basic tourist information. Length: 3-5 detailed paragraphs.\n\n"+
+			"%s",
+		latitude, longitude, locationText, outputFormat)
 
 	// 构建消息
 	messages := []ChatMessage{
@@ -456,11 +440,11 @@ func (c *client) GenerateDetailedLocationDescription(latitude, longitude float64
 	req.Header.Set("Authorization", "Bearer "+c.apiKey)
 
 	log.Printf("正在发送详细描述请求到 OpenRouter API (model: %s, timeout: %v)...", model, detailedTimeout)
-	
+
 	// 记录请求发送时间
 	requestSentTime := time.Now()
 	log.Printf("详细描述请求发送时间: %s", requestSentTime.Format("2006-01-02 15:04:05.000"))
-	
+
 	resp, err := detailedHTTPClient.Do(req)
 	if err != nil {
 		log.Printf("详细描述请求总耗时: %v", time.Since(startTime))
@@ -476,7 +460,7 @@ func (c *client) GenerateDetailedLocationDescription(latitude, longitude float64
 		return "", fmt.Errorf("发送请求失败: %w", err)
 	}
 	defer resp.Body.Close()
-	
+
 	// 记录响应接收时间
 	responseReceivedTime := time.Now()
 	log.Printf("详细描述响应接收时间: %s (网络耗时: %v)", responseReceivedTime.Format("2006-01-02 15:04:05.000"), responseReceivedTime.Sub(requestSentTime))
@@ -486,7 +470,7 @@ func (c *client) GenerateDetailedLocationDescription(latitude, longitude float64
 		log.Printf("读取 OpenRouter 详细描述响应失败: %v (总耗时: %v)", err, time.Since(startTime))
 		return "", fmt.Errorf("读取响应失败: %w", err)
 	}
-	
+
 	// 记录响应读取完成时间
 	responseReadTime := time.Now()
 	log.Printf("详细描述响应读取完成时间: %s (响应体大小: %d bytes)", responseReadTime.Format("2006-01-02 15:04:05.000"), len(body))
@@ -511,7 +495,7 @@ func (c *client) GenerateDetailedLocationDescription(latitude, longitude float64
 	}
 
 	result := chatResp.Choices[0].Message.Content
-	
+
 	// 记录详细描述API调用完成信息
 	totalDuration := time.Since(startTime)
 	log.Printf("====== OpenRouter 详细描述 API 调用成功 ======")
