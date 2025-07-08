@@ -31,7 +31,7 @@ func NewConfig() *Config {
 
 	return &Config{
 		DSN:              os.Getenv("SENTRY_DSN"),
-		Environment:      getEnvOrDefault("SENTRY_ENVIRONMENT", "development"),
+		Environment:      getEnvOrDefault("GO_ENV", "development"), // 使用GO_ENV替代SENTRY_ENVIRONMENT
 		Release:          getEnvOrDefault("SENTRY_RELEASE", "unknown"),
 		TracesSampleRate: sampleRate,
 		Enabled:          enabled,
