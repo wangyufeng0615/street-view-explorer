@@ -5,6 +5,8 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/getsentry/sentry-go"
+	sentrygin "github.com/getsentry/sentry-go/gin"
 	"github.com/gin-gonic/gin"
 )
 
@@ -58,6 +60,31 @@ func ErrorHandler() gin.HandlerFunc {
 
 		if len(c.Errors) > 0 {
 			err := c.Errors.Last()
+
+			// Send error to Sentry
+			hub := sentrygin.GetHubFromContext(c)
+			if hub == nil {
+				// Try getting from context
+				if h, exists := c.Get("sentry"); exists {
+					hub = h.(*sentry.Hub)
+				}
+			}
+
+			if hub != nil {
+				hub.WithScope(func(scope *sentry.Scope) {
+					// Set error context
+					scope.SetContext("request", sentry.Context{
+						"method":     c.Request.Method,
+						"path":       c.Request.URL.Path,
+						"query":      c.Request.URL.RawQuery,
+						"client_ip":  c.ClientIP(),
+						"user_agent": c.Request.UserAgent(),
+					})
+
+					// Capture the error
+					hub.CaptureException(err.Err)
+				})
+			}
 
 			// 根据错误类型返回适当的响应
 			switch e := err.Err.(type) {

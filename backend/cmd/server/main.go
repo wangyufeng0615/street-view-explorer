@@ -7,10 +7,12 @@ import (
 	"os"
 	"time"
 
+	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
 	"github.com/my-streetview-project/backend/internal/api"
 	"github.com/my-streetview-project/backend/internal/config"
 	"github.com/my-streetview-project/backend/internal/repositories"
+	mysentry "github.com/my-streetview-project/backend/internal/sentry"
 	"github.com/my-streetview-project/backend/internal/services"
 	"github.com/my-streetview-project/backend/internal/utils"
 )
@@ -30,6 +32,14 @@ func main() {
 	cfg := config.New()
 	// 设置 skipProxyCheck 到配置中
 	cfg.SetSkipProxyCheck(*skipProxyCheck)
+
+	// Initialize Sentry
+	sentryCfg := mysentry.NewConfig()
+	if err := mysentry.Init(sentryCfg); err != nil {
+		log.Printf("Failed to initialize Sentry: %v", err)
+		// Continue running even if Sentry fails to initialize
+	}
+	defer sentry.Flush(2 * time.Second)
 
 	// 如果指定了代理，设置环境变量
 	if *proxyURL != "" {
@@ -110,6 +120,7 @@ func main() {
 
 	// 添加中间件
 	r.Use(gin.Recovery())
+	r.Use(mysentry.Middleware(false))     // Add Sentry middleware after Recovery
 	r.Use(api.RequestLoggingMiddleware()) // 使用结构化日志替代默认日志
 	r.Use(api.ErrorHandler())
 	r.Use(api.CORSMiddleware())
@@ -158,19 +169,22 @@ func main() {
 		})
 	})
 
+	// Add Sentry test endpoint
+	r.GET("/test/sentry", mysentry.TestSentry())
+
 	// 设置路由
 	handlers := api.NewHandlers(locationService, aiService)
 	api.SetupRoutes(r, handlers)
 
 	addr := cfg.ServerAddress()
 	logger := utils.SystemLogger()
-	
+
 	logger.Info("server_starting", "Starting HTTP server", map[string]interface{}{
-		"address":     addr,
-		"rate_limit":  cfg.SecurityConfig().RateLimit.Enabled,
+		"address":       addr,
+		"rate_limit":    cfg.SecurityConfig().RateLimit.Enabled,
 		"proxy_enabled": cfg.ProxyURL() != "",
 	})
-	
+
 	fmt.Printf("服务器运行在 %s\n", addr)
 	if err := r.Run(addr); err != nil {
 		logger.Error("server_failed", "Server failed to start", err, map[string]interface{}{

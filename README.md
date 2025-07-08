@@ -10,6 +10,7 @@ A web application for randomly exploring global street views with AI-generated d
 - 🤖 AI-generated location descriptions via OpenRouter API
 - 🌐 Multi-language support (English/Chinese)
 - ⚡ Redis caching for optimal performance
+- 📊 Comprehensive error tracking and performance monitoring with Sentry
 
 ## Quick Start
 
@@ -46,10 +47,12 @@ cp .env.example .env
 ### Required API Keys
 - **OpenRouter API**: For AI description generation
 - **Google Maps API**: For maps and street view (separate keys recommended for frontend/backend)
+- **Sentry DSN**: For error tracking and performance monitoring
 
 ## Tech Stack
 
 - **Frontend**: React 18 + TypeScript + Google Maps API
 - **Backend**: Go + Gin + Redis
 - **AI**: OpenRouter API integration
+- **Monitoring**: Sentry (Error tracking + Performance monitoring)
 - **Infrastructure**: Docker Compose + Nginx
