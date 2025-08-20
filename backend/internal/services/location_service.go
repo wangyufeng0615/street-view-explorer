@@ -140,14 +140,7 @@ func (ls *LocationService) SetExplorationPreference(sessionID, interest string) 
 		return fmt.Errorf("探索兴趣包含无效字符")
 	}
 
-	// 获取用户当前的偏好设置，检查更新频率
-	existingPref, err := ls.repo.GetExplorationPreference(sessionID)
-	if err == nil && existingPref != nil {
-		// 只有在已存在偏好设置的情况下才检查更新频率
-		if time.Since(existingPref.LastUsedAt) < 100*time.Millisecond {
-			return fmt.Errorf("请求过于频繁，请稍后再试")
-		}
-	}
+	// 移除了过于严格的100ms检查，现在由中间件处理速率限制
 
 	// 通过 AI 获取相关区域
 	regions, err := ls.aiService.openAI.GenerateRegionsForInterest(interest)

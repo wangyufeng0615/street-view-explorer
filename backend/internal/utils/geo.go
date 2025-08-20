@@ -5,7 +5,6 @@ import (
 	"log"
 	"math"
 	"math/rand"
-	"sync"
 	"time"
 
 	"github.com/my-streetview-project/backend/internal/models"
@@ -29,48 +28,26 @@ type Region struct {
 	// 国家信息，用于按国家等概率选择
 	CountryName string
 	CountryCode string
+	// 预计算的面积，避免运行时重复计算
+	Area float64
 }
 
-// 陆地区域缓存
-var (
-	cachedLandRegions []Region
-	regionCacheMutex  sync.RWMutex
-	regionCacheTime   time.Time
-)
+// 全局陆地区域数据，启动时初始化
+var globalLandRegions []Region
 
-// 缓存有效期 (1小时)
-const regionCacheExpiry = time.Hour
-
-// getLandMassRegions 从Natural Earth数据集获取陆地区域
-func getLandMassRegions() ([]Region, error) {
-	regionCacheMutex.RLock()
-	// 检查缓存是否有效
-	if cachedLandRegions != nil && time.Since(regionCacheTime) < regionCacheExpiry {
-		regions := cachedLandRegions
-		regionCacheMutex.RUnlock()
-		return regions, nil
-	}
-	regionCacheMutex.RUnlock()
-
-	// 需要重新加载数据
-	regionCacheMutex.Lock()
-	defer regionCacheMutex.Unlock()
-
-	// 双重检查，防止并发重复加载
-	if cachedLandRegions != nil && time.Since(regionCacheTime) < regionCacheExpiry {
-		return cachedLandRegions, nil
-	}
-
+// InitializeGeoData 在启动时初始化地理数据
+// 必须在服务启动时调用，失败则退出程序
+func InitializeGeoData() error {
 	// 从地图管理器加载数据
 	mapManager := GetGlobalMapManager()
 	if mapManager == nil {
-		return nil, fmt.Errorf("地图管理器未初始化")
+		return fmt.Errorf("地图管理器未初始化")
 	}
 
 	// 加载世界地图数据
 	worldData, err := mapManager.LoadWorldMapData()
 	if err != nil {
-		return nil, fmt.Errorf("加载世界地图数据失败: %w", err)
+		return fmt.Errorf("加载世界地图数据失败: %w", err)
 	}
 
 	// 从世界地图数据提取陆地区域
@@ -88,14 +65,27 @@ func getLandMassRegions() ([]Region, error) {
 	}
 
 	if len(regions) == 0 {
-		return nil, fmt.Errorf("未能从地图数据中提取到陆地区域")
+		return fmt.Errorf("未能从地图数据中提取到陆地区域")
 	}
 
-	// 缓存结果
-	cachedLandRegions = regions
-	regionCacheTime = time.Now()
+	// 预计算每个区域的面积
+	for i := range regions {
+		regions[i].Area = calculateRegionArea(&regions[i])
+	}
 
-	return regions, nil
+	// 存储到全局变量
+	globalLandRegions = regions
+
+	log.Printf("成功初始化地理数据: %d 个区域", len(globalLandRegions))
+	return nil
+}
+
+// getLandMassRegions 获取陆地区域数据
+func getLandMassRegions() ([]Region, error) {
+	if globalLandRegions == nil {
+		return nil, fmt.Errorf("地理数据未初始化")
+	}
+	return globalLandRegions, nil
 }
 
 // extractLandRegionsFromGeoJSON 从GeoJSON数据中提取陆地区域边界
@@ -163,6 +153,7 @@ func extractRegionsFromPolygon(polygon orb.Polygon, isMinorIsland bool, countryN
 		IsMinorIsland: isMinorIsland,
 		CountryName:   countryName,
 		CountryCode:   countryCode,
+		// Area 将在 InitializeGeoData 中计算
 	}
 
 	return []Region{region}
@@ -198,6 +189,7 @@ func extractRegionsFromMultiPolygon(multiPolygon orb.MultiPolygon, isMinorIsland
 			IsMinorIsland: isMinorIsland,
 			CountryName:   countryName,
 			CountryCode:   countryCode,
+			// Area 将在 InitializeGeoData 中计算
 		}
 
 		regions = append(regions, region)
@@ -249,11 +241,11 @@ func isValidBounds(bounds Region) bool {
 		bounds.East <= 180 && bounds.West >= -180
 }
 
-// getRegionArea 计算区域面积（使用真实多边形面积）
-func getRegionArea(region Region) float64 {
+// calculateRegionArea 计算区域面积（启动时调用）
+func calculateRegionArea(region *Region) float64 {
 	if len(region.Polygons) == 0 {
 		// 如果没有多边形数据，回退到边界框面积
-		return getRegionWidth(region) * getRegionHeight(region)
+		return getRegionWidth(*region) * getRegionHeight(*region)
 	}
 
 	// 计算所有多边形的总面积
@@ -264,6 +256,12 @@ func getRegionArea(region Region) float64 {
 	}
 
 	return totalArea
+}
+
+// getRegionArea 获取区域面积（使用预计算的值）
+func getRegionArea(region Region) float64 {
+	// 直接返回预计算的面积
+	return region.Area
 }
 
 // calculatePolygonArea 使用Shoelace公式计算多边形面积
@@ -369,6 +367,7 @@ func selectRegionSource(userRegions []models.Region) []Region {
 				West:          userRegion.Coordinates.West,
 				Polygons:      []orb.Polygon{rectPolygon}, // 添加矩形多边形
 				IsMinorIsland: false,                      // 用户定义的区域默认不是小型岛屿
+				Area:          calculatePolygonArea(rectPolygon), // 计算矩形面积
 			}
 		}
 		return regions
@@ -595,11 +594,9 @@ func CalculateDistance(lat1, lon1, lat2, lon2 float64) float64 {
 	return distance
 }
 
-// ClearRegionCache 清空区域缓存（用于测试）
-func ClearRegionCache() {
-	regionCacheMutex.Lock()
-	defer regionCacheMutex.Unlock()
-	cachedLandRegions = nil
+// ReloadGeoData 重新加载地理数据（用于测试）
+func ReloadGeoData() error {
+	return InitializeGeoData()
 }
 
 // GetRegionInfo 获取当前区域信息（用于调试）
@@ -608,8 +605,6 @@ func GetRegionInfo() map[string]interface{} {
 
 	info := map[string]interface{}{
 		"total_regions": len(regions),
-		"cache_time":    regionCacheTime,
-		"cache_valid":   time.Since(regionCacheTime) < regionCacheExpiry,
 	}
 
 	if err != nil {

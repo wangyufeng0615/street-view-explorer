@@ -93,6 +93,12 @@ func main() {
 		}
 	}
 
+	// 初始化地理数据（必须在服务启动时完成）
+	log.Println("正在初始化地理数据...")
+	if err := utils.InitializeGeoData(); err != nil {
+		log.Fatalf("初始化地理数据失败: %v", err)
+	}
+
 	// 初始化 Redis 仓库 (this also initializes a redis client)
 	repo, err := repositories.NewRedisRepository(cfg)
 	if err != nil {
@@ -123,7 +129,8 @@ func main() {
 	r.Use(mysentry.Middleware(false))     // Add Sentry middleware after Recovery
 	r.Use(api.RequestLoggingMiddleware()) // 使用结构化日志替代默认日志
 	r.Use(api.ErrorHandler())
-	r.Use(api.CORSMiddleware())
+	// CORS 由 Nginx 处理，移除后端 CORS 中间件
+	// r.Use(api.CORSMiddleware())
 
 	// 根据配置启用限流
 	if cfg.SecurityConfig().RateLimit.Enabled {
@@ -137,6 +144,14 @@ func main() {
 
 	r.Use(api.InputValidationMiddleware())
 	r.Use(api.SessionMiddleware())
+	
+	// 添加用户级别的限流中间件（在SessionMiddleware之后，因为需要sessionID）
+	if cfg.SecurityConfig().RateLimit.Enabled {
+		redisClientForRateLimit := repo.GetRedisClient()
+		if redisClientForRateLimit != nil {
+			r.Use(api.UserRateLimitMiddleware(redisClientForRateLimit))
+		}
+	}
 
 	// 添加健康检查接口
 	r.GET("/health", func(c *gin.Context) {

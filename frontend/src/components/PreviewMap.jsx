@@ -73,12 +73,15 @@ export default function PreviewMap({ latitude, longitude }) {
             pin.style.width = '0';
             pin.style.height = '0';
 
-            markerInstanceRef.current = new maps.marker.AdvancedMarkerElement({
-                map: mapInstanceRef.current,
-                position: { lat: latitude, lng: longitude },
-                content: pin,
-                zIndex: 1000
-            });
+            // 创建标记点
+            if (maps.marker?.AdvancedMarkerElement) {
+                markerInstanceRef.current = new maps.marker.AdvancedMarkerElement({
+                    map: mapInstanceRef.current,
+                    position: { lat: latitude, lng: longitude },
+                    content: pin,
+                    zIndex: 1000
+                });
+            }
 
             // 确保地图中心点和标记位置一致
             mapInstanceRef.current.setCenter({ lat: latitude, lng: longitude });

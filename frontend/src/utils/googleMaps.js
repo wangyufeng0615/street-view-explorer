@@ -5,15 +5,12 @@ let googleMapsPromise = null;
 let lastLoadedLanguage = null;
 let isLoadingScript = false;
 let isApiLoaded = false;
+let deferredLoadResolvers = [];
+let loadAttemptCount = 0; // 添加加载尝试计数器
 
 // 检查Google Maps API是否已经加载
 function isGoogleMapsLoaded() {
     return !!(window.google && window.google.maps && window.google.maps.Map);
-}
-
-// 检查是否已有Google Maps script标签
-function hasGoogleMapsScript() {
-    return !!document.querySelector('script[src*="maps.googleapis.com/maps/api/js"]');
 }
 
 // 生成唯一的回调函数名
@@ -21,111 +18,177 @@ function generateCallbackName() {
     return `initGoogleMaps_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 }
 
+// 清理现有的Google Maps script标签
+function cleanupExistingScripts() {
+    const existingScripts = document.querySelectorAll('script[data-google-maps="true"], script[src*="maps.googleapis.com/maps/api/js"]');
+    existingScripts.forEach(script => {
+        script.remove();
+    });
+}
+
+/**
+ * Preload Google Maps API (just establish connection, don't execute)
+ */
+export function preloadGoogleMaps() {
+    // Only preconnect, don't actually load the script
+    const link = document.createElement('link');
+    link.rel = 'preconnect';
+    link.href = 'https://maps.googleapis.com';
+    document.head.appendChild(link);
+    
+    // Also prefetch the actual script URL without executing
+    const prefetchLink = document.createElement('link');
+    prefetchLink.rel = 'prefetch';
+    prefetchLink.href = `https://maps.googleapis.com/maps/api/js?key=${process.env.REACT_APP_GOOGLE_MAPS_API_KEY}&loading=async&libraries=marker&language=${i18n.language}&v=weekly`;
+    document.head.appendChild(prefetchLink);
+}
+
+/**
+ * Load Google Maps Script with improved performance
+ * - Uses IntersectionObserver for viewport-based loading
+ * - Implements request idle callback for non-blocking load
+ * - Adds performance marks for monitoring
+ */
 export function loadGoogleMapsScript() {
     const currentLanguage = i18n.language || 'en';
     
-    // 如果API已经完全加载且语言相同，直接返回resolved promise
+    // Mark performance timing
+    if (window.performance && window.performance.mark) {
+        window.performance.mark('googleMapsLoadStart');
+    }
+    
+    // If API already loaded with same language, return immediately
     if (isApiLoaded && isGoogleMapsLoaded() && lastLoadedLanguage === currentLanguage) {
         return Promise.resolve(window.google.maps);
     }
     
-    // 如果语言发生变化，需要重置和重新加载
+    // If language changed, need to reload
     if (lastLoadedLanguage !== null && lastLoadedLanguage !== currentLanguage) {
         hardResetGoogleMapsPromise();
     }
     
-    // 如果已经有promise在进行中，返回它
+    // 防止多次加载尝试
+    if (loadAttemptCount > 0 && isGoogleMapsLoaded()) {
+        isApiLoaded = true;
+        lastLoadedLanguage = currentLanguage;
+        return Promise.resolve(window.google.maps);
+    }
+    
+    // If already loading, return existing promise
     if (googleMapsPromise) {
         return googleMapsPromise;
     }
     
-    // 如果正在加载中，等待加载完成
+    // If script is loading, wait for it
     if (isLoadingScript) {
-        googleMapsPromise = new Promise((resolve, reject) => {
-            const checkInterval = setInterval(() => {
-                if (isGoogleMapsLoaded()) {
-                    clearInterval(checkInterval);
-                    isApiLoaded = true;
-                    resolve(window.google.maps);
-                } else if (!isLoadingScript) {
-                    clearInterval(checkInterval);
-                    reject(new Error('Google Maps loading failed'));
-                }
-            }, 100);
-            
-            // 20秒超时
-            setTimeout(() => {
-                clearInterval(checkInterval);
-                if (!isGoogleMapsLoaded()) {
-                    reject(new Error('Google Maps loading timed out'));
-                }
-            }, 20000);
+        return new Promise((resolve, reject) => {
+            deferredLoadResolvers.push({ resolve, reject });
         });
-        return googleMapsPromise;
     }
     
-    // 开始新的加载过程
+    // Start new loading process
     isLoadingScript = true;
     lastLoadedLanguage = currentLanguage;
+    loadAttemptCount++;
     
     googleMapsPromise = new Promise((resolve, reject) => {
-        // 再次检查是否已经加载（双重检查）
+        // Check if already loaded
         if (isGoogleMapsLoaded()) {
             isLoadingScript = false;
             isApiLoaded = true;
+            if (window.performance && window.performance.mark) {
+                window.performance.mark('googleMapsLoadEnd');
+                window.performance.measure('googleMapsLoadTime', 'googleMapsLoadStart', 'googleMapsLoadEnd');
+            }
             resolve(window.google.maps);
             return;
         }
         
-        // 清理可能存在的旧script标签
-        cleanupExistingScripts();
-        
-        // 生成唯一的回调函数名
-        const callbackName = generateCallbackName();
-        
-        // 设置超时处理
-        const timeoutId = setTimeout(() => {
-            isLoadingScript = false;
-            cleanup();
-            reject(new Error('Google Maps loading timed out after 20 seconds'));
-        }, 20000);
-        
-        // 清理函数
-        const cleanup = () => {
-            clearTimeout(timeoutId);
-            if (window[callbackName]) {
-                delete window[callbackName];
-            }
-        };
-        
-        // 定义回调函数
-        window[callbackName] = () => {
-            cleanup();
-            
+        // Use requestIdleCallback for non-blocking load
+        const loadScript = () => {
+            // 再次检查是否已经加载，避免重复
             if (isGoogleMapsLoaded()) {
                 isLoadingScript = false;
                 isApiLoaded = true;
                 resolve(window.google.maps);
-            } else {
-                isLoadingScript = false;
-                reject(new Error('Google Maps failed to initialize properly'));
+                return;
             }
+            
+            // Clean up old scripts
+            cleanupExistingScripts();
+            
+            const callbackName = generateCallbackName();
+            
+            // Set timeout - 增加到30秒
+            const timeoutId = setTimeout(() => {
+                isLoadingScript = false;
+                cleanup();
+                reject(new Error('Google Maps loading timed out'));
+            }, 30000);
+            
+            // Cleanup function
+            const cleanup = () => {
+                clearTimeout(timeoutId);
+                if (window[callbackName]) {
+                    delete window[callbackName];
+                }
+            };
+            
+            // Success callback
+            window[callbackName] = () => {
+                cleanup();
+                
+                if (isGoogleMapsLoaded()) {
+                    isLoadingScript = false;
+                    isApiLoaded = true;
+                    
+                    // Performance marking
+                    if (window.performance && window.performance.mark) {
+                        window.performance.mark('googleMapsLoadEnd');
+                        window.performance.measure('googleMapsLoadTime', 'googleMapsLoadStart', 'googleMapsLoadEnd');
+                    }
+                    
+                    // Resolve main promise
+                    resolve(window.google.maps);
+                    
+                    // Resolve any deferred promises
+                    deferredLoadResolvers.forEach(({ resolve }) => resolve(window.google.maps));
+                    deferredLoadResolvers = [];
+                } else {
+                    isLoadingScript = false;
+                    const error = new Error('Google Maps failed to initialize');
+                    reject(error);
+                    deferredLoadResolvers.forEach(({ reject }) => reject(error));
+                    deferredLoadResolvers = [];
+                }
+            };
+            
+            // Create and append script
+            const script = document.createElement('script');
+            script.src = `https://maps.googleapis.com/maps/api/js?key=${process.env.REACT_APP_GOOGLE_MAPS_API_KEY}&callback=${callbackName}&loading=async&libraries=marker&language=${currentLanguage}&v=weekly`;
+            script.async = true;
+            script.defer = true;
+            script.setAttribute('data-google-maps', 'true');
+            
+            // Error handling
+            script.onerror = () => {
+                isLoadingScript = false;
+                cleanup();
+                const error = new Error('Google Maps script loading error');
+                reject(error);
+                deferredLoadResolvers.forEach(({ reject }) => reject(error));
+                deferredLoadResolvers = [];
+            };
+            
+            document.head.appendChild(script);
         };
         
-        // 创建script标签
-        const script = document.createElement('script');
-        script.src = `https://maps.googleapis.com/maps/api/js?key=${process.env.REACT_APP_GOOGLE_MAPS_API_KEY}&callback=${callbackName}&loading=async&libraries=marker&language=${currentLanguage}&v=weekly`;
-        script.async = true;
-        script.defer = true;
-        script.setAttribute('data-google-maps', 'true');
-        
-        script.onerror = () => {
-            isLoadingScript = false;
-            cleanup();
-            reject(new Error('Google Maps script loading error'));
-        };
-        
-        document.head.appendChild(script);
+        // Use requestIdleCallback if available, otherwise setTimeout
+        if ('requestIdleCallback' in window) {
+            window.requestIdleCallback(loadScript, { timeout: 2000 });
+        } else {
+            setTimeout(loadScript, 0);
+        }
     }).catch(err => {
         isLoadingScript = false;
         googleMapsPromise = null;
@@ -135,60 +198,75 @@ export function loadGoogleMapsScript() {
     return googleMapsPromise;
 }
 
-// 清理现有的Google Maps script标签
-function cleanupExistingScripts() {
-    const existingScripts = document.querySelectorAll('script[src*="maps.googleapis.com/maps/api/js"], script[data-google-maps="true"]');
-    existingScripts.forEach(script => {
-        if (script.parentNode) {
-            script.parentNode.removeChild(script);
+/**
+ * Load Google Maps when element becomes visible
+ * Uses IntersectionObserver for viewport-based loading
+ */
+export function loadGoogleMapsWhenVisible(element) {
+    if (!element) {
+        return loadGoogleMapsScript();
+    }
+    
+    return new Promise((resolve, reject) => {
+        // If IntersectionObserver is not supported, load immediately
+        if (!('IntersectionObserver' in window)) {
+            loadGoogleMapsScript().then(resolve).catch(reject);
+            return;
         }
+        
+        // Create observer
+        const observer = new IntersectionObserver(
+            (entries) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        observer.disconnect();
+                        loadGoogleMapsScript().then(resolve).catch(reject);
+                    }
+                });
+            },
+            {
+                root: null,
+                rootMargin: '50px', // Start loading 50px before element is visible
+                threshold: 0.01
+            }
+        );
+        
+        observer.observe(element);
     });
 }
 
-// 清理Google Maps相关对象
-function cleanupGoogleMapsObjects() {
+/**
+ * Hard reset Google Maps promise
+ */
+export function hardResetGoogleMapsPromise() {
+    // Reset all flags
+    googleMapsPromise = null;
+    isLoadingScript = false;
+    isApiLoaded = false;
+    lastLoadedLanguage = null;
+    
+    // Clean up scripts
+    cleanupExistingScripts();
+    
+    // Clean up Google Maps global
     if (window.google && window.google.maps) {
-        // 删除所有地图实例的节点
-        const mapNodes = document.querySelectorAll('.gm-style');
-        mapNodes.forEach(node => {
-            if (node.parentNode) {
-                node.parentNode.removeChild(node);
-            }
-        });
-        
-        // 语言切换时删除google对象
+        // Try to clean up Google Maps objects
         try {
-            if (lastLoadedLanguage !== null && lastLoadedLanguage !== (i18n.language || 'en')) {
-                delete window.google;
-                isApiLoaded = false;
-            }
+            delete window.google.maps;
+            delete window.google;
         } catch (e) {
-            console.error('Failed to delete google object', e);
+            // Some browsers don't allow deleting window properties
+            window.google = undefined;
         }
     }
 }
 
-// 强制重置所有状态
-function hardResetGoogleMapsPromise() {
-    googleMapsPromise = null;
-    lastLoadedLanguage = null;
-    isLoadingScript = false;
-    isApiLoaded = false;
-    
-    // 清理所有可能的回调函数
-    Object.keys(window).forEach(key => {
-        if (key.startsWith('initGoogleMaps')) {
-            delete window[key];
-        }
-    });
-    
-    // 清理script标签
-    cleanupExistingScripts();
-    
-    // 清理Google Maps对象
-    cleanupGoogleMapsObjects();
-}
+// Already exported above, no need to re-export
 
-export function resetGoogleMapsPromise() {
-    hardResetGoogleMapsPromise();
-} 
+// Preload on page load (just connection, not script)
+if (typeof window !== 'undefined') {
+    // Wait a bit after page load to avoid competing with critical resources
+    window.addEventListener('load', () => {
+        setTimeout(preloadGoogleMaps, 1000);
+    });
+}

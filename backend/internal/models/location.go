@@ -22,8 +22,6 @@ type Location struct {
 	ConversationHistory  string    `json:"conversation_history"`  // 对话历史（JSON格式）
 
 	// 元数据
-	CreatedAt      time.Time `json:"created_at"`       // 创建时间
-	LastAccessedAt time.Time `json:"last_accessed_at"` // 最后访问时间
-	AccessCount    int       `json:"access_count"`     // 访问次数
-	IsMock         bool      `json:"is_mock"`          // 是否为 mock 数据
+	CreatedAt time.Time `json:"created_at"` // 创建时间
+	IsMock    bool      `json:"is_mock"`    // 是否为 mock 数据
 }

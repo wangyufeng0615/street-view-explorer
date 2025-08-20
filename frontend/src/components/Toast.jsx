@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { memo } from 'react';
 
-const Toast = ({ message, visible }) => {
+const Toast = memo(({ message, visible }) => {
     if (!visible) return null;
 
     return (
@@ -10,7 +10,7 @@ const Toast = ({ message, visible }) => {
             </div>
         </div>
     );
-};
+});
 
 const styles = {
     toastContainer: {
@@ -35,5 +35,7 @@ const styles = {
         backdropFilter: 'blur(8px)'
     }
 };
+
+Toast.displayName = 'Toast';
 
 export default Toast; 

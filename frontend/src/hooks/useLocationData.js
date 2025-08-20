@@ -1,86 +1,48 @@
-import { useState, useRef, useCallback } from 'react';
-import { useTranslation } from 'react-i18next';
-import { getRandomLocation } from '../services/api';
-
-const RATE_LIMIT_MS = 1000; // 1秒限制
+import { useRef, useCallback } from 'react';
+import useStore from '../store/useStore';
 
 export default function useLocationData() {
-    const { i18n } = useTranslation();
-    const [location, setLocation] = useState(null);
-    const [error, setError] = useState(null);
-    const [isLoading, setIsLoading] = useState(true);
+    // 从Zustand store获取状态和actions
+    const location = useStore(state => state.location);
+    const error = useStore(state => state.locationError);
+    const isLoading = useStore(state => state.isLocationLoading);
+    const loadRandomLocationFromStore = useStore(state => state.loadRandomLocation);
+    const resetLocationError = useStore(state => state.resetLocationError);
+    const lastRefreshTime = useStore(state => state.lastRefreshTime);
+    const isLoadingLocation = useStore(state => state.isLoadingLocation);
     
-    // Refs
+    // 保持refs以保证向后兼容
     const loadingRef = useRef(false);
-    const lastRefreshTimeRef = useRef(Date.now() - RATE_LIMIT_MS);
+    const lastRefreshTimeRef = useRef(Date.now() - 1000);
     
-    // 加载随机位置
+    // 包装store的loadRandomLocation以保持兼容性
     const loadRandomLocation = useCallback(async (skipRateLimit = false) => {
-        // 检查限流（除非明确跳过）
-        if (!skipRateLimit) {
-            const now = Date.now();
-            const timeSinceLastRefresh = now - lastRefreshTimeRef.current;
-            if (timeSinceLastRefresh < RATE_LIMIT_MS) {
-                const waitTime = Math.ceil((RATE_LIMIT_MS - timeSinceLastRefresh) / 1000);
-                setError(`请等待 ${waitTime} 秒后再试`);
-                return;
-            }
+        // 同步ref状态
+        loadingRef.current = isLoadingLocation;
+        lastRefreshTimeRef.current = lastRefreshTime;
+        
+        // 调用store的方法
+        await loadRandomLocationFromStore(skipRateLimit);
+    }, [loadRandomLocationFromStore, isLoadingLocation, lastRefreshTime]);
+    
+    // 为了向后兼容，提供setter函数（虽然现在不需要直接使用）
+    const setLocation = useCallback((newLocation) => {
+        // 这个函数现在是空的，因为状态由store管理
+        // 但保留它以防有组件依赖这个接口
+        console.log('setLocation called, but state is managed by Zustand store');
+    }, []);
+    
+    const setError = useCallback((error) => {
+        if (error === null) {
+            resetLocationError();
         }
-
-        if (loadingRef.current) return;
-        
-        // 更新最后刷新时间
-        lastRefreshTimeRef.current = Date.now();
-        
-        // 设置加载状态
-        loadingRef.current = true;
-        setIsLoading(true);
-        
-        try {
-            setLocation(null);     // 清除旧的位置
-            
-            const currentLanguage = i18n.language || 'en';
-            const resp = await getRandomLocation(currentLanguage);
-            
-            // 检查是否仍在加载状态（防止用户已经取消）
-            if (!loadingRef.current) return;
-
-            if (resp.success && resp.data) {
-                // 确保数据格式正确
-                const lat = Number(resp.data.latitude);
-                const lng = Number(resp.data.longitude);
-
-                if (isNaN(lat) || isNaN(lng)) {
-                    throw new Error('服务器返回了无效的坐标数据');
-                }
-
-                const locationData = {
-                    latitude: lat,
-                    longitude: lng,
-                    pano_id: resp.data.pano_id,
-                    formatted_address: resp.data.formatted_address,
-                    country: resp.data.country,
-                    city: resp.data.city
-                };
-                
-                setLocation(locationData);
-                setError(null);
-            } else {
-                throw new Error(resp.error || '加载失败');
-            }
-        } catch (err) {
-            if (loadingRef.current) {  // 只在仍在加载时设置错误
-                setError(err.message || '网络请求失败');
-                setLocation(null);
-            }
-        } finally {
-            // 确保状态一致性
-            if (loadingRef.current) {
-                setIsLoading(false);
-                loadingRef.current = false;
-            }
-        }
-    }, [i18n.language]);
+        // 其他错误设置由store内部处理
+    }, [resetLocationError]);
+    
+    const setIsLoading = useCallback((loading) => {
+        // 同样，这个现在由store管理
+        console.log('setIsLoading called, but state is managed by Zustand store');
+    }, []);
 
     return {
         location,
@@ -93,4 +55,4 @@ export default function useLocationData() {
         loadingRef,
         lastRefreshTimeRef
     };
-} 
+}

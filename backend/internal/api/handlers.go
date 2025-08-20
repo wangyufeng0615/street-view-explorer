@@ -68,8 +68,8 @@ func (h *Handlers) GetLocationDescription(c *gin.Context) {
 		return
 	}
 
-	// Get language from query parameter, default to "zh"
-	language := c.DefaultQuery("lang", "zh")
+	// Get language from query parameter, default to "en" (align with frontend default)
+	language := c.DefaultQuery("lang", "en")
 
 	loc, err := h.locationService.GetLocation(panoID)
 	if err != nil {
@@ -146,8 +146,8 @@ func (h *Handlers) GetLocationDetailedDescription(c *gin.Context) {
 		return
 	}
 
-	// Get language from query parameter, default to "zh"
-	language := c.DefaultQuery("lang", "zh")
+	// Get language from query parameter, default to "en" (align with frontend default)
+	language := c.DefaultQuery("lang", "en")
 
 	loc, err := h.locationService.GetLocation(panoID)
 	if err != nil {
@@ -257,10 +257,23 @@ func (h *Handlers) SetExplorationPreference(c *gin.Context) {
 		successMsg = "Exploration preference set successfully"
 	}
 
-	c.JSON(http.StatusOK, gin.H{
+	// 获取剩余速率限制信息（可选）
+	response := gin.H{
 		"success": true,
 		"message": successMsg,
-	})
+	}
+	
+	// 如果有速率限制信息，添加到响应中
+	if userRemaining, exists := c.Get("userRateLimitRemaining"); exists {
+		response["rate_limit"] = gin.H{
+			"user_remaining": userRemaining,
+		}
+		if globalRemaining, exists := c.Get("globalRateLimitRemaining"); exists {
+			response["rate_limit"].(gin.H)["global_remaining"] = globalRemaining
+		}
+	}
+
+	c.JSON(http.StatusOK, response)
 }
 
 // DeleteExplorationPreference 删除探索偏好

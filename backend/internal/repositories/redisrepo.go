@@ -60,10 +60,17 @@ func (r *RedisRepository) SaveLocation(location models.Location) error {
 
 	// 添加到国家和城市的索引中
 	if location.Country != "" {
-		r.client.SAdd(ctx, fmt.Sprintf("country:%s", location.Country), location.PanoID)
+		if err := r.client.SAdd(ctx, fmt.Sprintf("country:%s", location.Country), location.PanoID).Err(); err != nil {
+			// 记录错误但不中断流程，索引失败不影响主数据
+			// 使用日志记录而不是返回错误
+			fmt.Printf("警告: 添加国家索引失败: %v\n", err)
+		}
 	}
 	if location.City != "" {
-		r.client.SAdd(ctx, fmt.Sprintf("city:%s", location.City), location.PanoID)
+		if err := r.client.SAdd(ctx, fmt.Sprintf("city:%s", location.City), location.PanoID).Err(); err != nil {
+			// 记录错误但不中断流程
+			fmt.Printf("警告: 添加城市索引失败: %v\n", err)
+		}
 	}
 
 	return nil
@@ -83,11 +90,6 @@ func (r *RedisRepository) GetLocationByPanoID(panoID string) (models.Location, e
 	if err := json.Unmarshal(data, &location); err != nil {
 		return models.Location{}, fmt.Errorf("解析位置信息失败: %w", err)
 	}
-
-	// 更新访问信息
-	location.LastAccessedAt = time.Now()
-	location.AccessCount++
-	r.SaveLocation(location)
 
 	return location, nil
 }

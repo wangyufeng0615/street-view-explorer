@@ -131,8 +131,7 @@ export async function getLocationDescription(panoId, language = null, signal = n
         if (data.success) {
             return {
                 success: true,
-                data: data.data?.description,
-                language: data.data?.language,
+                data: data.data,  // 返回整个 data 对象
                 message: data.message,
                 error: null,
             };
@@ -253,8 +252,7 @@ export async function getLocationDetailedDescription(panoId, language = null, si
         if (data.success) {
             return {
                 success: true,
-                data: data.data?.description,
-                language: data.data?.language,
+                data: data.data,  // 返回整个 data 对象
                 message: data.message,
                 error: null,
             };

@@ -1,9 +1,9 @@
-import React, { useEffect, useCallback } from 'react';
+import React, { useEffect, useCallback, useMemo, useReducer, memo } from 'react';
 import TopBar from '../components/TopBar';
 import Sidebar from '../components/Sidebar';
 import GlobalLoading from '../components/GlobalLoading';
 import ErrorDisplay from '../components/ErrorDisplay';
-import StreetViewContainer from '../components/StreetViewContainer';
+import StreetView from '../components/StreetView';
 import Toast from '../components/Toast';
 import '../styles/animations.css';
 import '../styles/HomePage.css';
@@ -16,21 +16,54 @@ import useExplorationMode, { EXPLORATION_MODES } from '../hooks/useExplorationMo
 import useUIHandlers from '../hooks/useUIHandlers';
 import useKeyboardNavigation from '../hooks/useKeyboardNavigation';
 
-// 防抖函数
-const debounce = (fn, delay) => {
-    let timeoutId;
-    return (...args) => {
-        if (timeoutId) {
-            clearTimeout(timeoutId);
-        }
-        timeoutId = setTimeout(() => {
-            fn(...args);
-            timeoutId = null;
-        }, delay);
-    };
+// Memoized StreetViewContainer wrapper
+const StreetViewContainer = memo(({ latitude, longitude, onPovChanged }) => {
+    return (
+        <div className="street-view-container">
+            <StreetView 
+                latitude={latitude} 
+                longitude={longitude} 
+                onPovChanged={onPovChanged}
+            />
+        </div>
+    );
+}, (prevProps, nextProps) => {
+    return prevProps.latitude === nextProps.latitude && 
+           prevProps.longitude === nextProps.longitude;
+});
+
+StreetViewContainer.displayName = 'StreetViewContainer';
+
+// State reducer to batch updates
+const pageStateReducer = (state, action) => {
+    switch (action.type) {
+        case 'SET_LOCATION':
+            return { ...state, location: action.payload };
+        case 'SET_HEADING':
+            return { ...state, heading: action.payload };
+        case 'SET_DESCRIPTION':
+            return { ...state, description: action.payload };
+        case 'SET_LOADING':
+            return { ...state, isLoading: action.payload };
+        case 'SET_ERROR':
+            return { ...state, error: action.payload };
+        case 'BATCH_UPDATE':
+            return { ...state, ...action.payload };
+        default:
+            return state;
+    }
 };
 
-export default function HomePage() {
+export default function HomePageOptimized() {
+    // Use reducer for batched state updates
+    const [pageState, dispatch] = useReducer(pageStateReducer, {
+        heading: 0,
+        location: null,
+        description: null,
+        isLoading: false,
+        error: null
+    });
+    
     // 使用自定义钩子
     const {
         location,
@@ -72,25 +105,44 @@ export default function HomePage() {
     // 使用键盘导航钩子
     useKeyboardNavigation(loadRandomLocation, isLoading, loadingRef);
     
-    // 监听 location 变化
+    // Memoized callbacks to prevent re-renders
+    const handlePovChanged = useCallback((newHeading) => {
+        // Throttle heading updates
+        setHeading(Math.round(newHeading));
+    }, [setHeading]);
+    
+    const handleRetryDescription = useCallback(() => {
+        if (location?.pano_id) {
+            loadLocationDescription(location.pano_id);
+        }
+    }, [location?.pano_id, loadLocationDescription]);
+    
+    const handleExplore = useCallback(() => {
+        loadRandomLocation();
+    }, [loadRandomLocation]);
+    
+    // Debounced location description loading
     useEffect(() => {
         let mounted = true;
+        let timeoutId = null;
         
         if (location?.pano_id) {
             locationRef.current = location;
             
-            // 使用 setTimeout 代替 RAF，并添加防抖
-            const timeoutId = setTimeout(() => {
+            // Debounce description loading
+            timeoutId = setTimeout(() => {
                 if (mounted && locationRef.current?.pano_id === location.pano_id) {
                     loadLocationDescription(location.pano_id);
                 }
             }, 300);
-            
-            return () => {
-                mounted = false;
-                clearTimeout(timeoutId);
-            };
         }
+        
+        return () => {
+            mounted = false;
+            if (timeoutId) {
+                clearTimeout(timeoutId);
+            }
+        };
     }, [location?.pano_id, locationRef, loadLocationDescription]);
     
     // 监听网络状态变化，重新加载描述
@@ -124,11 +176,36 @@ export default function HomePage() {
             // 首次加载时跳过限流检查
             loadRandomLocation(true);
         }
-    }, [isInitialized, explorationMode, explorationInterest, handleModeChange, loadRandomLocation]);
+    }, [isInitialized]); // Reduced dependencies
+    
+    // Memoized styles to prevent re-creation
+    const styles = useMemo(() => ({
+        container: {
+            width: '100vw',
+            height: '100vh',
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column'
+        },
+        mainContent: {
+            flex: 1,
+            display: 'flex',
+            position: 'relative'
+        },
+        streetViewWrapper: {
+            position: 'absolute',
+            top: '50px',
+            left: 0,
+            right: '320px',
+            bottom: 0,
+            width: 'auto',
+            height: 'auto'
+        }
+    }), []);
     
     // 如果有错误，显示错误页面
     if (error) {
-        return <ErrorDisplay error={error} onRetry={loadRandomLocation} />;
+        return <ErrorDisplay error={error} onRetry={handleExplore} />;
     }
 
     return (
@@ -137,7 +214,7 @@ export default function HomePage() {
             <TopBar
                 location={location}
                 isLoading={isLoading}
-                onExplore={loadRandomLocation}
+                onExplore={handleExplore}
                 explorationMode={explorationMode}
                 explorationInterest={explorationInterest}
                 onModeChange={handleModeChange}
@@ -154,7 +231,7 @@ export default function HomePage() {
                     <StreetViewContainer 
                         latitude={location?.latitude} 
                         longitude={location?.longitude} 
-                        onPovChanged={setHeading}
+                        onPovChanged={handlePovChanged}
                     />
                 </div>
 
@@ -166,11 +243,7 @@ export default function HomePage() {
                     isLoadingDesc={isLoadingDesc}
                     descError={descError}
                     descRetries={descRetries}
-                    onRetryDescription={() => {
-                        if (location?.pano_id) {
-                            loadLocationDescription(location.pano_id);
-                        }
-                    }}
+                    onRetryDescription={handleRetryDescription}
                 />
             </div>
 
@@ -182,27 +255,3 @@ export default function HomePage() {
         </div>
     );
 }
-
-const styles = {
-    container: {
-        width: '100vw',
-        height: '100vh',
-        overflow: 'hidden',
-        display: 'flex',
-        flexDirection: 'column'
-    },
-    mainContent: {
-        flex: 1,
-        display: 'flex',
-        position: 'relative'
-    },
-    streetViewWrapper: {
-        position: 'absolute',
-        top: '50px', // 从顶栏下方开始
-        left: 0,
-        right: '320px', // 到侧边栏左边缘结束
-        bottom: 0,
-        width: 'auto', // 让浏览器自动计算宽度
-        height: 'auto' // 让浏览器自动计算高度
-    }
-};

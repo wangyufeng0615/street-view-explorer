@@ -2,7 +2,7 @@ import React, { memo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { formatAddress } from '../utils/addressUtils';
 import { EXPLORATION_MODES } from '../hooks/useExplorationMode';
-import { resetGoogleMapsPromise } from '../utils/googleMaps';
+import { hardResetGoogleMapsPromise } from '../utils/googleMaps';
 
 const TopBar = memo(function TopBar({
     location,
@@ -23,7 +23,7 @@ const TopBar = memo(function TopBar({
 
     const changeLanguage = (lng) => {
         if (i18n.language === lng) return;
-        resetGoogleMapsPromise();
+        hardResetGoogleMapsPromise();
         i18n.changeLanguage(lng).then(() => {
             // 清理地图元素
             const mapElements = document.querySelectorAll('.gm-style');

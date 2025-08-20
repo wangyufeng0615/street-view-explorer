@@ -22,8 +22,10 @@ func TestGetLandMassRegions(t *testing.T) {
 		t.Fatalf("确保地图数据就绪失败: %v", err)
 	}
 
-	// 清空缓存以测试新数据
-	ClearRegionCache()
+	// 初始化地理数据
+	if err := InitializeGeoData(); err != nil {
+		t.Fatalf("初始化地理数据失败: %v", err)
+	}
 
 	// 获取陆地区域
 	regions, err := getLandMassRegions()
@@ -97,7 +99,9 @@ func TestGenerateRandomCoordinate(t *testing.T) {
 	}
 
 	// 清空缓存
-	ClearRegionCache()
+	if err := InitializeGeoData(); err != nil {
+		t.Fatalf("初始化地理数据失败: %v", err)
+	}
 
 	// 测试不同数量的坐标生成
 	testCases := []int{1, 10, 100}
@@ -146,7 +150,9 @@ func TestRegionCaching(t *testing.T) {
 	}
 
 	// 清空缓存
-	ClearRegionCache()
+	if err := InitializeGeoData(); err != nil {
+		t.Fatalf("初始化地理数据失败: %v", err)
+	}
 
 	// 第一次调用 - 从文件加载
 	start := time.Now()
@@ -186,7 +192,9 @@ func TestGetRegionInfo(t *testing.T) {
 	}
 
 	// 清空缓存
-	ClearRegionCache()
+	if err := InitializeGeoData(); err != nil {
+		t.Fatalf("初始化地理数据失败: %v", err)
+	}
 
 	info := GetRegionInfo()
 
@@ -222,7 +230,9 @@ func TestCoordinateDistribution(t *testing.T) {
 	}
 
 	// 清空缓存
-	ClearRegionCache()
+	if err := InitializeGeoData(); err != nil {
+		t.Fatalf("初始化地理数据失败: %v", err)
+	}
 
 	// 生成大量坐标进行分布分析
 	const numCoords = 10000
@@ -283,7 +293,9 @@ func TestVisualizationGeneration(t *testing.T) {
 	}
 
 	// 清空缓存
-	ClearRegionCache()
+	if err := InitializeGeoData(); err != nil {
+		t.Fatalf("初始化地理数据失败: %v", err)
+	}
 
 	// 生成坐标用于可视化
 	const numPoints = 100000
@@ -486,7 +498,9 @@ func TestAreaWeightedSelection(t *testing.T) {
 	}
 
 	// 清空缓存
-	ClearRegionCache()
+	if err := InitializeGeoData(); err != nil {
+		t.Fatalf("初始化地理数据失败: %v", err)
+	}
 
 	// 获取陆地区域
 	regions, err := getLandMassRegions()
@@ -614,8 +628,10 @@ func BenchmarkAreaWeightedSelection(b *testing.B) {
 		b.Fatalf("确保地图数据就绪失败: %v", err)
 	}
 
-	// 清空缓存
-	ClearRegionCache()
+	// 初始化地理数据
+	if err := InitializeGeoData(); err != nil {
+		b.Fatalf("初始化地理数据失败: %v", err)
+	}
 
 	// 获取陆地区域
 	regions, err := getLandMassRegions()
@@ -658,7 +674,9 @@ func TestPolygonBasedGeneration(t *testing.T) {
 	}
 
 	// 清空缓存
-	ClearRegionCache()
+	if err := InitializeGeoData(); err != nil {
+		t.Fatalf("初始化地理数据失败: %v", err)
+	}
 
 	// 获取陆地区域
 	regions, err := getLandMassRegions()
@@ -778,7 +796,9 @@ func TestRegionDistributionAnalysis(t *testing.T) {
 	}
 
 	// 清空缓存
-	ClearRegionCache()
+	if err := InitializeGeoData(); err != nil {
+		t.Fatalf("初始化地理数据失败: %v", err)
+	}
 
 	// 获取陆地区域
 	regions, err := getLandMassRegions()
@@ -903,7 +923,9 @@ func TestSpecificCountryDensityAnalysis(t *testing.T) {
 	}
 
 	// 清空缓存
-	ClearRegionCache()
+	if err := InitializeGeoData(); err != nil {
+		t.Fatalf("初始化地理数据失败: %v", err)
+	}
 
 	// 获取陆地区域
 	regions, err := getLandMassRegions()
@@ -1095,7 +1117,9 @@ func TestCoordinateGenerationWithoutFallback(t *testing.T) {
 	}
 
 	// 清空缓存
-	ClearRegionCache()
+	if err := InitializeGeoData(); err != nil {
+		t.Fatalf("初始化地理数据失败: %v", err)
+	}
 
 	t.Logf("测试修复后的坐标生成（无边界框回退）...")
 

@@ -114,12 +114,14 @@ export default function GlobalMap({ latitude, longitude }) {
             }
 
             // 创建标记点
-            markerInstanceRef.current = new maps.marker.AdvancedMarkerElement({
-                map: mapInstanceRef.current,
-                position: { lat, lng },
-                content: dot,
-                zIndex: 1000
-            });
+            if (maps.marker?.AdvancedMarkerElement) {
+                markerInstanceRef.current = new maps.marker.AdvancedMarkerElement({
+                    map: mapInstanceRef.current,
+                    position: { lat, lng },
+                    content: dot,
+                    zIndex: 1000
+                });
+            }
 
             // 确保地图中心点和标记位置一致
             mapInstanceRef.current.setCenter({ lat, lng });

@@ -51,7 +51,7 @@ func (ai *AIService) GetDescriptionForLocation(loc models.Location, language str
 				"latitude":  loc.Latitude,
 				"longitude": loc.Longitude,
 			})
-			return "", fmt.Errorf("获取位置信息失败: %v", err)
+			return "", utils.SafeError(utils.ErrorTypeExternal, "获取位置信息失败", err)
 		}
 	} else {
 		locationInfo = getDefaultLocationInfo(loc)
@@ -67,7 +67,7 @@ func (ai *AIService) GetDescriptionForLocation(loc models.Location, language str
 				"language": language,
 				"duration": time.Since(startTime).String(),
 			})
-			return "", fmt.Errorf("AI 描述生成失败: %v", err)
+			return "", utils.SafeError(utils.ErrorTypeExternal, "AI 描述生成失败", err)
 		}
 		desc = description
 	} else {
@@ -103,7 +103,7 @@ func (ai *AIService) GetDetailedDescriptionForLocation(loc models.Location, lang
 				"pano_id":  loc.PanoID,
 				"language": language,
 			})
-			return "", fmt.Errorf("获取位置信息失败: %v", err)
+			return "", utils.SafeError(utils.ErrorTypeExternal, "获取位置信息失败", err)
 		}
 	} else {
 		locationInfo = getDefaultLocationInfo(loc)
@@ -119,7 +119,7 @@ func (ai *AIService) GetDetailedDescriptionForLocation(loc models.Location, lang
 				"language": language,
 				"duration": time.Since(startTime).String(),
 			})
-			return "", fmt.Errorf("AI 详细描述生成失败: %v", err)
+			return "", utils.SafeError(utils.ErrorTypeExternal, "AI 详细描述生成失败", err)
 		}
 	} else {
 		desc = getDefaultDetailedDescription(locationInfo)

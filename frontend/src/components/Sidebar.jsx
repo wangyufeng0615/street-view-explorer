@@ -1,105 +1,137 @@
-import React, { memo, forwardRef } from 'react';
-import MapSection from './MapSection';
+import React, { memo, useRef, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
+import GlobalMap from './GlobalMap';
+import PreviewMap from './PreviewMap';
 import AiDescription from './AiDescription';
-import ExplorationPreference from './ExplorationPreference';
-import { formatAddress } from '../utils/addressUtils';
-import {
-    sidebarStyle,
-    sidebarContentStyle,
-    addressStyle,
-} from '../styles/HomePage.styles';
-import '../styles/animations.css';
+import '../styles/Sidebar.css';
 
-// 创建基础组件
-const SidebarComponent = forwardRef(function Sidebar({
+const Sidebar = memo(function Sidebar({
     location,
     heading,
     description,
     isLoadingDesc,
     descError,
     descRetries,
-    isLoading,
-    onRetryDescription,
-    onExplore,
-    scale,
-    contentRef,
-    onPreferenceChange,
-    isSavingPreference,
-    preferenceError,
-    explorationMode,
-    explorationInterest,
-    onModeChange
-}, ref) {
+    onRetryDescription
+}) {
+    const { t } = useTranslation();
+    const scrollContainerRef = useRef(null);
+
+    // 当组件挂载时重置滚动位置
+    useEffect(() => {
+        if (scrollContainerRef.current) {
+            scrollContainerRef.current.scrollTop = 0;
+        }
+    }, []); // 空依赖数组确保只在组件挂载时运行
+
+    // 当位置改变时也重置滚动位置
+    useEffect(() => {
+        if (scrollContainerRef.current && location?.pano_id) {
+            scrollContainerRef.current.scrollTop = 0;
+        }
+    }, [location?.pano_id]); // 当pano_id改变时重置滚动位置
+
     return (
-        <div
-            ref={ref}
-            style={{
-                ...sidebarStyle,
-                transform: `scale(${scale})`,
-                transition: 'transform 0.3s ease-out',
-            }}
-        >
-            <div ref={contentRef} style={sidebarContentStyle}>
-                {location && (
-                    <>
-                        <MapSection 
-                            latitude={location.latitude}
-                            longitude={location.longitude}
-                            heading={heading}
-                        />
+        <div style={styles.sidebar} className="new-sidebar">
+            <div 
+                ref={scrollContainerRef}
+                style={styles.scrollContainer} 
+                className="sidebar-scroll force-scrollbar"
+            >
+                {/* 世界地图区域 */}
+                <div style={styles.section}>
+                    <div style={styles.mapContainer}>
+                        {location ? (
+                            <GlobalMap
+                                latitude={location.latitude}
+                                longitude={location.longitude}
+                            />
+                        ) : (
+                            <div style={styles.mapPlaceholder}>
+                                {t('loading_location')}
+                            </div>
+                        )}
+                    </div>
+                </div>
 
-                        <div style={addressStyle}>
-                            {formatAddress(location)}
-                        </div>
+                {/* 局部地图区域 */}
+                <div style={styles.section}>
+                    <div style={styles.mapContainer}>
+                        {location && (
+                            <PreviewMap
+                                latitude={location.latitude}
+                                longitude={location.longitude}
+                                heading={heading}
+                            />
+                        )}
+                    </div>
+                </div>
 
-                        <AiDescription 
+                {/* AI解读区域 */}
+                <div style={styles.section}>
+                    <div style={styles.aiContainer}>
+                        <AiDescription
                             isLoading={isLoadingDesc}
                             error={descError}
                             description={description}
                             retries={descRetries}
-                            panoId={location.pano_id}
+                            panoId={location?.pano_id}
                             onRetry={onRetryDescription}
                         />
-
-                        <ExplorationPreference 
-                            onPreferenceChange={onPreferenceChange}
-                            onRandomExplore={onExplore}
-                            isSavingPreference={isSavingPreference}
-                            error={preferenceError}
-                            explorationMode={explorationMode}
-                            explorationInterest={explorationInterest}
-                            onModeChange={onModeChange}
-                        />
-                    </>
-                )}
+                    </div>
+                </div>
             </div>
         </div>
     );
 });
 
-// 添加记忆化
-const Sidebar = memo(SidebarComponent, (prevProps, nextProps) => {
-    // 自定义比较函数，只在必要时重新渲染
-    if (!prevProps.location || !nextProps.location) {
-        return prevProps.location === nextProps.location;
+const styles = {
+    sidebar: {
+        position: 'fixed',
+        top: '50px', // 顶栏高度
+        right: 0,
+        bottom: 0,
+        width: '320px',
+        backgroundColor: 'rgba(255, 255, 255, 0.95)',
+        backdropFilter: 'blur(10px)',
+        borderLeft: '1px solid rgba(0, 0, 0, 0.1)',
+        display: 'flex',
+        flexDirection: 'column',
+        zIndex: 900,
+        boxShadow: '-2px 0 8px rgba(0, 0, 0, 0.1)',
+        fontFamily: '"PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Helvetica, Arial, sans-serif'
+    },
+    scrollContainer: {
+        flex: 1,
+        // 强制显示滚动条 - 内联样式确保优先级
+        overflowY: 'scroll',
+        overflowX: 'hidden',
+        padding: '16px',
+        // WebKit浏览器强制显示滚动条
+        WebkitOverflowScrolling: 'touch'
+    },
+    section: {
+        marginBottom: '16px'
+    },
+    mapContainer: {
+        height: '200px',
+        borderRadius: '8px',
+        overflow: 'hidden',
+        border: '1px solid rgba(0, 0, 0, 0.1)',
+        backgroundColor: '#f8f9fa'
+    },
+    aiContainer: {
+        minHeight: '120px'
+    },
+    mapPlaceholder: {
+        height: '100%',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        color: '#666',
+        fontSize: '14px',
+        backgroundColor: '#f8f9fa'
     }
-    
-    return (
-        prevProps.heading === nextProps.heading &&
-        prevProps.description === nextProps.description &&
-        prevProps.isLoadingDesc === nextProps.isLoadingDesc &&
-        prevProps.descError === nextProps.descError &&
-        prevProps.descRetries === nextProps.descRetries &&
-        prevProps.isLoading === nextProps.isLoading &&
-        prevProps.scale === nextProps.scale &&
-        prevProps.isSavingPreference === nextProps.isSavingPreference &&
-        prevProps.preferenceError === nextProps.preferenceError &&
-        prevProps.location.pano_id === nextProps.location.pano_id &&
-        prevProps.location.latitude === nextProps.location.latitude &&
-        prevProps.location.longitude === nextProps.location.longitude &&
-        prevProps.explorationMode === nextProps.explorationMode &&
-        prevProps.explorationInterest === nextProps.explorationInterest
-    );
-});
+};
 
 export default Sidebar; 

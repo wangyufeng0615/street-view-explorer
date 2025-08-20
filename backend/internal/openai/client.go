@@ -99,8 +99,10 @@ func NewClient(apiKey string) Client {
 	proxyUser := os.Getenv("PROXY_USER")
 	proxyPass := os.Getenv("PROXY_PASS")
 
+	// 不设置 HTTP 客户端超时，完全依赖 context 超时控制
+	// 这样避免了 HTTP 超时和 context 超时的冲突
 	httpClient := &http.Client{
-		Timeout: timeout,
+		// Timeout 不设置，使用 context 控制超时
 	}
 
 	// 如果设置了代理，配置HTTP客户端使用代理
@@ -387,12 +389,12 @@ func (c *client) GenerateDetailedLocationDescription(latitude, longitude float64
 	ctx, cancel := context.WithTimeout(context.Background(), detailedTimeout)
 	defer cancel()
 
-	// 为详细描述创建一个临时的HTTP客户端，使用更长的超时时间
-	// 重要：避免超时冲突，确保HTTP客户端超时比context超时稍长
-	httpTimeout := detailedTimeout + 5*time.Second
+	// 为详细描述创建一个临时的HTTP客户端
+	// 重要：不设置HTTP客户端超时，完全依赖context超时控制
+	// 这样避免了HTTP超时和context超时的冲突
 	detailedHTTPClient := &http.Client{
-		Timeout:   httpTimeout,
 		Transport: c.httpClient.Transport, // 复用原客户端的代理设置
+		// 不设置 Timeout，让 context 控制超时
 	}
 
 	// 构建位置信息字符串

@@ -1,8 +1,8 @@
 import React, { useEffect } from 'react';
 import { BrowserRouter as Router } from 'react-router-dom';
-import HomePage from './pages/HomePage';
+import HomePageOptimized from './pages/HomePageOptimized';
 import { getOrCreateSessionId } from './utils/session';
-import { testSentry } from './services/sentry';
+import { testSentry } from './services/sentryLazy';
 
 // Create router with future flags enabled
 const router = {
@@ -38,7 +38,7 @@ function App() {
                 display: 'flex',
                 flexDirection: 'column'
             }}>
-                <HomePage />
+                <HomePageOptimized />
             </div>
         </Router>
     );
