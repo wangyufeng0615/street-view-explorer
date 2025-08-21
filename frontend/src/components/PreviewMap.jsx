@@ -27,7 +27,7 @@ export default function PreviewMap({ latitude, longitude }) {
 
             // 创建地图实例
             mapInstanceRef.current = new maps.Map(mapRef.current, {
-                mapId: process.env.REACT_APP_GOOGLE_MAPS_MAP_ID,
+                mapId: import.meta.env.VITE_GOOGLE_MAPS_MAP_ID,
                 center: { lat: latitude, lng: longitude },
                 zoom: 13,
                 mapTypeId: 'roadmap',

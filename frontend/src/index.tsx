@@ -15,7 +15,7 @@ const root = createRoot(container);
 root.render(
     <React.StrictMode>
         <AppErrorBoundary>
-            <Suspense fallback="Loading..."> {/* Add Suspense for loading translations */}
+            <Suspense fallback={<div>Loading...</div>}>
                 <App />
             </Suspense>
         </AppErrorBoundary>

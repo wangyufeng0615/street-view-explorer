@@ -10,9 +10,9 @@ let Sentry = null;
 
 // Store configuration
 const sentryConfig = {
-  dsn: process.env.REACT_APP_SENTRY_DSN,
-  environment: process.env.NODE_ENV,
-  release: `my-streetview-project@${process.env.REACT_APP_VERSION || 'unknown'}`,
+  dsn: import.meta.env.VITE_SENTRY_DSN,
+  environment: import.meta.env.VITE_SENTRY_ENVIRONMENT || import.meta.env.MODE,
+  release: `my-streetview-project@${import.meta.env.VITE_VERSION || 'unknown'}`,
   tracesSampleRate: 1.0,
   sendDefaultPii: true,
   _experiments: {
@@ -49,7 +49,7 @@ async function loadSentry() {
         }
         event.contexts.app = {
           name: "streetview-frontend",
-          version: process.env.REACT_APP_VERSION || 'unknown',
+          version: import.meta.env.VITE_VERSION || 'unknown',
           type: "react-spa"
         };
         
@@ -87,7 +87,7 @@ async function loadSentry() {
  */
 export async function captureException(error, context) {
   // Skip in development unless explicitly enabled
-  if (process.env.NODE_ENV === 'development' && !process.env.REACT_APP_SENTRY_DSN) {
+  if (import.meta.env.DEV && !import.meta.env.VITE_SENTRY_DSN) {
     console.error('Error captured (Sentry disabled in dev):', error);
     return null;
   }
@@ -114,7 +114,7 @@ export async function captureException(error, context) {
  */
 export async function captureMessage(message, level = 'info') {
   // Skip in development unless explicitly enabled
-  if (process.env.NODE_ENV === 'development' && !process.env.REACT_APP_SENTRY_DSN) {
+  if (import.meta.env.DEV && !import.meta.env.VITE_SENTRY_DSN) {
     console.log('Message captured (Sentry disabled in dev):', message);
     return null;
   }

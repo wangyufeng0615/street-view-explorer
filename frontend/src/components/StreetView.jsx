@@ -86,12 +86,6 @@ export default function StreetView({ latitude, longitude, onPovChanged }) {
 
     // 自动旋转函数 - 使用 requestAnimationFrame 实现丝滑效果
     const startAutoRotate = (panorama) => {
-        console.log('[StreetView] startAutoRotate called', {
-            panorama: !!panorama,
-            hasAutoRotateRef: !!autoRotateRef.current,
-            isAutoRotating: isAutoRotatingRef.current,
-            mounted: mountedRef.current
-        });
         
         if (autoRotateRef.current) {
             stopAutoRotate(); // 先停止现有的旋转
@@ -103,7 +97,6 @@ export default function StreetView({ latitude, longitude, onPovChanged }) {
         let animationId;
 
         isAutoRotatingRef.current = true;
-        console.log('[StreetView] Auto-rotate started, initial heading:', currentHeading);
         
         const animate = (currentTime) => {
             // 检查组件是否已卸载
@@ -156,17 +149,10 @@ export default function StreetView({ latitude, longitude, onPovChanged }) {
         // 开始动画
         animationId = requestAnimationFrame(animate);
         autoRotateRef.current = animationId;
-        console.log('[StreetView] Animation frame started with ID:', animationId);
     };
 
     // 停止自动旋转
     const stopAutoRotate = () => {
-        console.log('[StreetView] stopAutoRotate called', {
-            hasAutoRotateRef: !!autoRotateRef.current,
-            animationId: autoRotateRef.current,
-            isAutoRotating: isAutoRotatingRef.current
-        });
-        console.trace('[StreetView] Stack trace for stopAutoRotate');
         
         if (autoRotateRef.current) {
             cancelAnimationFrame(autoRotateRef.current);
@@ -201,11 +187,9 @@ export default function StreetView({ latitude, longitude, onPovChanged }) {
 
     // 组件卸载时的清理
     useEffect(() => {
-        console.log('[StreetView] Component mount effect');
         mountedRef.current = true;
         
         return () => {
-            console.log('[StreetView] Component unmount effect');
             mountedRef.current = false;
             // 停止所有动画和定时器
             stopAutoRotate();
@@ -298,13 +282,7 @@ export default function StreetView({ latitude, longitude, onPovChanged }) {
 
                 // 监听街景成功加载 - 统一处理
                 const panoListener = panorama.addListener('pano_changed', () => {
-                    console.log('[StreetView] pano_changed event fired', {
-                        isMounted,
-                        mountedRef: mountedRef.current,
-                        panoramaExists: !!panorama
-                    });
                     if (!isMounted || !mountedRef.current) {
-                        console.log('[StreetView] Component not mounted, ignoring pano_changed');
                         return;
                     }
                     
@@ -320,23 +298,13 @@ export default function StreetView({ latitude, longitude, onPovChanged }) {
                     
                     // 清除之前的自动旋转定时器
                     if (autoRotateTimeoutId) {
-                        console.log('[StreetView] Clearing existing autoRotateTimeout');
                         clearTimeout(autoRotateTimeoutId);
                     }
                     
                     // 延迟启动自动旋转，让街景先完全加载
-                    console.log('[StreetView] Setting autoRotateTimeout for 2 seconds');
                     autoRotateTimeoutId = setTimeout(() => {
-                        console.log('[StreetView] autoRotateTimeout triggered', {
-                            isMounted,
-                            mountedRef: mountedRef.current,
-                            panoramaInstance: !!panoramaInstanceRef.current,
-                            panorama: !!panorama
-                        });
                         if (isMounted && mountedRef.current && panoramaInstanceRef.current) {
                             startAutoRotate(panorama);
-                        } else {
-                            console.log('[StreetView] Cannot start auto-rotate, conditions not met');
                         }
                     }, 2000); // 街景加载完成后等待2秒再开始旋转
                     
@@ -432,7 +400,6 @@ export default function StreetView({ latitude, longitude, onPovChanged }) {
             // 延迟执行以避免与其他地图组件的竞态条件
             timeoutId = setTimeout(() => {
                 if (isMounted && mountedRef.current) {
-                    console.log('[StreetView] Starting initStreetView, mounted:', mountedRef.current);
                     initStreetView();
                 }
             }, 200); // StreetView延迟最多，因为它通常更耗资源

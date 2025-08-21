@@ -59,7 +59,7 @@ export default function GlobalMap({ latitude, longitude }) {
 
             // 创建新的地图实例
             mapInstanceRef.current = new maps.Map(mapRef.current, {
-                mapId: process.env.REACT_APP_GOOGLE_MAPS_MAP_ID,
+                mapId: import.meta.env.VITE_GOOGLE_MAPS_MAP_ID,
                 center: { lat, lng },
                 zoom: 3,
                 mapTypeId: 'terrain',

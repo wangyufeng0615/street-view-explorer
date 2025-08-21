@@ -13,4 +13,7 @@ export function getOrCreateSessionId() {
         localStorage.setItem('sessionId', sessionId);
     }
     return sessionId;
-} 
+}
+
+// Alias for backward compatibility
+export const getSessionId = getOrCreateSessionId; 

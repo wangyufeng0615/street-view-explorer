@@ -39,7 +39,7 @@ export function preloadGoogleMaps() {
     // Also prefetch the actual script URL without executing
     const prefetchLink = document.createElement('link');
     prefetchLink.rel = 'prefetch';
-    prefetchLink.href = `https://maps.googleapis.com/maps/api/js?key=${process.env.REACT_APP_GOOGLE_MAPS_API_KEY}&loading=async&libraries=marker&language=${i18n.language}&v=weekly`;
+    prefetchLink.href = `https://maps.googleapis.com/maps/api/js?key=${import.meta.env.VITE_GOOGLE_MAPS_API_KEY}&loading=async&libraries=marker&language=${i18n.language}&v=weekly`;
     document.head.appendChild(prefetchLink);
 }
 
@@ -165,7 +165,7 @@ export function loadGoogleMapsScript() {
             
             // Create and append script
             const script = document.createElement('script');
-            script.src = `https://maps.googleapis.com/maps/api/js?key=${process.env.REACT_APP_GOOGLE_MAPS_API_KEY}&callback=${callbackName}&loading=async&libraries=marker&language=${currentLanguage}&v=weekly`;
+            script.src = `https://maps.googleapis.com/maps/api/js?key=${import.meta.env.VITE_GOOGLE_MAPS_API_KEY}&callback=${callbackName}&loading=async&libraries=marker&language=${currentLanguage}&v=weekly`;
             script.async = true;
             script.defer = true;
             script.setAttribute('data-google-maps', 'true');
