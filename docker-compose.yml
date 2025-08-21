@@ -1,33 +1,28 @@
-version: '3.8'
-
 services:
   nginx:
     build:
-      context: ./nginx
-      dockerfile: Dockerfile
-      cache_from:
-        - streetview-nginx:latest
+      context: .
+      dockerfile: ./nginx/Dockerfile
+      args:
+        - FRONTEND_BUILD_CONTEXT=./frontend
     image: streetview-nginx:latest
-    volumes:
-      - frontend_html:/usr/share/nginx/html:ro
     ports:
       - "127.0.0.1:3000:3000"
     depends_on:
-      frontend:
-        condition: service_started
       backend:
         condition: service_healthy
-    dns:
-      - 8.8.8.8
-      - 8.8.4.4
     restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        compress: "true"
 
   backend:
     build:
       context: ./backend
       dockerfile: docker/Dockerfile
-      cache_from:
-        - streetview-backend:latest
     image: streetview-backend:latest
     env_file:
       - ./backend/.env
@@ -38,43 +33,34 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-    dns:
-      - 8.8.8.8
-      - 8.8.4.4
     restart: always
-
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: docker/Dockerfile
-      cache_from:
-        - streetview-frontend:latest
-    image: streetview-frontend:latest
-    env_file:
-      - ./frontend/.env
-    volumes:
-      - frontend_html:/app/html
-    dns:
-      - 8.8.8.8
-      - 8.8.4.4
-    restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        compress: "true"
 
   redis:
-    build:
-      context: ./redis
-      dockerfile: Dockerfile
-      cache_from:
-        - streetview-redis:latest
-    image: streetview-redis:latest
+    image: redis:7.2-alpine
+    command: redis-server /usr/local/etc/redis/redis.conf
     volumes:
+      - ./redis/conf/redis.conf:/usr/local/etc/redis/redis.conf:ro
       - redis_data:/data
     expose:
       - "6379"
-    dns:
-      - 8.8.8.8
-      - 8.8.4.4
     restart: always
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        compress: "true"
 
 volumes:
-  redis_data:
-  frontend_html: 
+  redis_data: 

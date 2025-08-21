@@ -22,8 +22,8 @@ FROM alpine:3.19
 
 WORKDIR /app
 
-# 安装运行时依赖
-RUN apk add --no-cache ca-certificates tzdata wget
+# 安装运行时依赖（只保留必要的）
+RUN apk add --no-cache ca-certificates tzdata
 
 # 复制编译好的应用
 COPY --from=builder /app/main .
@@ -31,9 +31,13 @@ COPY --from=builder /app/main .
 # 设置时区
 ENV TZ=Asia/Shanghai
 
-# 健康检查
-HEALTHCHECK --interval=30s --timeout=3s \
-    CMD wget -O- http://localhost:8080/health || exit 1
+# 创建非root用户运行应用
+RUN adduser -D -u 1001 appuser && chown -R appuser:appuser /app
+USER appuser
+
+# 健康检查 - 使用Go应用自身的健康检查端点
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD ["/app/main", "health"]
 
 # 暴露端口
 EXPOSE 8080

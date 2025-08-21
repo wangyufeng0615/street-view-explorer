@@ -1,17 +1,41 @@
-FROM nginx:alpine
+# 第一阶段：构建前端
+FROM node:18-alpine AS frontend-builder
 
-# 安装必要的工具
-RUN apk add --no-cache wget curl
+WORKDIR /app
+
+# 从构建参数获取前端路径
+ARG FRONTEND_BUILD_CONTEXT=./frontend
+
+# 复制前端代码
+COPY ${FRONTEND_BUILD_CONTEXT}/package.json ${FRONTEND_BUILD_CONTEXT}/yarn.lock* ./
+
+# 安装依赖
+RUN yarn install --frozen-lockfile --network-timeout 100000
+
+# 复制源代码
+COPY ${FRONTEND_BUILD_CONTEXT}/ ./
+
+# 构建应用
+RUN yarn build
+
+# 第二阶段：nginx服务器
+FROM nginx:alpine
 
 # 创建必要的目录
 RUN mkdir -p /usr/share/nginx/html
 
-# 复制配置文件
-COPY conf.d/default.conf /etc/nginx/conf.d/default.conf
+# 从构建阶段复制前端静态文件
+COPY --from=frontend-builder /app/build /usr/share/nginx/html
 
-# 健康检查
+# 复制nginx配置文件
+COPY nginx/conf.d/default.conf /etc/nginx/conf.d/default.conf
+
+# 创建nginx状态页面目录（用于健康检查）
+RUN mkdir -p /usr/share/nginx/html/nginx_status
+
+# 健康检查 - 使用nginx内置功能
 HEALTHCHECK --interval=30s --timeout=3s \
-    CMD wget -q -O /dev/null http://localhost:3000/ || exit 1
+    CMD nc -z localhost 3000 || exit 1
 
 # 暴露端口
-EXPOSE 3000 
+EXPOSE 3000

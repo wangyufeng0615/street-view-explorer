@@ -237,28 +237,29 @@ All API responses follow this structure:
 ## Deployment
 
 ### Docker Services
-Production deployment uses Docker Compose with 4 services:
+Production deployment uses Docker Compose with 3 services:
 
 1. **nginx** (Port 3000):
-   - Reverse proxy for API and static files
+   - Integrated frontend build process (multi-stage)
+   - Serves static files directly
+   - Reverse proxy for API requests
    - Gzip compression enabled
-   - Custom headers for security
-   - Static file caching
+   - Security headers configured
+   - Static file caching with immutable assets
+   - Health checks via nginx status endpoint
 
 2. **backend** (Port 8080):
-   - Go API server with health checks
+   - Go API server running as non-root user
+   - Health checks via command-line flag
    - Auto-restart on failure
    - Environment-based configuration
+   - Structured logging with context
 
-3. **frontend**:
-   - Multi-stage build for optimization
-   - Static files served via Nginx
-   - Build-time environment injection
-
-4. **redis** (Port 6379):
+3. **redis** (Port 6379):
+   - Uses official redis:7.2-alpine image
    - Persistent data volume
-   - Custom configuration for production
-   - Health checks for service dependency
+   - Configuration via mounted file
+   - Health checks with redis-cli ping
 
 ### Deployment Commands
 ```bash

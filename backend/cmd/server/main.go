@@ -18,6 +18,12 @@ import (
 )
 
 func main() {
+	// 检查是否是健康检查命令（需要在flag.Parse之前）
+	if len(os.Args) > 1 && os.Args[1] == "health" {
+		// 简单的健康检查，返回0表示健康
+		os.Exit(0)
+	}
+
 	// 解析命令行参数
 	proxyURL := flag.String("proxy", "", "HTTP代理URL，例如：http://localhost:10086")
 	proxyType := flag.String("proxy-type", "http", "代理类型: http 或 socks5")
