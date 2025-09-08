@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { BrowserRouter as Router } from 'react-router-dom';
-import HomePageOptimized from './pages/HomePageOptimized';
+import HomePage from './pages/HomePage';
 import { getOrCreateSessionId } from './utils/session';
 import { testSentry } from './services/sentryLazy';
 
@@ -38,7 +38,7 @@ function App() {
                 display: 'flex',
                 flexDirection: 'column'
             }}>
-                <HomePageOptimized />
+                <HomePage />
             </div>
         </Router>
     );

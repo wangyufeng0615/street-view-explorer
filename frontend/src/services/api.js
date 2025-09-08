@@ -2,7 +2,7 @@
 // Assuming backend runs on same origin or set proper baseURL.
 
 import { getOrCreateSessionId } from '../utils/session';
-import i18n from '../i18n'; // 导入i18n实例获取当前语言
+import i18n from '../i18n';
 
 const API_V1 = '/api/v1';
 const DEFAULT_TIMEOUT = 10000; // 10 seconds

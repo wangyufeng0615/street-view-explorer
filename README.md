@@ -66,11 +66,11 @@ cd frontend
 cp .env.example .env
 # Edit .env with your configuration
 
-# Install dependencies
+# Install dependencies (Yarn)
 yarn install
 
-# Start development server
-yarn start
+# Start development server (Vite)
+yarn dev
 ```
 
 The application will be available at http://localhost:3000
@@ -89,9 +89,6 @@ make deploy
 
 # The application will be available on port 3000
 ```
-
-#### Manual Deployment
-See [Deployment Guide](docs/deployment.md) for detailed instructions.
 
 ## 🔧 Configuration
 
@@ -113,45 +110,6 @@ See [Deployment Guide](docs/deployment.md) for detailed instructions.
    - Enable performance monitoring
    - Copy DSN from project settings
 
-### Environment Variables
-
-#### Backend (.env)
-```env
-# Server
-SERVER_ADDRESS=:8080
-REDIS_ADDRESS=localhost:6379
-
-# APIs
-AI_API_KEY=your_openrouter_key
-GOOGLE_API_KEY=your_maps_key
-
-# Monitoring
-SENTRY_DSN=your_sentry_dsn
-SENTRY_ENVIRONMENT=production
-
-# Features
-ENABLE_AI=true
-ENABLE_GOOGLE_API=true
-
-# Security
-RATE_LIMIT_ENABLED=true
-RATE_LIMIT_MAX_REQUESTS=100
-CORS_ALLOWED_ORIGINS=https://yourdomain.com
-```
-
-#### Frontend (.env)
-```env
-REACT_APP_API_BASE_URL=https://api.yourdomain.com
-REACT_APP_GOOGLE_MAPS_API_KEY=your_frontend_maps_key
-REACT_APP_SENTRY_DSN=your_frontend_sentry_dsn
-```
-
-## 📚 Documentation
-
-- [API Documentation](docs/api.md) - REST API endpoints and examples
-- [Architecture Overview](docs/architecture.md) - System design and components
-- [Development Guide](docs/development.md) - Setup and contribution guidelines
-- [Deployment Guide](docs/deployment.md) - Production deployment instructions
 
 ## 🏗️ Architecture
 
@@ -173,6 +131,7 @@ REACT_APP_SENTRY_DSN=your_frontend_sentry_dsn
 
 #### Frontend
 - **Framework**: React 18 with TypeScript
+- **Build Tool**: Vite
 - **Maps**: Google Maps JavaScript API
 - **Internationalization**: i18next
 - **State Management**: React Hooks
@@ -193,101 +152,6 @@ REACT_APP_SENTRY_DSN=your_frontend_sentry_dsn
 - **CI/CD**: GitHub Actions (optional)
 - **Monitoring**: Sentry for errors and performance
 
-## 🧪 Testing
+## License
 
-### Backend Tests
-```bash
-cd backend
-
-# Run all tests
-go test ./...
-
-# Run with coverage
-go test -cover ./...
-
-# Run specific package tests
-go test ./internal/utils -v
-
-# Run benchmarks
-go test -bench=. ./internal/utils
-```
-
-### Frontend Tests
-```bash
-cd frontend
-
-# Run tests
-yarn test
-
-# Run with coverage
-yarn test --coverage
-
-# Run in watch mode
-yarn test --watch
-```
-
-## 🤝 Contributing
-
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
-
-### Development Workflow
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-### Code Style
-- **Go**: Follow standard Go formatting (`go fmt`)
-- **JavaScript/React**: Use Prettier and ESLint (`yarn format && yarn lint`)
-- **Commits**: Use conventional commits format
-
-## 📈 Performance
-
-### Optimizations
-- **Caching**: 24-hour TTL for AI descriptions, 1-hour for location data
-- **Code Splitting**: Lazy loading for optimal bundle sizes
-- **Image Optimization**: WebP format with responsive sizes
-- **CDN**: Static assets served via CDN
-- **Database Queries**: Optimized with proper indexing
-
-### Benchmarks
-- Average response time: <200ms (cached), <2s (uncached)
-- Time to Interactive: <3s on 3G networks
-- Lighthouse Score: 95+ Performance
-
-## 🔒 Security
-
-### Implemented Measures
-- API key protection via backend proxy
-- Rate limiting (100 req/min per IP)
-- CORS configuration for production domain
-- Input validation and sanitization
-- Secure headers via Nginx
-- No sensitive data in frontend code
-
-### Security Reporting
-Found a vulnerability? Please email security@yourdomain.com
-
-## 📜 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-- [Natural Earth](https://www.naturalearthdata.com/) for geographic data
-- [Google Maps Platform](https://developers.google.com/maps) for mapping services
-- [OpenRouter](https://openrouter.ai) for AI API aggregation
-- [React Community](https://react.dev/) for the amazing framework
-- [Go Community](https://go.dev/) for the powerful backend language
-
-## 📞 Support
-
-- **Documentation**: [docs.yourdomain.com](https://docs.yourdomain.com)
-- **Issues**: [GitHub Issues](https://github.com/yourusername/street-view-explorer/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/yourusername/street-view-explorer/discussions)
-- **Email**: support@yourdomain.com
-
----
-
-Made with ❤️ by [Your Name](https://github.com/yourusername)
+MIT

@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import './index.css';
 import App from './App';
 import AppErrorBoundary from './components/AppErrorBoundary';
-import './i18nOptimized'; // Import optimized i18n configuration
+import './i18n';
 import { initErrorHandlers } from './services/sentryLazy';
 
 // Initialize lightweight error handlers (Sentry loads on-demand)
