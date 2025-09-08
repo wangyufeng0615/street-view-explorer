@@ -33,9 +33,9 @@ COPY nginx/conf.d/default.conf /etc/nginx/conf.d/default.conf
 # 创建nginx状态页面目录（用于健康检查）
 RUN mkdir -p /usr/share/nginx/html/nginx_status
 
-# 健康检查 - 使用wget检查nginx状态
+# 健康检查 - 使用wget检查nginx状态（不使用--spider避免HEAD请求问题）
 HEALTHCHECK --interval=30s --timeout=3s \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:3000/nginx_status || exit 1
+    CMD wget --no-verbose --tries=1 -O /dev/null http://localhost:3000/nginx_status || exit 1
 
 # 暴露端口
 EXPOSE 3000
