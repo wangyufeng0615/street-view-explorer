@@ -18,7 +18,7 @@ Street View Explorer - A web application for random global street view explorati
 - 🔒 Rate limiting and CORS protection for API security
 
 ### Tech Stack
-- **Frontend**: React 18 + TypeScript + Google Maps JavaScript API
+- **Frontend**: React 18 + TypeScript + Vite + Zustand + Google Maps JavaScript API
 - **Backend**: Go 1.22 + Gin framework + Redis
 - **AI Integration**: OpenRouter API (GPT-4o model)
 - **Caching**: Redis with TTL-based expiration
@@ -32,11 +32,11 @@ Street View Explorer - A web application for random global street view explorati
 ```bash
 cd frontend
 yarn install           # Install dependencies
-yarn start             # Start dev server (port 3000)
+yarn dev               # Start Vite dev server (port 3000)
 yarn build             # Production build
+yarn preview           # Preview production build
 yarn lint              # Run ESLint
 yarn format            # Format code with Prettier
-yarn test              # Run tests
 ```
 
 ### Backend Development
@@ -64,28 +64,39 @@ docker-compose down    # Stop all services
   - `GlobalMap.jsx`: Interactive world map with location markers
   - `PreviewMap.jsx`: Small preview map for current location
   - `AiDescription.jsx`: AI-generated location descriptions display
-  - `NewSidebar.jsx`: Main sidebar with controls and information
+  - `Sidebar.jsx`: Main sidebar with controls and information
   - `TopBar.jsx`: Header with language switcher and help
   - `ExplorationPreference.jsx`: Regional preference selection
+  - `MapSection.jsx`: Map container component
+  - `StreetViewContainer.jsx`: Street view wrapper component
+  - `StreetViewMemo.jsx`: Memoized street view for performance
   - `Toast.jsx`: Notification system
+  - `HelpButton.jsx`: Help modal component
+  - `ErrorDisplay.jsx`: Error UI component
+  - `AppErrorBoundary.jsx`: Error boundary wrapper
+  - `SkeletonLoader.jsx`: Skeleton loading states
   - `LoadingDots.jsx`, `GlobalLoading.jsx`: Loading states
-- **Pages** (`src/pages/`): 
+- **Pages** (`src/pages/`):
   - `HomePage.jsx`: Main application layout and state orchestration
 - **Services** (`src/services/`):
-  - `api.js`: Backend API client with error handling
-  - `sentry.js`: Sentry initialization and configuration
+  - `api.js`: Backend API client with error handling and timeout
+  - `sentryLazy.jsx`: Lazy Sentry initialization for performance
 - **Hooks** (`src/hooks/`):
   - `useLocationData.js`: Location fetching and state management
   - `useLocationDescription.js`: AI description fetching
   - `useExplorationMode.js`: Exploration preference management
   - `useKeyboardNavigation.js`: Keyboard shortcuts (Space for next location)
   - `useUIHandlers.js`: UI interaction handlers
+- **Store** (`src/store/`):
+  - `useStore.js`: Zustand global state management
 - **Utilities** (`src/utils/`):
   - `googleMaps.js`: Google Maps loader and utilities
   - `addressUtils.js`: Address formatting helpers
   - `session.js`: Session ID management
+- **Constants** (`src/constants/`):
+  - `loadingMessages.js`: Loading message constants
 - **i18n**: Translations in `frontend/public/locales/` (en/zh)
-- **State Management**: React hooks with prop drilling for simplicity
+- **State Management**: Zustand for global state with devtools middleware
 - **Styling**: CSS modules in `frontend/src/styles/` with responsive design
 
 ### Backend Architecture (`backend/`)
@@ -174,20 +185,48 @@ docker-compose down    # Stop all services
 
 ### Backend (.env)
 ```
-PORT=8080
-OPENROUTER_API_KEY=your_key
-GOOGLE_MAPS_API_KEY=your_key
-REDIS_ADDR=localhost:6379
-SENTRY_DSN=your_dsn
+SERVER_ADDRESS=:8080
+REDIS_ADDRESS=localhost:6379
+
+# API Keys
+AI_API_KEY=your_openrouter_key
+GOOGLE_API_KEY=your_google_maps_key
+GOOGLE_MAPS_MAP_ID=your_map_id
+
+# Sentry Monitoring
+SENTRY_DSN=your_sentry_dsn
 SENTRY_ENVIRONMENT=development
+SENTRY_RELEASE=1.0.0
+SENTRY_SAMPLE_RATE=1.0
+SENTRY_ENABLED=true
+
+# Feature Flags
+ENABLE_AI=true
+ENABLE_GOOGLE_API=true
+
+# Rate Limiting
+RATE_LIMIT_ENABLED=true
+MAX_REQUESTS=100
+WINDOW_SECONDS=60
+
+# Logging
+LOG_LEVEL=INFO
+
+# Proxy (optional)
+PROXY_URL=
+PROXY_TYPE=http
+AI_PROXY_URL=
+MAPS_PROXY_URL=
 ```
 
 ### Frontend (.env)
 ```
-REACT_APP_GOOGLE_MAPS_API_KEY=your_key
-REACT_APP_API_BASE_URL=http://localhost:8080/api
-REACT_APP_SENTRY_DSN=your_dsn
-REACT_APP_SENTRY_ENVIRONMENT=development
+VITE_API_BASE_URL=http://localhost:8080/api
+VITE_GOOGLE_MAPS_API_KEY=your_google_maps_key
+VITE_GOOGLE_MAPS_MAP_ID=your_map_id
+VITE_SENTRY_DSN=your_sentry_dsn
+VITE_SENTRY_ENVIRONMENT=development
+VITE_VERSION=1.0.0
 ```
 
 ## API Endpoints
@@ -226,7 +265,6 @@ All API responses follow this structure:
 - **Coverage**: `go test -cover ./...`
 
 ### Frontend Testing
-- **Component Tests**: `yarn test` (React Testing Library)
 - **Manual Testing Checklist**:
   - Street View loading on different devices
   - Language switching functionality
@@ -304,9 +342,11 @@ docker-compose up -d --scale backend=3
 ### Frontend Patterns
 1. **Component Composition**: Small, focused components with single responsibilities
 2. **Custom Hooks**: Logic extraction into reusable hooks
-3. **Error Boundaries**: Graceful error handling with fallback UI
-4. **Lazy Loading**: Dynamic imports for code splitting
-5. **Responsive Design**: Mobile-first with CSS Grid/Flexbox
+3. **Zustand Store**: Global state management with slices and devtools
+4. **Error Boundaries**: Graceful error handling with fallback UI
+5. **Lazy Loading**: Dynamic imports for code splitting
+6. **Component Memoization**: Performance optimization with React.memo
+7. **Responsive Design**: Mobile-first with CSS Grid/Flexbox
 
 ### Geographic Processing
 1. **Spatial Indexing**: Optimized polygon lookups with bounding boxes

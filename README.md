@@ -4,10 +4,9 @@
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Go Version](https://img.shields.io/badge/Go-1.22-00ADD8?logo=go)](https://go.dev/)
 [![React Version](https://img.shields.io/badge/React-18.2-61DAFB?logo=react)](https://react.dev/)
+[![Vite](https://img.shields.io/badge/Vite-7.1-646CFF?logo=vite)](https://vitejs.dev/)
 
 An immersive web application for exploring random street views around the world with AI-generated location descriptions. Discover new places, learn about different cultures, and virtually travel the globe from your browser.
-
-![Street View Explorer Demo](https://github.com/yourusername/street-view-explorer/assets/demo.gif)
 
 ## ✨ Features
 
@@ -29,11 +28,11 @@ An immersive web application for exploring random street views around the world 
 ## 🚀 Quick Start
 
 ### Prerequisites
-- Node.js 18+ and Yarn
+- Node.js 20+ and Yarn
 - Go 1.22+
-- Redis 7+
+- Redis 7.2+
 - Docker & Docker Compose (for production deployment)
-- Google Maps API Key
+- Google Maps API Key (with Maps JavaScript API, Street View API enabled)
 - OpenRouter API Key (for AI descriptions)
 
 ### Development Setup
@@ -64,16 +63,25 @@ go run cmd/server/main.go --proxy http://proxy:port
 ```bash
 cd frontend
 cp .env.example .env
-# Edit .env with your configuration
+# Edit .env with your configuration (VITE_* variables)
 
-# Install dependencies (Yarn)
+# Install dependencies
 yarn install
 
-# Start development server (Vite)
+# Start Vite development server
 yarn dev
 ```
 
 The application will be available at http://localhost:3000
+
+#### 4. Available Frontend Scripts
+```bash
+yarn dev        # Start development server with HMR
+yarn build      # Production build
+yarn preview    # Preview production build locally
+yarn lint       # Run ESLint
+yarn format     # Format code with Prettier
+```
 
 ### Production Deployment
 
@@ -131,27 +139,54 @@ make deploy
 
 #### Frontend
 - **Framework**: React 18 with TypeScript
-- **Build Tool**: Vite
+- **Build Tool**: Vite 7.1 (fast HMR, optimized builds)
+- **State Management**: Zustand with devtools
 - **Maps**: Google Maps JavaScript API
-- **Internationalization**: i18next
-- **State Management**: React Hooks
+- **Internationalization**: i18next with localStorage caching
 - **Styling**: CSS Modules + Responsive Design
-- **Monitoring**: Sentry
+- **Monitoring**: Sentry (lazy loaded)
 
 #### Backend
 - **Language**: Go 1.22
 - **Framework**: Gin Web Framework
-- **Caching**: Redis
+- **Caching**: Redis 7.2 with TTL-based expiration
 - **AI Integration**: OpenRouter API (GPT-4o)
-- **Geographic Processing**: Custom GeoJSON algorithms
-- **Monitoring**: Sentry
+- **Geographic Processing**: Custom GeoJSON algorithms with orb library
+- **Monitoring**: Sentry with performance tracking
 
 #### Infrastructure
-- **Containerization**: Docker & Docker Compose
-- **Reverse Proxy**: Nginx
-- **CI/CD**: GitHub Actions (optional)
+- **Containerization**: Docker & Docker Compose (multi-stage builds)
+- **Reverse Proxy**: Nginx with gzip, security headers, static caching
 - **Monitoring**: Sentry for errors and performance
 
-## License
+## 📁 Project Structure
+
+```
+├── frontend/               # React frontend application
+│   ├── src/
+│   │   ├── components/    # Reusable UI components
+│   │   ├── pages/         # Page components
+│   │   ├── hooks/         # Custom React hooks
+│   │   ├── store/         # Zustand state management
+│   │   ├── services/      # API client and external services
+│   │   ├── utils/         # Utility functions
+│   │   └── styles/        # CSS modules
+│   └── public/locales/    # i18n translations (en/zh)
+├── backend/               # Go backend server
+│   ├── cmd/server/        # Application entry point
+│   ├── internal/
+│   │   ├── api/           # HTTP handlers and routes
+│   │   ├── services/      # Business logic
+│   │   ├── repositories/  # Data access layer
+│   │   ├── models/        # Data structures
+│   │   ├── utils/         # Geographic algorithms
+│   │   └── config/        # Configuration management
+│   └── data/maps/         # GeoJSON world polygons
+├── nginx/                 # Nginx configuration
+├── redis/                 # Redis configuration
+└── docker-compose.yml     # Container orchestration
+```
+
+## 📄 License
 
 MIT
