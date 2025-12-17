@@ -19,7 +19,7 @@ import (
 
 const (
 	apiEndpoint = "https://openrouter.ai/api/v1/chat/completions"
-	model       = "google/gemini-2.5-flash"
+	model       = "google/gemini-3-flash-preview"
 	maxRetries  = 2
 	timeout     = 15 * time.Second
 

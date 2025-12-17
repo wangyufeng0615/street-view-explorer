@@ -20,7 +20,7 @@ Street View Explorer - A web application for random global street view explorati
 ### Tech Stack
 - **Frontend**: React 18 + TypeScript + Vite + Zustand + Google Maps JavaScript API
 - **Backend**: Go 1.22 + Gin framework + Redis
-- **AI Integration**: OpenRouter API (GPT-4o model)
+- **AI Integration**: OpenRouter API (Gemini 3 Flash model)
 - **Caching**: Redis with TTL-based expiration
 - **Monitoring**: Sentry (Error tracking + Performance monitoring)
 - **Deployment**: Docker Compose + Nginx reverse proxy
