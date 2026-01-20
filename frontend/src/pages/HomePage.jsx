@@ -1,13 +1,15 @@
-import React, { useEffect, useCallback, useMemo, useReducer, memo } from 'react';
+import React, { useEffect, useCallback, useMemo, useReducer, memo, lazy, Suspense } from 'react';
 import TopBar from '../components/TopBar';
 import Sidebar from '../components/Sidebar';
-import GlobalLoading from '../components/GlobalLoading';
-import ErrorDisplay from '../components/ErrorDisplay';
 import StreetView from '../components/StreetView';
-import Toast from '../components/Toast';
 import '../styles/animations.css';
 import '../styles/HomePage.css';
 import '../styles/responsive.css';
+
+// Lazy load components that are not immediately visible
+const GlobalLoading = lazy(() => import('../components/GlobalLoading'));
+const ErrorDisplay = lazy(() => import('../components/ErrorDisplay'));
+const Toast = lazy(() => import('../components/Toast'));
 
 // 自定义钩子
 import useLocationData from '../hooks/useLocationData';
@@ -205,7 +207,11 @@ export default function HomePage() {
     
     // 如果有错误，显示错误页面
     if (error) {
-        return <ErrorDisplay error={error} onRetry={handleExplore} />;
+        return (
+            <Suspense fallback={<div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>Loading...</div>}>
+                <ErrorDisplay error={error} onRetry={handleExplore} />
+            </Suspense>
+        );
     }
 
     return (
@@ -247,11 +253,17 @@ export default function HomePage() {
                 />
             </div>
 
-            {/* 全局加载动画 */}
-            {isLoading && <GlobalLoading />}
-            
-            {/* Toast 通知 */}
-            <Toast message={toastMessage} visible={showToast} />
+            {/* 全局加载动画 - lazy loaded */}
+            {isLoading && (
+                <Suspense fallback={null}>
+                    <GlobalLoading />
+                </Suspense>
+            )}
+
+            {/* Toast 通知 - lazy loaded */}
+            <Suspense fallback={null}>
+                <Toast message={toastMessage} visible={showToast} />
+            </Suspense>
         </div>
     );
 }

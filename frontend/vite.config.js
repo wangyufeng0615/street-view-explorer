@@ -35,20 +35,28 @@ export default defineConfig({
   build: {
     outDir: 'build',
     sourcemap: true,
+    // Enable module preload polyfill for older browsers
+    modulePreload: {
+      polyfill: true,
+    },
     // Rollup options
     rollupOptions: {
       output: {
         // Manual chunks for better caching
+        // Note: sentry is excluded to enable true lazy loading via dynamic import
         manualChunks: {
           vendor: ['react', 'react-dom', 'react-router-dom'],
           i18n: ['i18next', 'react-i18next', 'i18next-browser-languagedetector', 'i18next-http-backend'],
-          sentry: ['@sentry/react'],
           zustand: ['zustand'],
         },
       },
     },
     // Set chunk size warning limit
     chunkSizeWarningLimit: 1000,
+    // Minify options for smaller bundle
+    minify: 'esbuild',
+    // Target modern browsers for smaller output
+    target: 'es2020',
   },
   
   // Resolve configuration
@@ -86,9 +94,10 @@ export default defineConfig({
       'react-router-dom',
       'i18next',
       'react-i18next',
-      '@sentry/react',
       'zustand',
     ],
+    // Exclude sentry to enable true lazy loading
+    exclude: ['@sentry/react'],
     esbuildOptions: {
       loader: {
         '.js': 'jsx',

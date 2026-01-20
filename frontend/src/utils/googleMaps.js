@@ -263,10 +263,22 @@ export function hardResetGoogleMapsPromise() {
 
 // Already exported above, no need to re-export
 
-// Preload on page load (just connection, not script)
+// Preload Google Maps connections early but non-blocking
 if (typeof window !== 'undefined') {
-    // Wait a bit after page load to avoid competing with critical resources
-    window.addEventListener('load', () => {
-        setTimeout(preloadGoogleMaps, 1000);
-    });
+    // Use requestIdleCallback for non-blocking preload, or DOMContentLoaded as fallback
+    const schedulePreload = () => {
+        if ('requestIdleCallback' in window) {
+            window.requestIdleCallback(() => preloadGoogleMaps(), { timeout: 3000 });
+        } else {
+            setTimeout(preloadGoogleMaps, 100);
+        }
+    };
+
+    // Start preloading as soon as DOM is ready (earlier than 'load' event)
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', schedulePreload);
+    } else {
+        // DOM already loaded, schedule immediately
+        schedulePreload();
+    }
 }
