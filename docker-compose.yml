@@ -27,34 +27,12 @@ services:
     env_file:
       - ./backend/.env
     environment:
-      - REDIS_ADDRESS=redis:6379
+      - SQLITE_PATH=/app/data/streetview.db
+    volumes:
+      - sqlite_data:/app/data
     expose:
       - "8080"
-    depends_on:
-      redis:
-        condition: service_healthy
     restart: always
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-        compress: "true"
-
-  redis:
-    image: redis:7.2-alpine
-    command: redis-server /usr/local/etc/redis/redis.conf
-    volumes:
-      - ./redis/conf/redis.conf:/usr/local/etc/redis/redis.conf:ro
-      - redis_data:/data
-    expose:
-      - "6379"
-    restart: always
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 30s
-      timeout: 3s
-      retries: 3
     logging:
       driver: "json-file"
       options:
@@ -63,4 +41,4 @@ services:
         compress: "true"
 
 volumes:
-  redis_data: 
+  sqlite_data:

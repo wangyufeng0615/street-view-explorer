@@ -103,7 +103,7 @@ export default function HomePage() {
         toastMessage,
         showToast
     } = useUIHandlers();
-    
+
     // 使用键盘导航钩子
     useKeyboardNavigation(loadRandomLocation, isLoading, loadingRef);
     
@@ -122,7 +122,7 @@ export default function HomePage() {
     const handleExplore = useCallback(() => {
         loadRandomLocation();
     }, [loadRandomLocation]);
-    
+
     // Debounced location description loading
     useEffect(() => {
         let mounted = true;

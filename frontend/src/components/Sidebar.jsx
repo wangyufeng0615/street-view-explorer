@@ -12,7 +12,7 @@ const Sidebar = memo(function Sidebar({
     isLoadingDesc,
     descError,
     descRetries,
-    onRetryDescription
+    onRetryDescription,
 }) {
     const { t } = useTranslation();
     const scrollContainerRef = useRef(null);
@@ -22,20 +22,20 @@ const Sidebar = memo(function Sidebar({
         if (scrollContainerRef.current) {
             scrollContainerRef.current.scrollTop = 0;
         }
-    }, []); // 空依赖数组确保只在组件挂载时运行
+    }, []);
 
     // 当位置改变时也重置滚动位置
     useEffect(() => {
         if (scrollContainerRef.current && location?.pano_id) {
             scrollContainerRef.current.scrollTop = 0;
         }
-    }, [location?.pano_id]); // 当pano_id改变时重置滚动位置
+    }, [location?.pano_id]);
 
     return (
         <div style={styles.sidebar} className="new-sidebar">
-            <div 
+            <div
                 ref={scrollContainerRef}
-                style={styles.scrollContainer} 
+                style={styles.scrollContainer}
                 className="sidebar-scroll force-scrollbar"
             >
                 {/* 世界地图区域 */}
@@ -88,7 +88,7 @@ const Sidebar = memo(function Sidebar({
 const styles = {
     sidebar: {
         position: 'fixed',
-        top: '50px', // 顶栏高度
+        top: '50px',
         right: 0,
         bottom: 0,
         width: '320px',
@@ -103,11 +103,9 @@ const styles = {
     },
     scrollContainer: {
         flex: 1,
-        // 强制显示滚动条 - 内联样式确保优先级
         overflowY: 'scroll',
         overflowX: 'hidden',
         padding: '16px',
-        // WebKit浏览器强制显示滚动条
         WebkitOverflowScrolling: 'touch'
     },
     section: {
@@ -134,4 +132,4 @@ const styles = {
     }
 };
 
-export default Sidebar; 
+export default Sidebar;

@@ -20,7 +20,6 @@ import (
 func main() {
 	// 检查是否是健康检查命令（需要在flag.Parse之前）
 	if len(os.Args) > 1 && os.Args[1] == "health" {
-		// 简单的健康检查，返回0表示健康
 		os.Exit(0)
 	}
 
@@ -36,14 +35,12 @@ func main() {
 
 	// 加载配置
 	cfg := config.New()
-	// 设置 skipProxyCheck 到配置中
 	cfg.SetSkipProxyCheck(*skipProxyCheck)
 
 	// Initialize Sentry
 	sentryCfg := mysentry.NewConfig()
 	if err := mysentry.Init(sentryCfg); err != nil {
 		log.Printf("Failed to initialize Sentry: %v", err)
-		// Continue running even if Sentry fails to initialize
 	}
 	defer sentry.Flush(2 * time.Second)
 
@@ -57,7 +54,6 @@ func main() {
 		}
 		log.Printf("使用代理: %s (类型: %s)", *proxyURL, *proxyType)
 
-		// 检查代理健康状态
 		if !cfg.SkipProxyCheck() {
 			err := utils.CheckProxyHealth(*proxyURL, 5*time.Second)
 			if err != nil {
@@ -74,7 +70,6 @@ func main() {
 		os.Setenv("AI_PROXY_URL", *openaiProxy)
 		log.Printf("AI使用专用代理: %s", *openaiProxy)
 
-		// 检查AI专用代理健康状态
 		if !cfg.SkipProxyCheck() {
 			err := utils.CheckProxyHealth(*openaiProxy, 5*time.Second)
 			if err != nil {
@@ -88,7 +83,6 @@ func main() {
 		os.Setenv("MAPS_PROXY_URL", *mapsProxy)
 		log.Printf("Google Maps使用专用代理: %s", *mapsProxy)
 
-		// 检查Maps专用代理健康状态
 		if !cfg.SkipProxyCheck() {
 			err := utils.CheckProxyHealth(*mapsProxy, 5*time.Second)
 			if err != nil {
@@ -105,11 +99,13 @@ func main() {
 		log.Fatalf("初始化地理数据失败: %v", err)
 	}
 
-	// 初始化 Redis 仓库 (this also initializes a redis client)
-	repo, err := repositories.NewRedisRepository(cfg)
+	// 初始化 SQLite 数据库
+	log.Printf("正在初始化 SQLite 数据库 (%s)...", cfg.SQLitePath())
+	repo, err := repositories.NewSQLiteRepository(cfg)
 	if err != nil {
-		log.Fatalf("初始化仓库失败: %v", err)
+		log.Fatalf("初始化 SQLite 数据库失败: %v", err)
 	}
+	defer repo.Close()
 
 	// 初始化服务
 	aiService, err := services.NewAIService(cfg, repo)
@@ -132,36 +128,24 @@ func main() {
 
 	// 添加中间件
 	r.Use(gin.Recovery())
-	r.Use(mysentry.Middleware(false))     // Add Sentry middleware after Recovery
-	r.Use(api.RequestLoggingMiddleware()) // 使用结构化日志替代默认日志
+	r.Use(mysentry.Middleware(false))
+	r.Use(api.RequestLoggingMiddleware())
 	r.Use(api.ErrorHandler())
-	// CORS 由 Nginx 处理，移除后端 CORS 中间件
-	// r.Use(api.CORSMiddleware())
 
-	// 根据配置启用限流
+	// 根据配置启用限流（SQLiteRepository 同时实现了 RateLimiter 接口）
 	if cfg.SecurityConfig().RateLimit.Enabled {
-		// Get Redis client from repository
-		redisClientForRateLimit := repo.GetRedisClient()
-		if redisClientForRateLimit == nil { // Should not happen if repo initialized correctly
-			log.Fatalf("无法从仓库获取Redis客户端用于限流")
-		}
-		r.Use(api.RateLimitMiddleware(redisClientForRateLimit))
+		r.Use(api.RateLimitMiddleware(repo))
 	}
 
 	r.Use(api.InputValidationMiddleware())
 	r.Use(api.SessionMiddleware())
-	
-	// 添加用户级别的限流中间件（在SessionMiddleware之后，因为需要sessionID）
+
 	if cfg.SecurityConfig().RateLimit.Enabled {
-		redisClientForRateLimit := repo.GetRedisClient()
-		if redisClientForRateLimit != nil {
-			r.Use(api.UserRateLimitMiddleware(redisClientForRateLimit))
-		}
+		r.Use(api.UserRateLimitMiddleware(repo))
 	}
 
 	// 添加健康检查接口
 	r.GET("/health", func(c *gin.Context) {
-		// 检查代理状态
 		proxyStatus := "disabled"
 		if cfg.ProxyURL() != "" {
 			if !cfg.SkipProxyCheck() {
@@ -179,6 +163,7 @@ func main() {
 		c.JSON(200, gin.H{
 			"status": "ok",
 			"config": map[string]interface{}{
+				"storage":            "sqlite",
 				"rate_limit_enabled": cfg.SecurityConfig().RateLimit.Enabled,
 				"cors_origins":       cfg.SecurityConfig().CORS.AllowedOrigins,
 				"proxy_enabled":      cfg.ProxyURL() != "",
@@ -202,6 +187,8 @@ func main() {
 
 	logger.Info("server_starting", "Starting HTTP server", map[string]interface{}{
 		"address":       addr,
+		"storage":       "sqlite",
+		"sqlite_path":   cfg.SQLitePath(),
 		"rate_limit":    cfg.SecurityConfig().RateLimit.Enabled,
 		"proxy_enabled": cfg.ProxyURL() != "",
 	})

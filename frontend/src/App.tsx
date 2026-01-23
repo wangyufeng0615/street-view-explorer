@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { BrowserRouter as Router } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import HomePage from './pages/HomePage';
 import { getOrCreateSessionId } from './utils/session';
 import { testSentry } from './services/sentryLazy';
@@ -22,26 +22,28 @@ function App() {
     useEffect(() => {
         // 确保有会话ID
         getOrCreateSessionId();
-        
+
         // Make testSentry available globally for manual testing
         window.testSentry = testSentry;
     }, []);
 
     return (
         <Router {...router}>
-            <div style={{ 
-                width: '100vw', 
-                height: '100vh', 
-                margin: 0, 
-                padding: 0, 
+            <div style={{
+                width: '100vw',
+                height: '100vh',
+                margin: 0,
+                padding: 0,
                 overflow: 'hidden',
                 display: 'flex',
                 flexDirection: 'column'
             }}>
-                <HomePage />
+                <Routes>
+                    <Route path="/" element={<HomePage />} />
+                </Routes>
             </div>
         </Router>
     );
 }
 
-export default App; 
+export default App;

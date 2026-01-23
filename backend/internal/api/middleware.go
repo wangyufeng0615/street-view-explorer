@@ -9,12 +9,18 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/my-streetview-project/backend/internal/repositories"
 	"github.com/my-streetview-project/backend/internal/utils"
-	"github.com/redis/go-redis/v9"
 )
 
-// RateLimitMiddleware 实现基于 Redis 的请求限流
-func RateLimitMiddleware(redisClient *redis.Client) gin.HandlerFunc {
+// 预编译正则表达式（性能优化）
+var (
+	panoIDRegex    = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
+	sessionIDRegex = regexp.MustCompile(`^[a-zA-Z0-9-_]{32,64}$`)
+)
+
+// RateLimitMiddleware 实现基于限流器的请求限流
+func RateLimitMiddleware(rateLimiter repositories.RateLimiter) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		clientIP := c.ClientIP()
 		endpoint := c.FullPath()
@@ -35,23 +41,15 @@ func RateLimitMiddleware(redisClient *redis.Client) gin.HandlerFunc {
 			window = 60 * time.Second
 		}
 
-		// 使用 Redis 实现计数器
+		// 使用限流器检查
 		key := "ratelimit:" + clientIP + ":" + endpoint
-		count, err := redisClient.Incr(c.Request.Context(), key).Result()
+		allowed, _, err := rateLimiter.CheckAndIncrement(key, maxRequests, window)
 		if err != nil {
-			c.Next() // Redis 错误时不阻止请求
+			c.Next() // 限流器错误时不阻止请求
 			return
 		}
 
-		// 设置过期时间
-		if count == 1 {
-			if err := redisClient.Expire(c.Request.Context(), key, window).Err(); err != nil {
-				c.Next()
-				return
-			}
-		}
-
-		if count > int64(maxRequests) {
+		if !allowed {
 			c.JSON(http.StatusTooManyRequests, gin.H{
 				"success": false,
 				"error":   "请求过于频繁，请稍后再试",
@@ -65,7 +63,7 @@ func RateLimitMiddleware(redisClient *redis.Client) gin.HandlerFunc {
 }
 
 // UserRateLimitMiddleware 实现基于用户会话的请求限流（探索偏好专用）
-func UserRateLimitMiddleware(redisClient *redis.Client) gin.HandlerFunc {
+func UserRateLimitMiddleware(rateLimiter repositories.RateLimiter) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// 仅对探索偏好相关端点生效
 		endpoint := c.FullPath()
@@ -87,41 +85,31 @@ func UserRateLimitMiddleware(redisClient *redis.Client) gin.HandlerFunc {
 		}
 
 		// 每个用户的限流配置
-		userMaxRequests := 60      // 每用户每小时60次（平均每分钟1次）
-		userWindow := time.Hour    // 1小时窗口
-		
+		userMaxRequests := 60   // 每用户每小时60次（平均每分钟1次）
+		userWindow := time.Hour // 1小时窗口
+
 		// 全局限流配置（防止API费用爆炸）
-		globalMaxRequests := 2000  // 全局每小时2000次
-		globalWindow := time.Hour  // 1小时窗口
+		globalMaxRequests := 2000 // 全局每小时2000次
+		globalWindow := time.Hour // 1小时窗口
 
 		// 检查用户级别限流
 		userKey := "user_ratelimit:preference:" + sessionID
-		userCount, err := redisClient.Incr(c.Request.Context(), userKey).Result()
+		userAllowed, userRemaining, err := rateLimiter.CheckAndIncrement(userKey, userMaxRequests, userWindow)
 		if err != nil {
 			c.Next()
 			return
-		}
-
-		// 设置用户级别过期时间
-		if userCount == 1 {
-			redisClient.Expire(c.Request.Context(), userKey, userWindow)
 		}
 
 		// 检查全局限流
 		globalKey := "global_ratelimit:preference"
-		globalCount, err := redisClient.Incr(c.Request.Context(), globalKey).Result()
+		globalAllowed, globalRemaining, err := rateLimiter.CheckAndIncrement(globalKey, globalMaxRequests, globalWindow)
 		if err != nil {
 			c.Next()
 			return
 		}
 
-		// 设置全局过期时间
-		if globalCount == 1 {
-			redisClient.Expire(c.Request.Context(), globalKey, globalWindow)
-		}
-
 		// 检查是否超过用户限制
-		if userCount > int64(userMaxRequests) {
+		if !userAllowed {
 			c.JSON(http.StatusTooManyRequests, gin.H{
 				"success": false,
 				"error":   "您的探索偏好设置过于频繁，请稍后再试（每小时最多60次）",
@@ -131,15 +119,14 @@ func UserRateLimitMiddleware(redisClient *redis.Client) gin.HandlerFunc {
 		}
 
 		// 检查是否超过全局限制
-		if globalCount > int64(globalMaxRequests) {
+		if !globalAllowed {
 			// 记录日志以便监控
 			logger := utils.APILogger()
 			logger.Error("global_ratelimit_exceeded", "Global rate limit exceeded for preferences", nil, map[string]interface{}{
-				"global_count": globalCount,
-				"session_id":   sessionID,
-				"client_ip":    c.ClientIP(),
+				"session_id": sessionID,
+				"client_ip":  c.ClientIP(),
 			})
-			
+
 			c.JSON(http.StatusServiceUnavailable, gin.H{
 				"success": false,
 				"error":   "服务暂时不可用，请稍后再试",
@@ -149,8 +136,8 @@ func UserRateLimitMiddleware(redisClient *redis.Client) gin.HandlerFunc {
 		}
 
 		// 在上下文中设置剩余次数信息
-		c.Set("userRateLimitRemaining", userMaxRequests-int(userCount))
-		c.Set("globalRateLimitRemaining", globalMaxRequests-int(globalCount))
+		c.Set("userRateLimitRemaining", userRemaining)
+		c.Set("globalRateLimitRemaining", globalRemaining)
 
 		c.Next()
 	}
@@ -162,8 +149,8 @@ func CORSMiddleware() gin.HandlerFunc {
 		origin := c.Request.Header.Get("Origin")
 		// 只允许特定域名
 		allowedOrigins := []string{
-			"http://localhost:3000",  // 开发环境
-			"https://streetview.com", // 生产环境
+			"http://localhost:3000",        // 开发环境
+			"https://earth.wangyufeng.org", // 生产环境
 		}
 
 		for _, allowedOrigin := range allowedOrigins {
@@ -174,7 +161,7 @@ func CORSMiddleware() gin.HandlerFunc {
 		}
 
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Session-ID")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Session-ID")
 		c.Writer.Header().Set("Access-Control-Max-Age", "86400") // 24小时
 
 		if c.Request.Method == http.MethodOptions {
@@ -201,7 +188,7 @@ func InputValidationMiddleware() gin.HandlerFunc {
 
 		// 验证路径参数
 		if panoID := c.Param("panoId"); panoID != "" {
-			if len(panoID) > 100 || !regexp.MustCompile(`^[a-zA-Z0-9_-]+$`).MatchString(panoID) {
+			if len(panoID) > 100 || !panoIDRegex.MatchString(panoID) {
 				c.JSON(http.StatusBadRequest, gin.H{
 					"success": false,
 					"error":   "无效的位置ID格式",
@@ -234,7 +221,7 @@ func SessionMiddleware() gin.HandlerFunc {
 
 		// 验证会话ID格式
 		if sessionID != "" {
-			if !regexp.MustCompile(`^[a-zA-Z0-9-_]{32,64}$`).MatchString(sessionID) {
+			if !sessionIDRegex.MatchString(sessionID) {
 				c.JSON(http.StatusBadRequest, gin.H{
 					"success": false,
 					"error":   "无效的会话ID",

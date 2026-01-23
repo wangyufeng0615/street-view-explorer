@@ -1,4 +1,4 @@
-import React, { memo, useState } from 'react';
+import React, { memo, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { formatAddress } from '../utils/addressUtils';
 import { EXPLORATION_MODES } from '../hooks/useExplorationMode';
@@ -14,7 +14,7 @@ const TopBar = memo(function TopBar({
     onCopyEmail,
     onPreferenceChange,
     isSavingPreference,
-    preferenceError
+    preferenceError,
 }) {
     const { t, i18n } = useTranslation();
     const [showDropdown, setShowDropdown] = useState(false);
@@ -68,7 +68,6 @@ const TopBar = memo(function TopBar({
                 // 自动加载新位置
                 onExplore(result.skipRateLimit);
             }
-            // 错误处理由 useExplorationMode 钩子管理，这里不需要额外处理
         }
     };
 
@@ -152,7 +151,7 @@ const TopBar = memo(function TopBar({
                         >
                             ⚙️
                         </button>
-                        
+
                         {showDropdown && (
                             <div style={styles.dropdown}>
                                 <div style={styles.dropdownItem}>
@@ -182,7 +181,7 @@ const TopBar = memo(function TopBar({
                                         </button>
                                     </div>
                                 </div>
-                                
+
                                 <button
                                     style={styles.dropdownButton}
                                     onClick={handleContactClick}
@@ -196,8 +195,8 @@ const TopBar = memo(function TopBar({
 
                 {/* 点击外部关闭下拉菜单 */}
                 {showDropdown && (
-                    <div 
-                        style={styles.overlay} 
+                    <div
+                        style={styles.overlay}
                         onClick={() => setShowDropdown(false)}
                     />
                 )}
@@ -557,4 +556,4 @@ const styles = {
     }
 };
 
-export default TopBar; 
+export default TopBar;

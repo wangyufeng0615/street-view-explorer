@@ -10,8 +10,7 @@ import (
 
 type Config interface {
 	ServerAddress() string
-	RedisAddress() string
-	RedisPassword() string
+	SQLitePath() string
 	OpenAIAPIKey() string
 	GoogleMapsAPIKey() string
 	EnableOpenAI() bool
@@ -28,8 +27,7 @@ type Config interface {
 
 type config struct {
 	serverAddress    string
-	redisAddress     string
-	redisPassword    string
+	sqlitePath       string
 	openAIAPIKey     string
 	googleMapsAPIKey string
 	enableOpenAI     bool
@@ -64,12 +62,8 @@ func (c *config) ServerAddress() string {
 	return c.serverAddress
 }
 
-func (c *config) RedisAddress() string {
-	return c.redisAddress
-}
-
-func (c *config) RedisPassword() string {
-	return c.redisPassword
+func (c *config) SQLitePath() string {
+	return c.sqlitePath
 }
 
 func (c *config) OpenAIAPIKey() string {
@@ -105,7 +99,6 @@ func (c *config) ProxyAuth() (string, string) {
 }
 
 func (c *config) OpenAIProxyURL() string {
-	// 如果设置了AI专用代理，则使用它，否则使用通用代理
 	if c.openaiProxyURL != "" {
 		return c.openaiProxyURL
 	}
@@ -113,7 +106,6 @@ func (c *config) OpenAIProxyURL() string {
 }
 
 func (c *config) MapsProxyURL() string {
-	// 如果设置了Maps专用代理，则使用它，否则使用通用代理
 	if c.mapsProxyURL != "" {
 		return c.mapsProxyURL
 	}
@@ -135,20 +127,19 @@ func New() Config {
 	}
 
 	cfg := &config{
-		serverAddress:    getEnvOrDefault("SERVER_ADDRESS", ":8080"),
-		redisAddress:     getEnvOrDefault("REDIS_ADDRESS", "localhost:6379"),
-		redisPassword:    os.Getenv("REDIS_PASSWORD"),
-		openAIAPIKey:     os.Getenv("AI_API_KEY"),
+		serverAddress:  getEnvOrDefault("SERVER_ADDRESS", ":8080"),
+		sqlitePath:     getEnvOrDefault("SQLITE_PATH", "data/streetview.db"),
+		openAIAPIKey:   os.Getenv("AI_API_KEY"),
 		googleMapsAPIKey: os.Getenv("GOOGLE_API_KEY"),
-		enableOpenAI:     getEnvOrDefault("ENABLE_AI", "true") == "true",
-		enableGoogleAPI:  getEnvOrDefault("ENABLE_GOOGLE_API", "true") == "true",
-		proxyURL:         os.Getenv("PROXY_URL"),
-		proxyType:        getEnvOrDefault("PROXY_TYPE", "http"),
-		proxyUser:        os.Getenv("PROXY_USER"),
-		proxyPass:        os.Getenv("PROXY_PASS"),
-		openaiProxyURL:   os.Getenv("AI_PROXY_URL"),
-		mapsProxyURL:     os.Getenv("MAPS_PROXY_URL"),
-		skipProxyCheck:   false,
+		enableOpenAI:   getEnvOrDefault("ENABLE_AI", "true") == "true",
+		enableGoogleAPI: getEnvOrDefault("ENABLE_GOOGLE_API", "true") == "true",
+		proxyURL:       os.Getenv("PROXY_URL"),
+		proxyType:      getEnvOrDefault("PROXY_TYPE", "http"),
+		proxyUser:      os.Getenv("PROXY_USER"),
+		proxyPass:      os.Getenv("PROXY_PASS"),
+		openaiProxyURL: os.Getenv("AI_PROXY_URL"),
+		mapsProxyURL:   os.Getenv("MAPS_PROXY_URL"),
+		skipProxyCheck: false,
 	}
 
 	// 加载安全配置

@@ -40,4 +40,9 @@
 /* 确保滚动条在所有状态下都可见 */
 .sidebar-scroll::-webkit-scrollbar-corner {
     background: #f0f0f0;
-} 
+}
+
+/* 侧边栏操作按钮悬停样式 */
+.new-sidebar button:hover {
+    background: rgba(0, 0, 0, 0.05);
+}

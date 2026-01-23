@@ -15,11 +15,11 @@ type Location struct {
 	Country          string `json:"country"`           // 国家
 	City             string `json:"city"`              // 城市
 
-	// AI 生成的内容
-	AIDescription        string    `json:"ai_description"`        // AI 生成的描述
-	DescriptionLanguage  string    `json:"description_language"`  // 描述语言
-	DescriptionGenerated time.Time `json:"description_generated"` // 描述生成时间
-	ConversationHistory  string    `json:"conversation_history"`  // 对话历史（JSON格式）
+	// AI 描述结果
+	AIDescriptionEN   string     `json:"ai_description_en,omitempty"`    // 英文描述
+	AIDescriptionZH   string     `json:"ai_description_zh,omitempty"`    // 中文描述
+	AIDescriptionENAt *time.Time `json:"ai_description_en_at,omitempty"` // 英文描述生成时间
+	AIDescriptionZHAt *time.Time `json:"ai_description_zh_at,omitempty"` // 中文描述生成时间
 
 	// 元数据
 	CreatedAt time.Time `json:"created_at"` // 创建时间

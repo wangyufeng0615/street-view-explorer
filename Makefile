@@ -1,3 +1,11 @@
+SHELL := /bin/bash
+
+LOG_DIR := logs/dev
+BACKEND_LOG := $(LOG_DIR)/backend.log
+FRONTEND_LOG := $(LOG_DIR)/frontend.log
+BACKEND_PID := $(LOG_DIR)/backend.pid
+FRONTEND_PID := $(LOG_DIR)/frontend.pid
+
 .PHONY: deploy clean dev-start dev-stop backend-dev frontend-dev
 
 # 部署命令
@@ -14,3 +22,73 @@ deploy:
 clean:
 	docker compose down -v
 	docker compose rm -f
+
+# 启动本地开发环境（backend + frontend）
+dev-start:
+	@mkdir -p $(LOG_DIR)
+	@$(MAKE) backend-dev
+	@$(MAKE) frontend-dev
+	@echo "开发环境已启动"
+	@echo "Backend 日志: $(BACKEND_LOG)"
+	@echo "Frontend 日志: $(FRONTEND_LOG)"
+
+# 停止本地开发环境
+dev-stop:
+	@mkdir -p $(LOG_DIR)
+	@if [ -f "$(BACKEND_PID)" ]; then \
+		pid=$$(cat "$(BACKEND_PID)"); \
+		if kill -0 $$pid 2>/dev/null; then \
+			echo "停止 Backend (PID: $$pid)"; \
+			kill $$pid >/dev/null 2>&1 || true; \
+			sleep 1; \
+			if kill -0 $$pid 2>/dev/null; then \
+				kill -9 $$pid >/dev/null 2>&1 || true; \
+			fi; \
+		else \
+			echo "Backend 进程不存在，清理 PID 文件"; \
+		fi; \
+		rm -f "$(BACKEND_PID)"; \
+	else \
+		echo "Backend 未运行"; \
+	fi
+	@if [ -f "$(FRONTEND_PID)" ]; then \
+		pid=$$(cat "$(FRONTEND_PID)"); \
+		if kill -0 $$pid 2>/dev/null; then \
+			echo "停止 Frontend (PID: $$pid)"; \
+			kill $$pid >/dev/null 2>&1 || true; \
+			sleep 1; \
+			if kill -0 $$pid 2>/dev/null; then \
+				kill -9 $$pid >/dev/null 2>&1 || true; \
+			fi; \
+		else \
+			echo "Frontend 进程不存在，清理 PID 文件"; \
+		fi; \
+		rm -f "$(FRONTEND_PID)"; \
+	else \
+		echo "Frontend 未运行"; \
+	fi
+	@echo "开发环境已停止"
+
+# 单独启动 backend
+backend-dev:
+	@mkdir -p $(LOG_DIR)
+	@if [ -f "$(BACKEND_PID)" ] && kill -0 $$(cat "$(BACKEND_PID)") 2>/dev/null; then \
+		echo "Backend 已在运行 (PID: $$(cat "$(BACKEND_PID)"))"; \
+	else \
+		rm -f "$(BACKEND_PID)"; \
+		echo "启动 Backend..."; \
+		(cd backend && nohup go run cmd/server/main.go > ../$(BACKEND_LOG) 2>&1 & echo $$! > ../$(BACKEND_PID)); \
+		echo "Backend 已启动 (PID: $$(cat "$(BACKEND_PID)"))"; \
+	fi
+
+# 单独启动 frontend
+frontend-dev:
+	@mkdir -p $(LOG_DIR)
+	@if [ -f "$(FRONTEND_PID)" ] && kill -0 $$(cat "$(FRONTEND_PID)") 2>/dev/null; then \
+		echo "Frontend 已在运行 (PID: $$(cat "$(FRONTEND_PID)"))"; \
+	else \
+		rm -f "$(FRONTEND_PID)"; \
+		echo "启动 Frontend..."; \
+		(cd frontend && nohup yarn dev > ../$(FRONTEND_LOG) 2>&1 & echo $$! > ../$(FRONTEND_PID)); \
+		echo "Frontend 已启动 (PID: $$(cat "$(FRONTEND_PID)"))"; \
+	fi

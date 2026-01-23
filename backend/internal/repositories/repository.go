@@ -1,24 +1,26 @@
 package repositories
 
 import (
+	"time"
+
 	"github.com/my-streetview-project/backend/internal/models"
-	"github.com/redis/go-redis/v9"
 )
 
+// Repository 数据存储接口
 type Repository interface {
-	// 保存新的位置记录
+	// 位置相关
 	SaveLocation(location models.Location) error
-
-	// 获取位置记录
-	GetLocationByPanoID(panoID string) (models.Location, error)
-
+	GetLocationByPanoID(panoID string) (*models.Location, error)
+	UpdateAIDescription(panoID, language, description string) error
 
 	// 探索偏好相关
 	SaveExplorationPreference(sessionID string, pref models.ExplorationPreference) error
 	GetExplorationPreference(sessionID string) (*models.ExplorationPreference, error)
 	DeleteExplorationPreference(sessionID string) error
+}
 
-
-	// 获取 Redis 客户端
-	GetRedisClient() *redis.Client
+// RateLimiter 限流器接口
+type RateLimiter interface {
+	CheckAndIncrement(key string, maxRequests int, window time.Duration) (allowed bool, remaining int, err error)
+	GetCount(key string) (int64, error)
 }

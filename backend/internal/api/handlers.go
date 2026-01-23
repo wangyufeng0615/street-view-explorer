@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -15,7 +16,10 @@ type Handlers struct {
 	aiService       *services.AIService
 }
 
-func NewHandlers(locationService *services.LocationService, aiService *services.AIService) *Handlers {
+func NewHandlers(
+	locationService *services.LocationService,
+	aiService *services.AIService,
+) *Handlers {
 	return &Handlers{
 		locationService: locationService,
 		aiService:       aiService,
@@ -24,15 +28,8 @@ func NewHandlers(locationService *services.LocationService, aiService *services.
 
 // 获取随机位置
 func (h *Handlers) GetRandomLocation(c *gin.Context) {
-	// 从 gin.Context 获取会话 ID (由 SessionMiddleware 设置)
-	sessionIDInterface, exists := c.Get("sessionID")
-	if !exists {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "无法获取会话ID"})
-		return
-	}
-	sessionID, ok := sessionIDInterface.(string)
-	if !ok || sessionID == "" {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "无效的会话ID格式"})
+	sessionID := h.getSessionID(c)
+	if sessionID == "" {
 		return
 	}
 
@@ -83,7 +80,7 @@ func (h *Handlers) GetLocationDescription(c *gin.Context) {
 	startTime := time.Now()
 	logger := utils.APILogger()
 
-	desc, err := h.aiService.GetDescriptionForLocation(loc, language)
+	desc, err := h.aiService.GetDescriptionForLocation(*loc, language)
 	if err != nil {
 		duration := time.Since(startTime)
 		statusCode := http.StatusInternalServerError
@@ -125,6 +122,15 @@ func (h *Handlers) GetLocationDescription(c *gin.Context) {
 		return
 	}
 
+	// 保存 AI 描述到数据库
+	if err := h.locationService.UpdateAIDescription(panoID, language, desc); err != nil {
+		// 保存失败不影响返回结果，只记录日志
+		logger.Error("save_description_failed", "Failed to save AI description", err, map[string]interface{}{
+			"pano_id":  panoID,
+			"language": language,
+		})
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data": gin.H{
@@ -161,7 +167,7 @@ func (h *Handlers) GetLocationDetailedDescription(c *gin.Context) {
 	startTime := time.Now()
 	logger := utils.APILogger()
 
-	desc, err := h.aiService.GetDetailedDescriptionForLocation(loc, language)
+	desc, err := h.aiService.GetDetailedDescriptionForLocation(*loc, language)
 	if err != nil {
 		duration := time.Since(startTime)
 		statusCode := http.StatusInternalServerError
@@ -200,6 +206,11 @@ func (h *Handlers) GetLocationDetailedDescription(c *gin.Context) {
 
 // SetExplorationPreference 设置探索偏好
 func (h *Handlers) SetExplorationPreference(c *gin.Context) {
+	sessionID := h.getSessionID(c)
+	if sessionID == "" {
+		return
+	}
+
 	var req struct {
 		Interest string `json:"interest" binding:"required"`
 	}
@@ -209,18 +220,6 @@ func (h *Handlers) SetExplorationPreference(c *gin.Context) {
 			"success": false,
 			"error":   "无效的请求参数",
 		})
-		return
-	}
-
-	// 从 gin.Context 获取会话 ID (由 SessionMiddleware 设置)
-	sessionIDInterface, exists := c.Get("sessionID")
-	if !exists {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "无法获取会话ID"})
-		return
-	}
-	sessionID, ok := sessionIDInterface.(string)
-	if !ok || sessionID == "" {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "无效的会话ID格式"})
 		return
 	}
 
@@ -262,7 +261,7 @@ func (h *Handlers) SetExplorationPreference(c *gin.Context) {
 		"success": true,
 		"message": successMsg,
 	}
-	
+
 	// 如果有速率限制信息，添加到响应中
 	if userRemaining, exists := c.Get("userRateLimitRemaining"); exists {
 		response["rate_limit"] = gin.H{
@@ -278,15 +277,8 @@ func (h *Handlers) SetExplorationPreference(c *gin.Context) {
 
 // DeleteExplorationPreference 删除探索偏好
 func (h *Handlers) DeleteExplorationPreference(c *gin.Context) {
-	// 从 gin.Context 获取会话 ID (由 SessionMiddleware 设置)
-	sessionIDInterface, exists := c.Get("sessionID")
-	if !exists {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "无法获取会话ID"})
-		return
-	}
-	sessionID, ok := sessionIDInterface.(string)
-	if !ok || sessionID == "" {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "无效的会话ID格式"})
+	sessionID := h.getSessionID(c)
+	if sessionID == "" {
 		return
 	}
 
@@ -318,4 +310,43 @@ func (h *Handlers) DeleteExplorationPreference(c *gin.Context) {
 		"success": true,
 		"message": successMsg,
 	})
+}
+
+// ==================== 辅助方法 ====================
+
+// getSessionID 从上下文获取 sessionID，如果失败则返回空字符串并设置错误响应
+func (h *Handlers) getSessionID(c *gin.Context) string {
+	sessionIDInterface, exists := c.Get("sessionID")
+	if !exists {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   "无法获取会话ID",
+		})
+		return ""
+	}
+	sessionID, ok := sessionIDInterface.(string)
+	if !ok || sessionID == "" {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   "无效的会话ID格式",
+		})
+		return ""
+	}
+	return sessionID
+}
+
+// parseIntParam 解析整数参数，失败则返回默认值
+func parseIntParam(c *gin.Context, key string, defaultValue int) int {
+	value := c.DefaultQuery(key, "")
+	if value == "" {
+		return defaultValue
+	}
+	var result int
+	if _, err := fmt.Sscanf(value, "%d", &result); err != nil {
+		return defaultValue
+	}
+	if result < 1 {
+		return defaultValue
+	}
+	return result
 }

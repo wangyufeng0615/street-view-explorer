@@ -230,6 +230,28 @@ func (s *MapsService) HasStreetView(ctx context.Context, latitude, longitude flo
 	return true, 40.758896, -73.985130, "default-location"
 }
 
+// GeocodeAddress 将地址/地名转为坐标
+func (s *MapsService) GeocodeAddress(ctx context.Context, address string) (float64, float64, string, error) {
+	req := &maps.GeocodingRequest{
+		Address: address,
+	}
+
+	resp, err := s.client.Geocode(ctx, req)
+	if err != nil {
+		return 0, 0, "", fmt.Errorf("Geocoding 请求失败: %w", err)
+	}
+
+	if len(resp) == 0 {
+		return 0, 0, "", fmt.Errorf("未找到地点: %s", address)
+	}
+
+	lat := resp[0].Geometry.Location.Lat
+	lng := resp[0].Geometry.Location.Lng
+	formattedAddr := resp[0].FormattedAddress
+
+	return lat, lng, formattedAddr, nil
+}
+
 func (s *MapsService) GetLocationInfo(ctx context.Context, latitude, longitude float64, language string) (map[string]string, error) {
 	// 创建 Geocoding 请求
 	req := &maps.GeocodingRequest{

@@ -19,7 +19,7 @@ import (
 
 const (
 	apiEndpoint = "https://openrouter.ai/api/v1/chat/completions"
-	model       = "google/gemini-3-flash-preview"
+	model       = "openai/gpt-5.4-nano"
 	maxRetries  = 2
 	timeout     = 15 * time.Second
 

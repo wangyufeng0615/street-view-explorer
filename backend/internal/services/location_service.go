@@ -25,7 +25,7 @@ func NewLocationService(repo repositories.Repository, ai *AIService, maps *MapsS
 	}
 }
 
-func (ls *LocationService) GetLocation(panoID string) (models.Location, error) {
+func (ls *LocationService) GetLocation(panoID string) (*models.Location, error) {
 	return ls.repo.GetLocationByPanoID(panoID)
 }
 
@@ -161,7 +161,7 @@ func (ls *LocationService) SetExplorationPreference(sessionID, interest string) 
 		LastUsedAt: time.Now(),
 	}
 
-	// 保存到 Redis
+	// 保存到数据库
 	if err := ls.repo.SaveExplorationPreference(sessionID, pref); err != nil {
 		return fmt.Errorf("保存探索偏好失败: %w", err)
 	}
@@ -236,4 +236,9 @@ func validateRegions(regions []models.Region) error {
 // DeleteExplorationPreference 删除用户的探索偏好
 func (ls *LocationService) DeleteExplorationPreference(sessionID string) error {
 	return ls.repo.DeleteExplorationPreference(sessionID)
+}
+
+// UpdateAIDescription 更新位置的 AI 描述
+func (ls *LocationService) UpdateAIDescription(panoID, language, description string) error {
+	return ls.repo.UpdateAIDescription(panoID, language, description)
 }
