@@ -12,6 +12,7 @@ func SetupRoutes(r *gin.Engine, h *Handlers) {
 		locations := v1.Group("/locations")
 		{
 			locations.GET("/random", h.GetRandomLocation)
+			locations.GET("/lookup", h.LookupLocation)
 			locations.GET("/:panoId/description", h.GetLocationDescription)
 			locations.GET("/:panoId/detailed-description", h.GetLocationDetailedDescription)
 		}

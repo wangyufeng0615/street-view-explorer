@@ -61,20 +61,16 @@ func NewSQLiteRepository(cfg SQLiteConfig) (*SQLiteRepository, error) {
 // migrate 创建数据库表
 func (r *SQLiteRepository) migrate() error {
 	schema := `
-	CREATE TABLE IF NOT EXISTS locations (
-		pano_id TEXT PRIMARY KEY,
-		latitude REAL NOT NULL,
-		longitude REAL NOT NULL,
-		formatted_address TEXT DEFAULT '',
-		country TEXT DEFAULT '',
-		city TEXT DEFAULT '',
-		ai_description_en TEXT DEFAULT '',
-		ai_description_zh TEXT DEFAULT '',
-		ai_description_en_at DATETIME,
-		ai_description_zh_at DATETIME,
-		is_mock INTEGER DEFAULT 0,
-		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-	);
+		CREATE TABLE IF NOT EXISTS locations (
+			pano_id TEXT PRIMARY KEY,
+			latitude REAL NOT NULL,
+			longitude REAL NOT NULL,
+			formatted_address TEXT DEFAULT '',
+			country TEXT DEFAULT '',
+			city TEXT DEFAULT '',
+			is_mock INTEGER DEFAULT 0,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);
 
 	CREATE TABLE IF NOT EXISTS exploration_preferences (
 		session_id TEXT PRIMARY KEY,
@@ -143,20 +139,16 @@ func (r *SQLiteRepository) SaveLocation(location models.Location) error {
 func (r *SQLiteRepository) GetLocationByPanoID(panoID string) (*models.Location, error) {
 	row := r.db.QueryRow(`
 		SELECT pano_id, latitude, longitude, formatted_address, country, city,
-		       ai_description_en, ai_description_zh, ai_description_en_at, ai_description_zh_at,
 		       is_mock, created_at
 		FROM locations WHERE pano_id = ?
 	`, panoID)
 
 	var loc models.Location
 	var isMock int
-	var descENAt, descZHAt sql.NullTime
 
 	err := row.Scan(
 		&loc.PanoID, &loc.Latitude, &loc.Longitude,
 		&loc.FormattedAddress, &loc.Country, &loc.City,
-		&loc.AIDescriptionEN, &loc.AIDescriptionZH,
-		&descENAt, &descZHAt,
 		&isMock, &loc.CreatedAt,
 	)
 	if err == sql.ErrNoRows {
@@ -167,34 +159,8 @@ func (r *SQLiteRepository) GetLocationByPanoID(panoID string) (*models.Location,
 	}
 
 	loc.IsMock = isMock != 0
-	if descENAt.Valid {
-		loc.AIDescriptionENAt = &descENAt.Time
-	}
-	if descZHAt.Valid {
-		loc.AIDescriptionZHAt = &descZHAt.Time
-	}
 
 	return &loc, nil
-}
-
-func (r *SQLiteRepository) UpdateAIDescription(panoID, language, description string) error {
-	now := time.Now()
-
-	var query string
-	switch language {
-	case "en":
-		query = "UPDATE locations SET ai_description_en = ?, ai_description_en_at = ? WHERE pano_id = ?"
-	case "zh":
-		query = "UPDATE locations SET ai_description_zh = ?, ai_description_zh_at = ? WHERE pano_id = ?"
-	default:
-		return fmt.Errorf("不支持的语言: %s", language)
-	}
-
-	_, err := r.db.Exec(query, description, now, panoID)
-	if err != nil {
-		return fmt.Errorf("更新 AI 描述失败: %w", err)
-	}
-	return nil
 }
 
 // ==================== 探索偏好相关方法 ====================

@@ -124,7 +124,6 @@ func (s *MapsService) getHTTPClient() *http.Client {
 // 检查坐标是否有街景可用，并返回街景坐标
 // 使用兜底措施确保总是能找到可用的街景
 func (s *MapsService) HasStreetView(ctx context.Context, latitude, longitude float64, hasInterest bool) (bool, float64, float64, string) {
-	// 定义搜索半径序列，包含兜底措施
 	var searchRadii []int
 	if hasInterest {
 		searchRadii = []int{100, 5000, 50000, 500000, 5000000} // 0.1km, 5km, 50km, 500km, 5000km
@@ -132,7 +131,16 @@ func (s *MapsService) HasStreetView(ctx context.Context, latitude, longitude flo
 		searchRadii = []int{10000, 50000, 200000, 1000000, 5000000} // 10km, 50km, 200km, 1000km, 5000km
 	}
 
-	// 逐步增加搜索半径，最后的大半径作为兜底
+	return s.findStreetView(ctx, latitude, longitude, searchRadii, true)
+}
+
+// FindNearbyStreetView 在有限半径内查找街景，不做全局兜底。
+func (s *MapsService) FindNearbyStreetView(ctx context.Context, latitude, longitude float64) (bool, float64, float64, string) {
+	searchRadii := []int{100, 500, 1000, 5000, 10000}
+	return s.findStreetView(ctx, latitude, longitude, searchRadii, false)
+}
+
+func (s *MapsService) findStreetView(ctx context.Context, latitude, longitude float64, searchRadii []int, allowGlobalFallback bool) (bool, float64, float64, string) {
 	for _, radius := range searchRadii {
 		streetViewURL := fmt.Sprintf(
 			"https://maps.googleapis.com/maps/api/streetview/metadata"+
@@ -185,6 +193,10 @@ func (s *MapsService) HasStreetView(ctx context.Context, latitude, longitude flo
 		if result.Status == "OK" {
 			return true, result.Location.Lat, result.Location.Lng, result.PanoId
 		}
+	}
+
+	if !allowGlobalFallback {
+		return false, 0, 0, ""
 	}
 
 	// 如果所有半径都失败了，尝试最后的兜底策略：去除坐标限制

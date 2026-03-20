@@ -233,12 +233,40 @@ func validateRegions(regions []models.Region) error {
 	return nil
 }
 
+// LookupLocation 根据坐标查找或创建位置
+func (ls *LocationService) LookupLocation(lat, lng float64, language string) (*models.Location, error) {
+	ctx := context.Background()
+
+	// URL lookup 只接受附近街景，不做全局兜底跳转。
+	hasStreetView, validLat, validLng, panoId := ls.maps.FindNearbyStreetView(ctx, lat, lng)
+	if !hasStreetView {
+		return nil, fmt.Errorf("该坐标附近没有可用街景")
+	}
+
+	locationInfo, err := ls.maps.GetLocationInfo(ctx, validLat, validLng, language)
+	if err != nil {
+		return nil, fmt.Errorf("获取位置信息失败: %w", err)
+	}
+
+	location := models.Location{
+		PanoID:    panoId,
+		CreatedAt: time.Now(),
+		IsMock:    false,
+	}
+	location.Latitude = validLat
+	location.Longitude = validLng
+	location.Country = locationInfo["country"]
+	location.City = locationInfo["city"]
+	location.FormattedAddress = locationInfo["formatted_address"]
+
+	if err := ls.repo.SaveLocation(location); err != nil {
+		return nil, fmt.Errorf("保存位置记录失败: %w", err)
+	}
+
+	return &location, nil
+}
+
 // DeleteExplorationPreference 删除用户的探索偏好
 func (ls *LocationService) DeleteExplorationPreference(sessionID string) error {
 	return ls.repo.DeleteExplorationPreference(sessionID)
-}
-
-// UpdateAIDescription 更新位置的 AI 描述
-func (ls *LocationService) UpdateAIDescription(panoID, language, description string) error {
-	return ls.repo.UpdateAIDescription(panoID, language, description)
 }

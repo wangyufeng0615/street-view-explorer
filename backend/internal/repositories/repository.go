@@ -11,7 +11,6 @@ type Repository interface {
 	// 位置相关
 	SaveLocation(location models.Location) error
 	GetLocationByPanoID(panoID string) (*models.Location, error)
-	UpdateAIDescription(panoID, language, description string) error
 
 	// 探索偏好相关
 	SaveExplorationPreference(sessionID string, pref models.ExplorationPreference) error
