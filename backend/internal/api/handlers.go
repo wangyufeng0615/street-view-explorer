@@ -2,7 +2,10 @@ package api
 
 import (
 	"fmt"
+	"math"
 	"net/http"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -10,6 +13,42 @@ import (
 	"github.com/my-streetview-project/backend/internal/services"
 	"github.com/my-streetview-project/backend/internal/utils"
 )
+
+var (
+	markdownLinkLineRegex = regexp.MustCompile(`^\[([^\]]+)\]\((.+)\)$`)
+	trailingSpacesRegex   = regexp.MustCompile(`[ \t]+\n`)
+	excessiveNewlines     = regexp.MustCompile(`\n{3,}`)
+)
+
+// sanitizeDescription 移除模型偶发输出在结尾的 markdown 链接行，保留正文。
+func sanitizeDescription(text string) string {
+	normalized := strings.ReplaceAll(text, "\r\n", "\n")
+	lines := strings.Split(normalized, "\n")
+	end := len(lines)
+
+	for end > 0 {
+		line := strings.TrimSpace(lines[end-1])
+		if line == "" {
+			end--
+			continue
+		}
+
+		candidate := line
+		if strings.HasPrefix(candidate, "(") && strings.HasSuffix(candidate, ")") {
+			candidate = strings.TrimSpace(candidate[1 : len(candidate)-1])
+		}
+
+		if !markdownLinkLineRegex.MatchString(candidate) {
+			break
+		}
+		end--
+	}
+
+	cleaned := strings.TrimSpace(strings.Join(lines[:end], "\n"))
+	cleaned = trailingSpacesRegex.ReplaceAllString(cleaned, "\n")
+	cleaned = excessiveNewlines.ReplaceAllString(cleaned, "\n\n")
+	return cleaned
+}
 
 type Handlers struct {
 	locationService *services.LocationService
@@ -104,8 +143,10 @@ func (h *Handlers) GetLocationDescription(c *gin.Context) {
 		return
 	}
 
+	cleanDesc := sanitizeDescription(desc)
+
 	// 验证描述内容是否有效
-	if desc == "" || strings.TrimSpace(desc) == "" {
+	if cleanDesc == "" || strings.TrimSpace(cleanDesc) == "" {
 		duration := time.Since(startTime)
 		logger.Error("empty_description", "AI generated empty description", nil, map[string]interface{}{
 			"pano_id":     panoID,
@@ -122,19 +163,10 @@ func (h *Handlers) GetLocationDescription(c *gin.Context) {
 		return
 	}
 
-	// 保存 AI 描述到数据库
-	if err := h.locationService.UpdateAIDescription(panoID, language, desc); err != nil {
-		// 保存失败不影响返回结果，只记录日志
-		logger.Error("save_description_failed", "Failed to save AI description", err, map[string]interface{}{
-			"pano_id":  panoID,
-			"language": language,
-		})
-	}
-
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data": gin.H{
-			"description": desc,
+			"description": cleanDesc,
 			"language":    language,
 			"duration":    time.Since(startTime).String(),
 		},
@@ -194,14 +226,94 @@ func (h *Handlers) GetLocationDetailedDescription(c *gin.Context) {
 		return
 	}
 
+	cleanDesc := sanitizeDescription(desc)
+	if cleanDesc == "" || strings.TrimSpace(cleanDesc) == "" {
+		duration := time.Since(startTime)
+		logger.Error("empty_detailed_description", "AI generated empty detailed description", nil, map[string]interface{}{
+			"pano_id":     panoID,
+			"language":    language,
+			"duration":    duration.String(),
+			"desc_length": len(desc),
+		})
+
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success":  false,
+			"error":    "AI生成的详细描述为空，请重试",
+			"duration": duration.String(),
+		})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data": gin.H{
-			"description": desc,
+			"description": cleanDesc,
 			"language":    language,
 			"duration":    time.Since(startTime).String(),
 		},
 	})
+}
+
+// LookupLocation 根据坐标查找位置
+func (h *Handlers) LookupLocation(c *gin.Context) {
+	latStr := c.Query("lat")
+	lngStr := c.Query("lng")
+	language := c.DefaultQuery("lang", "en")
+
+	if latStr == "" || lngStr == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "Missing lat or lng parameter",
+		})
+		return
+	}
+
+	lat, err := parseCoordinate(latStr, -90, 90)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "Invalid lat parameter",
+		})
+		return
+	}
+	lng, err := parseCoordinate(lngStr, -180, 180)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "Invalid lng parameter",
+		})
+		return
+	}
+
+	loc, err := h.locationService.LookupLocation(lat, lng, language)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data": gin.H{
+			"location": loc,
+		},
+	})
+}
+
+func parseCoordinate(raw string, min, max float64) (float64, error) {
+	value, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
+	if err != nil {
+		return 0, err
+	}
+	if math.IsNaN(value) || math.IsInf(value, 0) {
+		return 0, strconv.ErrSyntax
+	}
+	if value < min || value > max {
+		return 0, strconv.ErrRange
+	}
+	return value, nil
 }
 
 // SetExplorationPreference 设置探索偏好

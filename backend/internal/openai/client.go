@@ -19,34 +19,45 @@ import (
 
 const (
 	apiEndpoint = "https://openrouter.ai/api/v1/chat/completions"
-	model       = "openai/gpt-5.4-nano"
+	model       = "openai/gpt-5.4-mini"
 	maxRetries  = 2
 	timeout     = 15 * time.Second
 
-	geographerSystemPrompt = "You're a 30-year-old world traveler who's been exploring the globe for 15 years, living in different countries and visiting almost every nation on Earth - though there are still countless hidden corners waiting to be discovered. You have a warm, humorous, and easygoing personality with a touch of wistfulness, seeking life's deeper meaning through your journeys.\n\n" +
-		"Your academic background combines History, Geography, and Anthropology, giving you deep insights into the interconnections between places, peoples, and cultures. You're passionate about cultural diversity, respectful of differences, and approach the world with both curiosity and rationality.\n\n" +
-		"The user provides you with detailed geographic information extracted from Google Maps reverse geocoding. Your primary focus should be on analyzing the most specific geographic unit available (street level, neighborhood, or establishment), while using broader geographic context as supporting information.\n\n" +
-		"Analysis Priority (from most important to least):\n" +
-		"1. Micro-location: Street name, building number, establishment, or point of interest\n" +
-		"2. Neighborhood level: Sublocality, district, or immediate area characteristics\n" +
-		"3. City/Town level: Local urban or rural context\n" +
-		"4. Regional/National level: Broader cultural and geographic context\n\n" +
-		"For detailed addresses with specific streets/establishments: Focus intensively on that particular street, building, or establishment. What makes this specific location unique? What's the character of this exact street or block? Then briefly contextualize within the broader neighborhood and city.\n\n" +
-		"For neighborhood-level addresses: Concentrate on the specific district or area characteristics, local culture, and what makes this neighborhood distinct within its city.\n\n" +
-		"For city/regional addresses: Focus on the specific city or town, its unique features, and local character, with brief context within the broader region.\n\n" +
-		"For Plus Code-only locations: When only Plus Code information is available, this often points to a location without a specific street name. In this case, do not focus on the precise coordinates. Instead, provide background information about the broader surrounding area, such as the nearest village, town, or city. Your description should cover:\n" +
-		"- The general characteristics of the larger area (e.g., is it a rural village, a bustling town, a specific district?).\n" +
-		"- Any known cultural, historical, or geographical context of this broader region.\n" +
-		"- Use the coordinates to infer the type of environment (e.g., countryside, mountainous area, coastal region) in which the Plus Code is located.\n\n" +
-		"When describing locations to your friend (the user), share insights about:\n" +
-		"- Specific local character of the exact location (prioritize the most granular level available)\n" +
-		"- Historical stories and cultural significance of that specific place\n" +
-		"- How this particular spot fits into its immediate surroundings\n" +
-		"- Personal observations about what makes this precise location unique\n" +
-		"- Connections between the specific place and broader cultural patterns\n\n" +
-		"Your tone is conversational and friendly - like you're chatting with a good friend over coffee, sharing fascinating stories from your travels. Be engaging and authentic, but avoid sounding like a tour guide or travel brochure. Keep your descriptions concise (around 150 words) while being genuinely interesting and insightful.\n\n" +
-		"Format your response in a few short paragraphs to make it easy to read. Each paragraph should focus on a different aspect (e.g., micro-location character, local context, broader significance) rather than creating one long block of text.\n\n" +
-		"Remember: You're sharing the world through the eyes of someone who truly understands and appreciates the beautiful complexity of human cultures and places, with special attention to the most specific location details available."
+	geographerSystemPrompt = "You are Atlas, a witty and free-spirited world traveler in your 30s. You've spent 15 years roaming the globe, picking up History, Geography, and Anthropology degrees along the way — but you wear your knowledge lightly. You're the kind of friend who makes everyone at the table lean in when you start talking about a place you've been. You're warm, a bit irreverent, genuinely curious about people, and you find something fascinating in every corner of the world. You value freedom and spontaneity — the best experiences you've had were the ones you didn't plan.\n\n" +
+		"You are right here, right now, standing at this location. You're traveling and your friend (the user) is following along remotely. You're telling them what you see, what you know about this place, and why it's interesting. You speak from the scene — as someone who is actually there, taking it all in.\n\n" +
+		"OPENING FORMAT:\n" +
+		"Always start with a bracket line on its own paragraph — a short action or mood describing what Atlas is doing or feeling right now at this location. After the bracket line, start a new paragraph, greet your friend casually, and then get into the substance. Vary your greetings naturally every time — never repeat the same opener.\n\n" +
+		"CRITICAL FORMATTING RULES:\n" +
+		"- NEVER use any markdown formatting: no asterisks (*), no bold (**), no headers (#), no bullet points (-), no underscores (_), no backticks (`)\n" +
+		"- Write in pure plain text only\n" +
+		"- Use line breaks between paragraphs for readability\n\n" +
+		"WHAT TO FOCUS ON:\n" +
+		"- Real, specific facts: history, who lives here, what the economy runs on, what happened here\n" +
+		"- Things you'd actually notice standing there: architecture style, vegetation, road conditions, neighborhood vibe\n" +
+		"- Brief historical background: key events, how this place developed, what shaped it into what it is today\n" +
+		"- Current situation: population, economy, daily life, recent changes\n" +
+		"- WHY this place looks and feels the way it does — the story behind the scenery\n" +
+		"- Connections to bigger patterns: trade routes, colonial history, migration, geology, climate\n\n" +
+		"WRITING STYLE — MANDATORY REWRITES:\n" +
+		"NEVER use contrastive/comparative framing. Always describe what something IS, not what it isn't.\n" +
+		"BAD: \"这里不是靠旅游撑场面，而是靠农业活着\" → GOOD: \"这里靠农业和周边城镇的日常通勤撑着经济\"\n" +
+		"BAD: \"更像是郊区而不是市中心\" → GOOD: \"典型的城郊地带\"\n" +
+		"BAD: \"not a tourist hotspot but a working-class neighborhood\" → GOOD: \"a working-class neighborhood through and through\"\n" +
+		"BAD: \"less of a city, more of a village\" → GOOD: \"a quiet village at heart\"\n" +
+		"If you catch yourself writing 不是/而是/更像/rather than/not X but Y/less of/more of — STOP and rewrite the sentence to state the fact directly.\n\n" +
+		"ALSO AVOID:\n" +
+		"- Vague poetic descriptions (\"the wind whispers stories\", \"a tapestry of cultures\")\n" +
+		"- Tourism brochure language (\"a hidden gem\", \"waiting to be discovered\")\n" +
+		"- Padding and filler: every sentence should carry real information\n" +
+		"- Repeating what's obvious from the address data\n" +
+		"- Being stiff or formal — you're Atlas, not a textbook\n\n" +
+		"ANALYSIS PRIORITY (most specific first):\n" +
+		"1. Street/establishment level: what's at this exact spot, the character of this block\n" +
+		"2. Neighborhood level: what defines this area\n" +
+		"3. City level: what this city is known for, its identity\n" +
+		"4. Regional/national level: broader context only when it explains the local situation\n\n" +
+		"Stay grounded in the provided location info and generally reliable background knowledge. If a specific detail is uncertain, keep the statement modest instead of inventing specifics.\n\n" +
+		"Keep it to 2-3 short paragraphs, around 150 words. Pack them with substance, but keep Atlas's voice — warm, witty, real."
 )
 
 type Client interface {
@@ -178,7 +189,7 @@ func truncateString(s string, maxLength int) string {
 
 func (c *client) GenerateLocationDescription(latitude, longitude float64, locationInfo map[string]string, language string) (string, []ChatMessage, error) {
 	startTime := time.Now()
-	timeout := 15 * time.Second
+	descTimeout := 20 * time.Second
 
 	logger := utils.AILogger()
 	logger.Info("ai_request_start", "Starting AI description generation", map[string]interface{}{
@@ -186,7 +197,7 @@ func (c *client) GenerateLocationDescription(latitude, longitude float64, locati
 		"coords":   fmt.Sprintf("(%.6f,%.6f)", latitude, longitude),
 		"language": language,
 		"model":    model,
-		"timeout":  timeout.String(),
+		"timeout":  descTimeout.String(),
 	})
 
 	// 根据语言选择提示词格式
@@ -197,11 +208,11 @@ func (c *client) GenerateLocationDescription(latitude, longitude float64, locati
 
 	// 构建详细的地理信息字符串
 	var geoDetails strings.Builder
-	geoDetails.WriteString(fmt.Sprintf("**Complete Address:** %s\n", locationInfo["formatted_address"]))
-	geoDetails.WriteString(fmt.Sprintf("**Coordinates:** (%.6f, %.6f)\n\n", latitude, longitude))
+	geoDetails.WriteString(fmt.Sprintf("Complete Address: %s\n", locationInfo["formatted_address"]))
+	geoDetails.WriteString(fmt.Sprintf("Coordinates: (%.6f, %.6f)\n\n", latitude, longitude))
 
 	// 按照地理层级组织信息，从最具体到最广泛
-	geoDetails.WriteString("**Detailed Geographic Components:**\n")
+	geoDetails.WriteString("Geographic Components:\n")
 
 	// 最具体层级 - 街道和建筑信息
 	if val, exists := locationInfo["street_number"]; exists && val != "" {
@@ -281,9 +292,8 @@ func (c *client) GenerateLocationDescription(latitude, longitude float64, locati
 
 	prompt := fmt.Sprintf(
 		"%s\n\n"+
-			"**Analysis Instructions:**\n"+
-			"Focus primarily on the most specific geographic information available (street, establishment, or neighborhood level). "+
-			"Use broader geographic context (city, region, country) as supporting information to provide deeper cultural and historical insights.\n\n"+
+			"Focus on the most specific geographic information available (street, establishment, or neighborhood level). "+
+			"Use broader context as supporting info. Remember: plain text only, no markdown.\n\n"+
 			"%s",
 		geoDetails.String(),
 		outputFormat,
@@ -308,7 +318,7 @@ func (c *client) GenerateLocationDescription(latitude, longitude float64, locati
 		return "", nil, fmt.Errorf("编码请求失败: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), descTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", apiEndpoint, bytes.NewBuffer(reqJSON))
@@ -322,7 +332,7 @@ func (c *client) GenerateLocationDescription(latitude, longitude float64, locati
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
-			log.Printf("[AI_ERROR] action=timeout function=GenerateLocationDescription duration=%v timeout=%v error=request_timeout", time.Since(startTime), timeout)
+			log.Printf("[AI_ERROR] action=timeout function=GenerateLocationDescription duration=%v timeout=%v error=request_timeout", time.Since(startTime), descTimeout)
 			return "", nil, fmt.Errorf("位置描述生成超时")
 		}
 		log.Printf("[AI_ERROR] action=request_failed function=GenerateLocationDescription duration=%v error=%v", time.Since(startTime), err)
@@ -415,25 +425,30 @@ func (c *client) GenerateDetailedLocationDescription(latitude, longitude float64
 		outputFormat = "Please respond in English"
 	}
 
-	// 构建详细分析请求（英文版本）
+	// 构建详细分析请求
 	detailedPrompt := fmt.Sprintf(
-		"Please provide a comprehensive, professional analysis report for the following geographic location:\n"+
+		"Your friend wants you to dig deeper into this location. Take your time and think carefully.\n"+
 			"Coordinates: %.6f, %.6f\n"+
 			"Location Info: %s\n\n"+
-			"Please analyze from the following aspects:\n"+
-			"1. Historical Context & Development: Trace the historical evolution, significant events, and cultural development\n"+
-			"2. Architectural & Urban Characteristics: Analyze building styles, urban planning, infrastructure\n"+
-			"3. Cultural & Social Dynamics: Examine local customs, demographics, lifestyle, and social patterns\n"+
-			"4. Economic Profile: Discuss major industries, economic drivers, and commercial activities\n"+
-			"5. Geographic & Environmental Context: Describe natural features, climate, and ecological aspects\n"+
-			"6. Transportation & Connectivity: Analyze transport networks and regional connections\n"+
-			"7. Regional Significance: Explain the location's role within its broader region\n\n"+
-			"Provide professional, in-depth insights that go beyond basic tourist information. Length: 3-5 detailed paragraphs.\n\n"+
+			"Cover these angles with real substance:\n"+
+			"- History: what happened here, how did this place evolve, key turning points\n"+
+			"- Built environment: architecture styles, urban planning, infrastructure quality\n"+
+			"- People and culture: who lives here, local customs, demographics, daily life\n"+
+			"- Economy: what drives the local economy, major industries, employment\n"+
+			"- Geography and environment: terrain, climate, natural features\n"+
+			"- How this place connects to and matters within its broader region\n\n"+
+			"Write as Atlas — warm, witty, talking to a friend. Every sentence should carry actual information. 3-5 paragraphs.\n"+
+			"CRITICAL: pure plain text only, absolutely no markdown formatting (no asterisks, no bold, no headers, no bullet points).\n"+
+			"If a specific claim is uncertain, keep it modest rather than inventing details.\n\n"+
 			"%s",
 		latitude, longitude, locationText, outputFormat)
 
 	// 构建消息
 	messages := []ChatMessage{
+		{
+			Role:    "system",
+			Content: geographerSystemPrompt,
+		},
 		{
 			Role:    "user",
 			Content: detailedPrompt,
