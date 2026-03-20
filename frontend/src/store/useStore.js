@@ -5,6 +5,7 @@ import {
     getLocationDescription,
     setExplorationPreference,
     deleteExplorationPreference,
+    lookupLocation,
 } from '../services/api';
 import i18n from '../i18n';
 
@@ -113,6 +114,60 @@ const useStore = create(
                     console.error('加载位置失败:', error);
                     set({
                         locationError: error.message || '获取位置失败，请重试'
+                    });
+                } finally {
+                    set({
+                        isLocationLoading: false,
+                        isLoadingLocation: false
+                    });
+                }
+            },
+
+            // URL Location Actions
+            loadLocationFromURL: async (lat, lng) => {
+                const state = get();
+                if (state.isLoadingLocation) return;
+
+                set({
+                    isLoadingLocation: true,
+                    isLocationLoading: true,
+                    location: null,
+                    description: null,
+                    descriptionError: null
+                });
+
+                try {
+                    const currentLanguage = i18n.language || 'en';
+                    const resp = await lookupLocation(lat, lng, currentLanguage);
+
+                    if (!get().isLoadingLocation) return;
+
+                    if (resp.success && resp.data) {
+                        const locLat = Number(resp.data.latitude);
+                        const locLng = Number(resp.data.longitude);
+
+                        if (!isNaN(locLat) && !isNaN(locLng)) {
+                            const locationData = {
+                                ...resp.data,
+                                latitude: locLat,
+                                longitude: locLng
+                            };
+
+                            set({
+                                location: locationData,
+                                currentLocationRef: locationData,
+                                locationError: null
+                            });
+                        } else {
+                            throw new Error('无效的坐标数据');
+                        }
+                    } else {
+                        throw new Error(resp.error || '查找位置失败');
+                    }
+                } catch (error) {
+                    console.error('从URL加载位置失败:', error);
+                    set({
+                        locationError: error.message || '查找位置失败，请重试'
                     });
                 } finally {
                     set({
