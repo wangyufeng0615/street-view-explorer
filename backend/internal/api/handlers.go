@@ -50,9 +50,15 @@ func sanitizeDescription(text string) string {
 	return cleaned
 }
 
+// ModeServices groups services for a specific mode (global or cn).
+type ModeServices struct {
+	LocationService *services.LocationService
+	AIService       *services.AIService
+}
+
 type Handlers struct {
-	locationService *services.LocationService
-	aiService       *services.AIService
+	global *ModeServices
+	cn     *ModeServices
 }
 
 func NewHandlers(
@@ -60,9 +66,28 @@ func NewHandlers(
 	aiService *services.AIService,
 ) *Handlers {
 	return &Handlers{
-		locationService: locationService,
-		aiService:       aiService,
+		global: &ModeServices{
+			LocationService: locationService,
+			AIService:       aiService,
+		},
 	}
+}
+
+// SetCNServices sets the CN mode services.
+func (h *Handlers) SetCNServices(locationService *services.LocationService, aiService *services.AIService) {
+	h.cn = &ModeServices{
+		LocationService: locationService,
+		AIService:       aiService,
+	}
+}
+
+// servicesForMode returns the appropriate services based on the mode query parameter.
+func (h *Handlers) servicesForMode(c *gin.Context) *ModeServices {
+	mode := c.DefaultQuery("mode", "global")
+	if mode == "cn" && h.cn != nil {
+		return h.cn
+	}
+	return h.global
 }
 
 // 获取随机位置
@@ -72,11 +97,13 @@ func (h *Handlers) GetRandomLocation(c *gin.Context) {
 		return
 	}
 
+	svc := h.servicesForMode(c)
+
 	// Get language from query parameter, default to "en" (align with frontend default)
 	language := c.DefaultQuery("lang", "en")
 
 	// 获取随机位置（自动处理用户偏好）
-	loc, err := h.locationService.GetRandomLocation(sessionID, language)
+	loc, err := svc.LocationService.GetRandomLocation(sessionID, language)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
@@ -107,7 +134,9 @@ func (h *Handlers) GetLocationDescription(c *gin.Context) {
 	// Get language from query parameter, default to "en" (align with frontend default)
 	language := c.DefaultQuery("lang", "en")
 
-	loc, err := h.locationService.GetLocation(panoID)
+	svc := h.servicesForMode(c)
+
+	loc, err := svc.LocationService.GetLocation(panoID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
@@ -119,7 +148,7 @@ func (h *Handlers) GetLocationDescription(c *gin.Context) {
 	startTime := time.Now()
 	logger := utils.APILogger()
 
-	desc, err := h.aiService.GetDescriptionForLocation(*loc, language)
+	desc, err := svc.AIService.GetDescriptionForLocation(*loc, language)
 	if err != nil {
 		duration := time.Since(startTime)
 		statusCode := http.StatusInternalServerError
@@ -187,7 +216,9 @@ func (h *Handlers) GetLocationDetailedDescription(c *gin.Context) {
 	// Get language from query parameter, default to "en" (align with frontend default)
 	language := c.DefaultQuery("lang", "en")
 
-	loc, err := h.locationService.GetLocation(panoID)
+	svc := h.servicesForMode(c)
+
+	loc, err := svc.LocationService.GetLocation(panoID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
@@ -199,7 +230,7 @@ func (h *Handlers) GetLocationDetailedDescription(c *gin.Context) {
 	startTime := time.Now()
 	logger := utils.APILogger()
 
-	desc, err := h.aiService.GetDetailedDescriptionForLocation(*loc, language)
+	desc, err := svc.AIService.GetDetailedDescriptionForLocation(*loc, language)
 	if err != nil {
 		duration := time.Since(startTime)
 		statusCode := http.StatusInternalServerError
@@ -285,7 +316,8 @@ func (h *Handlers) LookupLocation(c *gin.Context) {
 		return
 	}
 
-	loc, err := h.locationService.LookupLocation(lat, lng, language)
+	svc := h.servicesForMode(c)
+	loc, err := svc.LocationService.LookupLocation(lat, lng, language)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
@@ -338,8 +370,10 @@ func (h *Handlers) SetExplorationPreference(c *gin.Context) {
 	// 获取语言参数，默认为英文
 	language := c.DefaultQuery("lang", "en")
 
+	svc := h.servicesForMode(c)
+
 	// 设置探索偏好
-	if err := h.locationService.SetExplorationPreference(sessionID, req.Interest); err != nil {
+	if err := svc.LocationService.SetExplorationPreference(sessionID, req.Interest); err != nil {
 		// 所有错误都返回 200 状态码，由前端处理
 		if err.Error() == "无法理解该探索兴趣" {
 			errorMsg := "抱歉，我们无法理解您输入的探索兴趣。建议您尝试更具体的主题，例如：日本传统建筑、欧洲古堡、热带海滩、美国国家公园等。"
@@ -397,8 +431,10 @@ func (h *Handlers) DeleteExplorationPreference(c *gin.Context) {
 	// 获取语言参数，默认为英文
 	language := c.DefaultQuery("lang", "en")
 
+	svc := h.servicesForMode(c)
+
 	// 删除探索偏好
-	if err := h.locationService.DeleteExplorationPreference(sessionID); err != nil {
+	if err := svc.LocationService.DeleteExplorationPreference(sessionID); err != nil {
 		errorMsg := "删除探索偏好失败"
 		if language == "en" {
 			errorMsg = "Failed to delete exploration preference"

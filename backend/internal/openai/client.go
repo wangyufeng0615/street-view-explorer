@@ -68,6 +68,7 @@ type Client interface {
 
 type client struct {
 	apiKey     string
+	modelName  string
 	httpClient *http.Client
 }
 
@@ -95,7 +96,7 @@ type chatResponse struct {
 	} `json:"error,omitempty"`
 }
 
-func NewClient(apiKey string) Client {
+func NewClient(apiKey string, modelName ...string) Client {
 	// 从环境变量获取代理URL
 	proxyURLStr := os.Getenv("AI_PROXY_URL")
 	if proxyURLStr == "" {
@@ -173,8 +174,14 @@ func NewClient(apiKey string) Client {
 		}
 	}
 
+	selectedModel := model
+	if len(modelName) > 0 && modelName[0] != "" {
+		selectedModel = modelName[0]
+	}
+
 	return &client{
 		apiKey:     apiKey,
+		modelName:  selectedModel,
 		httpClient: httpClient,
 	}
 }
@@ -196,7 +203,7 @@ func (c *client) GenerateLocationDescription(latitude, longitude float64, locati
 		"function": "GenerateLocationDescription",
 		"coords":   fmt.Sprintf("(%.6f,%.6f)", latitude, longitude),
 		"language": language,
-		"model":    model,
+		"model":    c.modelName,
 		"timeout":  descTimeout.String(),
 	})
 
@@ -300,7 +307,7 @@ func (c *client) GenerateLocationDescription(latitude, longitude float64, locati
 	)
 
 	reqBody := chatRequest{
-		Model: model,
+		Model: c.modelName,
 		Messages: []chatMessage{
 			{
 				Role:    "system",
@@ -392,7 +399,7 @@ func (c *client) GenerateDetailedLocationDescription(latitude, longitude float64
 		"function": "GenerateDetailedLocationDescription",
 		"coords":   fmt.Sprintf("(%.6f,%.6f)", latitude, longitude),
 		"language": language,
-		"model":    model,
+		"model":    c.modelName,
 		"timeout":  detailedTimeout.String(),
 	})
 
@@ -596,7 +603,7 @@ func (c *client) tryGenerateRegions(interest string) ([]models.Region, error) {
 	)
 
 	reqBody := chatRequest{
-		Model: model,
+		Model: c.modelName,
 		Messages: []chatMessage{
 			{
 				Role:    "system",

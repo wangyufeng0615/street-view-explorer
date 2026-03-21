@@ -8,12 +8,17 @@ import React, {
   lazy,
   Suspense,
 } from "react";
+import { isCNMode } from "../config/mode";
 import TopBar from "../components/TopBar";
 import Sidebar from "../components/Sidebar";
-import StreetView from "../components/StreetView";
 import "../styles/animations.css";
 import "../styles/HomePage.css";
 import "../styles/responsive.css";
+
+// Load StreetView component based on mode
+const StreetView = isCNMode
+  ? lazy(() => import("../components/BaiduStreetView"))
+  : lazy(() => import("../components/StreetView"));
 
 // Lazy load components that are not immediately visible
 const GlobalLoading = lazy(() => import("../components/GlobalLoading"));
@@ -35,11 +40,13 @@ const StreetViewContainer = memo(
   ({ latitude, longitude, onPovChanged }) => {
     return (
       <div className="street-view-container">
-        <StreetView
-          latitude={latitude}
-          longitude={longitude}
-          onPovChanged={onPovChanged}
-        />
+        <Suspense fallback={<div style={{ width: '100%', height: '100%', backgroundColor: '#222' }} />}>
+          <StreetView
+            latitude={latitude}
+            longitude={longitude}
+            onPovChanged={onPovChanged}
+          />
+        </Suspense>
       </div>
     );
   },

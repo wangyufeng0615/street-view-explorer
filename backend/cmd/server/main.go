@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/my-streetview-project/backend/internal/api"
 	"github.com/my-streetview-project/backend/internal/config"
+	"github.com/my-streetview-project/backend/internal/openai"
 	"github.com/my-streetview-project/backend/internal/repositories"
 	mysentry "github.com/my-streetview-project/backend/internal/sentry"
 	"github.com/my-streetview-project/backend/internal/services"
@@ -107,18 +108,33 @@ func main() {
 	}
 	defer repo.Close()
 
-	// 初始化服务
-	aiService, err := services.NewAIService(cfg, repo)
+	// 初始化服务 — Global 模式 (Google Maps + OpenRouter default model)
+	googleMaps, err := services.NewMapsService(cfg.GoogleMapsAPIKey())
 	if err != nil {
-		log.Fatalf("初始化 AI 服务失败: %v", err)
+		log.Fatalf("初始化 Google Maps 服务失败: %v", err)
 	}
 
-	mapsService, err := services.NewMapsService(cfg.GoogleMapsAPIKey())
-	if err != nil {
-		log.Fatalf("初始化 Maps 服务失败: %v", err)
-	}
+	globalAIClient := openai.NewClient(cfg.OpenAIAPIKey())
+	aiService := services.NewAIService(cfg, repo, googleMaps, globalAIClient)
+	locationService := services.NewLocationService(repo, aiService, googleMaps)
 
-	locationService := services.NewLocationService(repo, aiService, mapsService)
+	// 初始化服务 — CN 模式 (Baidu Maps + OpenRouter CN model)
+	var cnLocationService *services.LocationService
+	var cnAIService *services.AIService
+
+	if cfg.BaiduMapAK() != "" {
+		baiduMaps, err := services.NewBaiduMapsService(cfg.BaiduMapAK())
+		if err != nil {
+			log.Printf("警告: 初始化百度地图服务失败: %v（CN 模式不可用）", err)
+		} else {
+			cnAIClient := openai.NewClient(cfg.OpenAIAPIKey(), cfg.CNAIModel())
+			cnAIService = services.NewAIService(cfg, repo, baiduMaps, cnAIClient)
+			cnLocationService = services.NewLocationService(repo, cnAIService, baiduMaps, true)
+			log.Printf("CN 模式已启用 (百度地图 + %s)", cfg.CNAIModel())
+		}
+	} else {
+		log.Println("BAIDU_MAP_AK 未配置，CN 模式不可用")
+	}
 
 	// 设置 Gin 路由
 	if cfg.SecurityConfig().RateLimit.Enabled {
@@ -180,6 +196,9 @@ func main() {
 
 	// 设置路由
 	handlers := api.NewHandlers(locationService, aiService)
+	if cnLocationService != nil && cnAIService != nil {
+		handlers.SetCNServices(cnLocationService, cnAIService)
+	}
 	api.SetupRoutes(r, handlers)
 
 	addr := cfg.ServerAddress()

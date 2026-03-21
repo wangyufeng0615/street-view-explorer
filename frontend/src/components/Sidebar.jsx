@@ -1,9 +1,16 @@
-import React, { memo, useRef, useEffect } from "react";
+import React, { memo, useRef, useEffect, lazy, Suspense } from "react";
 import { useTranslation } from "react-i18next";
-import GlobalMap from "./GlobalMap";
-import PreviewMap from "./PreviewMap";
+import { isCNMode } from "../config/mode";
 import AiDescription from "./AiDescription";
 import "../styles/Sidebar.css";
+
+// Load map components based on mode
+const GlobalMap = isCNMode
+  ? lazy(() => import("./BaiduGlobalMap"))
+  : lazy(() => import("./GlobalMap"));
+const PreviewMap = isCNMode
+  ? lazy(() => import("./BaiduPreviewMap"))
+  : lazy(() => import("./PreviewMap"));
 
 const Sidebar = memo(function Sidebar({
   location,
@@ -42,10 +49,12 @@ const Sidebar = memo(function Sidebar({
         <div style={styles.section}>
           <div style={styles.mapContainer}>
             {location ? (
-              <GlobalMap
-                latitude={location.latitude}
-                longitude={location.longitude}
-              />
+              <Suspense fallback={<div style={styles.mapPlaceholder}>{t("loading_location")}</div>}>
+                <GlobalMap
+                  latitude={location.latitude}
+                  longitude={location.longitude}
+                />
+              </Suspense>
             ) : (
               <div style={styles.mapPlaceholder}>{t("loading_location")}</div>
             )}
@@ -56,11 +65,13 @@ const Sidebar = memo(function Sidebar({
         <div style={styles.section}>
           <div style={styles.mapContainer}>
             {location && (
-              <PreviewMap
-                latitude={location.latitude}
-                longitude={location.longitude}
-                heading={heading}
-              />
+              <Suspense fallback={null}>
+                <PreviewMap
+                  latitude={location.latitude}
+                  longitude={location.longitude}
+                  heading={heading}
+                />
+              </Suspense>
             )}
           </div>
         </div>

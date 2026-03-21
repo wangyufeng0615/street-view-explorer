@@ -45,7 +45,7 @@ backend/
 
 ## API 路由
 
-- `GET /api/v1/locations/random` — 获取随机街景位置（基于 sessionID 匹配偏好）
+- `GET /api/v1/locations/random` — 获取随机街景位置（基于 sessionID 匹配偏好，`mode=cn` 使用百度地图）
 - `GET /api/v1/locations/:panoId/description` — 获取 AI 描述
 - `GET /api/v1/locations/:panoId/detailed-description` — 获取详细 AI 描述
 - `POST /api/v1/preferences/exploration` — 设置探索偏好
@@ -55,7 +55,9 @@ backend/
 
 后端必须配置: `AI_API_KEY`, `GOOGLE_API_KEY`
 后端可选配置: `SQLITE_PATH` (默认 `data/streetview.db`), `SERVER_ADDRESS` (默认 `:8080`)
+后端 CN 模式: `BAIDU_MAP_AK` (百度地图 AK), `CN_AI_MODEL` (默认 `deepseek/deepseek-chat-v3-0324`)
 前端必须配置: `VITE_GOOGLE_MAPS_API_KEY`
+前端 CN 模式: `VITE_BAIDU_MAP_AK` (百度地图浏览器端 AK)
 
 ## 注意事项
 

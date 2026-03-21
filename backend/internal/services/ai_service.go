@@ -16,22 +16,17 @@ import (
 type AIService struct {
 	repo   repositories.Repository
 	openAI openai.Client
-	maps   *MapsService
+	maps   MapProvider
 	config config.Config
 }
 
-func NewAIService(cfg config.Config, repo repositories.Repository) (*AIService, error) {
-	mapsService, err := NewMapsService(cfg.GoogleMapsAPIKey())
-	if err != nil {
-		return nil, fmt.Errorf("创建 MapsService 失败: %w", err)
-	}
-
+func NewAIService(cfg config.Config, repo repositories.Repository, maps MapProvider, aiClient openai.Client) *AIService {
 	return &AIService{
 		repo:   repo,
-		openAI: openai.NewClient(cfg.OpenAIAPIKey()),
-		maps:   mapsService,
+		openAI: aiClient,
+		maps:   maps,
 		config: cfg,
-	}, nil
+	}
 }
 
 func (ai *AIService) GetDescriptionForLocation(loc models.Location, language string) (string, error) {
