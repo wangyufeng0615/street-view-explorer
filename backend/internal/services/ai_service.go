@@ -29,7 +29,7 @@ func NewAIService(cfg config.Config, repo repositories.Repository, maps MapProvi
 	}
 }
 
-func (ai *AIService) GetDescriptionForLocation(loc models.Location, language string) (string, error) {
+func (ai *AIService) GetDescriptionForLocation(loc models.Location, language string) (string, []openai.Citation, error) {
 	startTime := time.Now()
 	logger := utils.AILogger()
 
@@ -46,7 +46,7 @@ func (ai *AIService) GetDescriptionForLocation(loc models.Location, language str
 				"latitude":  loc.Latitude,
 				"longitude": loc.Longitude,
 			})
-			return "", utils.SafeError(utils.ErrorTypeExternal, "获取位置信息失败", err)
+			return "", nil, utils.SafeError(utils.ErrorTypeExternal, "获取位置信息失败", err)
 		}
 	} else {
 		locationInfo = getDefaultLocationInfo(loc)
@@ -54,17 +54,19 @@ func (ai *AIService) GetDescriptionForLocation(loc models.Location, language str
 
 	// Generate description using AI
 	var desc string
+	var citations []openai.Citation
 	if ai.config.EnableOpenAI() {
-		description, _, err := ai.openAI.GenerateLocationDescription(loc.Latitude, loc.Longitude, locationInfo, language)
+		description, cites, err := ai.openAI.GenerateLocationDescription(loc.Latitude, loc.Longitude, locationInfo, language)
 		if err != nil {
 			logger.Error("ai_generation_failed", "Failed to generate AI description", err, map[string]interface{}{
 				"pano_id":  loc.PanoID,
 				"language": language,
 				"duration": time.Since(startTime).String(),
 			})
-			return "", utils.SafeError(utils.ErrorTypeExternal, "AI 描述生成失败", err)
+			return "", nil, utils.SafeError(utils.ErrorTypeExternal, "AI 描述生成失败", err)
 		}
 		desc = description
+		citations = cites
 	} else {
 		desc = getDefaultDescription(locationInfo)
 	}
@@ -76,14 +78,14 @@ func (ai *AIService) GetDescriptionForLocation(loc models.Location, language str
 			"language":    language,
 			"desc_length": len(desc),
 		})
-		return "", fmt.Errorf("生成的AI描述为空或无效")
+		return "", nil, fmt.Errorf("生成的AI描述为空或无效")
 	}
 
-	return desc, nil
+	return desc, citations, nil
 }
 
 // GetDetailedDescriptionForLocation 获取位置的详细AI描述
-func (ai *AIService) GetDetailedDescriptionForLocation(loc models.Location, language string) (string, error) {
+func (ai *AIService) GetDetailedDescriptionForLocation(loc models.Location, language string) (string, []openai.Citation, error) {
 	startTime := time.Now()
 	logger := utils.AILogger()
 
@@ -98,7 +100,7 @@ func (ai *AIService) GetDetailedDescriptionForLocation(loc models.Location, lang
 				"pano_id":  loc.PanoID,
 				"language": language,
 			})
-			return "", utils.SafeError(utils.ErrorTypeExternal, "获取位置信息失败", err)
+			return "", nil, utils.SafeError(utils.ErrorTypeExternal, "获取位置信息失败", err)
 		}
 	} else {
 		locationInfo = getDefaultLocationInfo(loc)
@@ -106,15 +108,16 @@ func (ai *AIService) GetDetailedDescriptionForLocation(loc models.Location, lang
 
 	// Generate detailed description using AI
 	var desc string
+	var citations []openai.Citation
 	if ai.config.EnableOpenAI() {
-		desc, err = ai.openAI.GenerateDetailedLocationDescription(loc.Latitude, loc.Longitude, locationInfo, language)
+		desc, citations, err = ai.openAI.GenerateDetailedLocationDescription(loc.Latitude, loc.Longitude, locationInfo, language)
 		if err != nil {
 			logger.Error("detailed_ai_failed", "Failed to generate detailed AI description", err, map[string]interface{}{
 				"pano_id":  loc.PanoID,
 				"language": language,
 				"duration": time.Since(startTime).String(),
 			})
-			return "", utils.SafeError(utils.ErrorTypeExternal, "AI 详细描述生成失败", err)
+			return "", nil, utils.SafeError(utils.ErrorTypeExternal, "AI 详细描述生成失败", err)
 		}
 	} else {
 		desc = getDefaultDetailedDescription(locationInfo)
@@ -127,10 +130,10 @@ func (ai *AIService) GetDetailedDescriptionForLocation(loc models.Location, lang
 			"language":    language,
 			"desc_length": len(desc),
 		})
-		return "", fmt.Errorf("生成的AI详细描述为空或无效")
+		return "", nil, fmt.Errorf("生成的AI详细描述为空或无效")
 	}
 
-	return desc, nil
+	return desc, citations, nil
 }
 
 // 生成默认的位置信息

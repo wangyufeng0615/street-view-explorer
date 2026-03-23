@@ -131,6 +131,7 @@ export default function HomePage() {
 
   const {
     description,
+    descriptionCitations,
     isLoadingDesc,
     descError,
     descRetries,
@@ -328,6 +329,7 @@ export default function HomePage() {
           location={location}
           heading={heading}
           description={description}
+          descriptionCitations={descriptionCitations}
           isLoadingDesc={isLoadingDesc}
           descError={descError}
           descRetries={descRetries}

@@ -148,7 +148,7 @@ func (h *Handlers) GetLocationDescription(c *gin.Context) {
 	startTime := time.Now()
 	logger := utils.APILogger()
 
-	desc, err := svc.AIService.GetDescriptionForLocation(*loc, language)
+	desc, citations, err := svc.AIService.GetDescriptionForLocation(*loc, language)
 	if err != nil {
 		duration := time.Since(startTime)
 		statusCode := http.StatusInternalServerError
@@ -196,6 +196,7 @@ func (h *Handlers) GetLocationDescription(c *gin.Context) {
 		"success": true,
 		"data": gin.H{
 			"description": cleanDesc,
+			"citations":   citations,
 			"language":    language,
 			"duration":    time.Since(startTime).String(),
 		},
@@ -230,7 +231,7 @@ func (h *Handlers) GetLocationDetailedDescription(c *gin.Context) {
 	startTime := time.Now()
 	logger := utils.APILogger()
 
-	desc, err := svc.AIService.GetDetailedDescriptionForLocation(*loc, language)
+	desc, citations, err := svc.AIService.GetDetailedDescriptionForLocation(*loc, language)
 	if err != nil {
 		duration := time.Since(startTime)
 		statusCode := http.StatusInternalServerError
@@ -279,6 +280,7 @@ func (h *Handlers) GetLocationDetailedDescription(c *gin.Context) {
 		"success": true,
 		"data": gin.H{
 			"description": cleanDesc,
+			"citations":   citations,
 			"language":    language,
 			"duration":    time.Since(startTime).String(),
 		},

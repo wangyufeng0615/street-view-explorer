@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -56,13 +57,15 @@ const (
 		"2. Neighborhood level: what defines this area\n" +
 		"3. City level: what this city is known for, its identity\n" +
 		"4. Regional/national level: broader context only when it explains the local situation\n\n" +
-		"Stay grounded in the provided location info and generally reliable background knowledge. If a specific detail is uncertain, keep the statement modest instead of inventing specifics.\n\n" +
+		"WEB RESEARCH:\n" +
+		"You receive real-time web search results alongside the location data. Lean on them for verified, current facts — local news, recent developments, specific businesses or landmarks, historical events with dates. Your research strategy: start at the finest geographic grain available (this street, this block, this establishment), and only widen to neighborhood, city, or region when specific results are thin. Concrete details from search results are gold — use them to replace vague generalizations.\n\n" +
+		"If a specific detail is uncertain and unsupported by search results, keep the statement modest instead of inventing specifics.\n\n" +
 		"Keep it to 2-3 short paragraphs, around 150 words. Pack them with substance, but keep Atlas's voice — warm, witty, real."
 )
 
 type Client interface {
-	GenerateLocationDescription(latitude, longitude float64, locationInfo map[string]string, language string) (string, []ChatMessage, error)
-	GenerateDetailedLocationDescription(latitude, longitude float64, locationInfo map[string]string, language string) (string, error)
+	GenerateLocationDescription(latitude, longitude float64, locationInfo map[string]string, language string) (string, []Citation, error)
+	GenerateDetailedLocationDescription(latitude, longitude float64, locationInfo map[string]string, language string) (string, []Citation, error)
 	GenerateRegionsForInterest(interest string) ([]models.Region, error)
 }
 
@@ -72,9 +75,15 @@ type client struct {
 	httpClient *http.Client
 }
 
+type webPlugin struct {
+	ID         string `json:"id"`
+	MaxResults int    `json:"max_results,omitempty"`
+}
+
 type chatRequest struct {
 	Model    string        `json:"model"`
 	Messages []chatMessage `json:"messages"`
+	Plugins  []webPlugin   `json:"plugins,omitempty"`
 }
 
 type ChatMessage struct {
@@ -82,18 +91,108 @@ type ChatMessage struct {
 	Content string `json:"content"`
 }
 
+// Citation represents a web search result used by the AI
+type Citation struct {
+	URL   string `json:"url"`
+	Title string `json:"title"`
+}
+
 // 为了向后兼容保留小写版本
 type chatMessage = ChatMessage
+
+type annotation struct {
+	Type        string `json:"type"`
+	URLCitation struct {
+		URL        string `json:"url"`
+		Title      string `json:"title"`
+		StartIndex int    `json:"start_index"`
+		EndIndex   int    `json:"end_index"`
+	} `json:"url_citation"`
+}
 
 type chatResponse struct {
 	Choices []struct {
 		Message struct {
-			Content string `json:"content"`
+			Content     string       `json:"content"`
+			Annotations []annotation `json:"annotations,omitempty"`
 		} `json:"message"`
 	} `json:"choices"`
 	Error *struct {
 		Message string `json:"message"`
 	} `json:"error,omitempty"`
+}
+
+// extractCitations deduplicates url_citation annotations into a Citation slice.
+func extractCitations(resp chatResponse) []Citation {
+	if len(resp.Choices) == 0 {
+		return nil
+	}
+	seen := make(map[string]bool)
+	var citations []Citation
+	for _, ann := range resp.Choices[0].Message.Annotations {
+		if ann.Type != "url_citation" || ann.URLCitation.URL == "" {
+			continue
+		}
+		if seen[ann.URLCitation.URL] {
+			continue
+		}
+		seen[ann.URLCitation.URL] = true
+		citations = append(citations, Citation{
+			URL:   ann.URLCitation.URL,
+			Title: ann.URLCitation.Title,
+		})
+	}
+	return citations
+}
+
+// stripInlineCitations removes citation markers from content using annotation positional data.
+// Annotations provide start_index/end_index as character (rune) offsets into the content string.
+func stripInlineCitations(content string, annotations []annotation) string {
+	if len(annotations) == 0 {
+		return content
+	}
+
+	runes := []rune(content)
+	runeLen := len(runes)
+
+	// Collect valid citation ranges
+	type span struct{ start, end int }
+	var spans []span
+	for _, ann := range annotations {
+		if ann.Type != "url_citation" {
+			continue
+		}
+		s, e := ann.URLCitation.StartIndex, ann.URLCitation.EndIndex
+		if s < 0 || e > runeLen || s >= e {
+			continue
+		}
+		spans = append(spans, span{s, e})
+	}
+	if len(spans) == 0 {
+		return content
+	}
+
+	// Sort descending by start so removals don't shift earlier indices
+	sort.Slice(spans, func(i, j int) bool {
+		return spans[i].start > spans[j].start
+	})
+
+	for _, sp := range spans {
+		// Expand to swallow wrapping parentheses: ...。([link]) → ...。
+		start, end := sp.start, sp.end
+		if start > 0 && runes[start-1] == '(' && end < runeLen && runes[end] == ')' {
+			start--
+			end++
+		}
+		// Also trim leading whitespace before the citation
+		for start > 0 && (runes[start-1] == ' ' || runes[start-1] == '\t') {
+			start--
+		}
+		runes = append(runes[:start], runes[end:]...)
+		runeLen = len(runes)
+	}
+
+	return string(runes)
 }
 
 func NewClient(apiKey string, modelName ...string) Client {
@@ -194,7 +293,7 @@ func truncateString(s string, maxLength int) string {
 	return s[:maxLength] + "..."
 }
 
-func (c *client) GenerateLocationDescription(latitude, longitude float64, locationInfo map[string]string, language string) (string, []ChatMessage, error) {
+func (c *client) GenerateLocationDescription(latitude, longitude float64, locationInfo map[string]string, language string) (string, []Citation, error) {
 	startTime := time.Now()
 	descTimeout := 20 * time.Second
 
@@ -318,6 +417,7 @@ func (c *client) GenerateLocationDescription(latitude, longitude float64, locati
 				Content: prompt,
 			},
 		},
+		Plugins: []webPlugin{{ID: "web", MaxResults: 3}},
 	}
 
 	reqJSON, err := json.Marshal(reqBody)
@@ -374,23 +474,19 @@ func (c *client) GenerateLocationDescription(latitude, longitude float64, locati
 		return "", nil, fmt.Errorf("AI未返回任何结果")
 	}
 
-	desc := chatResp.Choices[0].Message.Content
+	desc := stripInlineCitations(chatResp.Choices[0].Message.Content, chatResp.Choices[0].Message.Annotations)
+	citations := extractCitations(chatResp)
 	logger.Info("ai_request_completed", "AI description generation completed", map[string]interface{}{
 		"function":        "GenerateLocationDescription",
 		"duration":        time.Since(startTime).String(),
 		"response_length": len(desc),
+		"citations_count": len(citations),
 	})
 
-	// 返回对话历史以供详细描述使用
-	conversationHistory := append(reqBody.Messages, ChatMessage{
-		Role:    "assistant",
-		Content: desc,
-	})
-
-	return desc, conversationHistory, nil
+	return desc, citations, nil
 }
 
-func (c *client) GenerateDetailedLocationDescription(latitude, longitude float64, locationInfo map[string]string, language string) (string, error) {
+func (c *client) GenerateDetailedLocationDescription(latitude, longitude float64, locationInfo map[string]string, language string) (string, []Citation, error) {
 	startTime := time.Now()
 	detailedTimeout := 30 * time.Second
 
@@ -444,9 +540,10 @@ func (c *client) GenerateDetailedLocationDescription(latitude, longitude float64
 			"- Economy: what drives the local economy, major industries, employment\n"+
 			"- Geography and environment: terrain, climate, natural features\n"+
 			"- How this place connects to and matters within its broader region\n\n"+
+			"You have real-time web search results at your disposal — use them thoroughly. Cross-reference sources for historical dates, demographic data, economic figures, and recent local developments. Go deeper than surface-level knowledge.\n\n"+
 			"Write as Atlas — warm, witty, talking to a friend. Every sentence should carry actual information. 3-5 paragraphs.\n"+
 			"CRITICAL: pure plain text only, absolutely no markdown formatting (no asterisks, no bold, no headers, no bullet points).\n"+
-			"If a specific claim is uncertain, keep it modest rather than inventing details.\n\n"+
+			"If a specific claim is uncertain and unsupported by search results, keep it modest rather than inventing details.\n\n"+
 			"%s",
 		latitude, longitude, locationText, outputFormat)
 
@@ -463,18 +560,19 @@ func (c *client) GenerateDetailedLocationDescription(latitude, longitude float64
 	}
 
 	reqBody := chatRequest{
-		Model:    model,
+		Model:    c.modelName,
 		Messages: messages,
+		Plugins:  []webPlugin{{ID: "web", MaxResults: 6}},
 	}
 
 	reqJSON, err := json.Marshal(reqBody)
 	if err != nil {
-		return "", fmt.Errorf("编码请求失败: %w", err)
+		return "", nil, fmt.Errorf("编码请求失败: %w", err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "POST", apiEndpoint, bytes.NewBuffer(reqJSON))
 	if err != nil {
-		return "", fmt.Errorf("创建请求失败: %w", err)
+		return "", nil, fmt.Errorf("创建请求失败: %w", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -485,11 +583,11 @@ func (c *client) GenerateDetailedLocationDescription(latitude, longitude float64
 		if ctx.Err() == context.DeadlineExceeded {
 			log.Printf("[AI_ERROR] action=timeout function=GenerateDetailedLocationDescription duration=%v timeout=%v",
 				time.Since(startTime), detailedTimeout)
-			return "", fmt.Errorf("详细描述生成超时")
+			return "", nil, fmt.Errorf("详细描述生成超时")
 		}
 		log.Printf("[AI_ERROR] action=request_failed function=GenerateDetailedLocationDescription duration=%v error=%v",
 			time.Since(startTime), err)
-		return "", fmt.Errorf("发送请求失败: %w", err)
+		return "", nil, fmt.Errorf("发送请求失败: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -497,45 +595,47 @@ func (c *client) GenerateDetailedLocationDescription(latitude, longitude float64
 	if err != nil {
 		log.Printf("[AI_ERROR] action=read_response_failed function=GenerateDetailedLocationDescription duration=%v error=%v",
 			time.Since(startTime), err)
-		return "", fmt.Errorf("读取响应失败: %w", err)
+		return "", nil, fmt.Errorf("读取响应失败: %w", err)
 	}
 
 	// 检查HTTP状态码
 	if resp.StatusCode != http.StatusOK {
 		log.Printf("[AI_ERROR] action=api_error function=GenerateDetailedLocationDescription duration=%v status=%d",
 			time.Since(startTime), resp.StatusCode)
-		return "", fmt.Errorf("API 请求失败 (状态码: %d): %s", resp.StatusCode, string(body))
+		return "", nil, fmt.Errorf("API 请求失败 (状态码: %d): %s", resp.StatusCode, string(body))
 	}
 
 	var chatResp chatResponse
 	if err := json.Unmarshal(body, &chatResp); err != nil {
 		log.Printf("[AI_ERROR] action=parse_failed function=GenerateDetailedLocationDescription duration=%v error=%v",
 			time.Since(startTime), err)
-		return "", fmt.Errorf("解析响应失败: %w", err)
+		return "", nil, fmt.Errorf("解析响应失败: %w", err)
 	}
 
 	if chatResp.Error != nil {
 		log.Printf("[AI_ERROR] action=api_business_error function=GenerateDetailedLocationDescription duration=%v error=%s",
 			time.Since(startTime), chatResp.Error.Message)
-		return "", fmt.Errorf("AI API错误: %s", chatResp.Error.Message)
+		return "", nil, fmt.Errorf("AI API错误: %s", chatResp.Error.Message)
 	}
 
 	if len(chatResp.Choices) == 0 {
 		log.Printf("[AI_ERROR] action=empty_response function=GenerateDetailedLocationDescription duration=%v",
 			time.Since(startTime))
-		return "", fmt.Errorf("AI未返回任何结果")
+		return "", nil, fmt.Errorf("AI未返回任何结果")
 	}
 
-	result := chatResp.Choices[0].Message.Content
+	result := stripInlineCitations(chatResp.Choices[0].Message.Content, chatResp.Choices[0].Message.Annotations)
+	citations := extractCitations(chatResp)
 
 	// 简化的成功日志
 	logger.Info("ai_request_completed", "AI detailed description generation completed", map[string]interface{}{
 		"function":        "GenerateDetailedLocationDescription",
 		"duration":        time.Since(startTime).String(),
 		"response_length": len(result),
+		"citations_count": len(citations),
 	})
 
-	return result, nil
+	return result, citations, nil
 }
 
 func (c *client) GenerateRegionsForInterest(interest string) ([]models.Region, error) {

@@ -363,6 +363,45 @@
     .detailed-title {
         font-size: 14px;
     }
+
+    .citations-container {
+        gap: 4px;
+    }
+
+    .citation-link {
+        font-size: 11px;
+        padding: 2px 8px;
+    }
 }
 
- 
+/* 参考资料链接 */
+.citations-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 14px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(99, 102, 241, 0.08);
+}
+
+.citation-link {
+    display: inline-block;
+    font-size: 11.5px;
+    line-height: 1.4;
+    color: #6366f1;
+    background: rgba(99, 102, 241, 0.06);
+    padding: 3px 10px;
+    border-radius: 12px;
+    text-decoration: none;
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    transition: background 0.15s, color 0.15s;
+}
+
+.citation-link:hover {
+    background: rgba(99, 102, 241, 0.14);
+    color: #4f46e5;
+}
+

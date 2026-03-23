@@ -16,6 +16,7 @@ const Sidebar = memo(function Sidebar({
   location,
   heading,
   description,
+  descriptionCitations,
   isLoadingDesc,
   descError,
   descRetries,
@@ -83,6 +84,7 @@ const Sidebar = memo(function Sidebar({
               isLoading={isLoadingDesc}
               error={descError}
               description={description}
+              citations={descriptionCitations}
               retries={descRetries}
               panoId={location?.pano_id}
               onRetry={onRetryDescription}

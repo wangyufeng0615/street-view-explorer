@@ -37,11 +37,32 @@ function pickLoadingHint(language, panoId) {
   return hints[hash % hints.length];
 }
 
+const CitationLinks = memo(function CitationLinks({ citations }) {
+  if (!citations || citations.length === 0) return null;
+  return (
+    <div className="citations-container">
+      {citations.map((cite, i) => (
+        <a
+          key={i}
+          className="citation-link"
+          href={cite.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={cite.url}
+        >
+          {cite.title || new URL(cite.url).hostname}
+        </a>
+      ))}
+    </div>
+  );
+});
+
 const AiDescription = memo(
   function AiDescription({
     isLoading,
     error,
     description,
+    citations,
     retries,
     panoId,
     onRetry,
@@ -49,6 +70,7 @@ const AiDescription = memo(
     const { t, i18n } = useTranslation();
 
     const [detailedDescription, setDetailedDescription] = useState(null);
+    const [detailedCitations, setDetailedCitations] = useState(null);
     const [isLoadingDetailed, setIsLoadingDetailed] = useState(false);
     const [detailedError, setDetailedError] = useState(null);
     const [hasRequestedDetailed, setHasRequestedDetailed] = useState(false);
@@ -91,6 +113,7 @@ const AiDescription = memo(
         const nextDescription = result.data?.description?.trim();
         if (result.success && nextDescription) {
           setDetailedDescription(nextDescription);
+          setDetailedCitations(result.data?.citations || null);
         } else {
           setDetailedError(result.error || t("ai.retryDetailedDescription"));
         }
@@ -119,6 +142,7 @@ const AiDescription = memo(
         const nextDescription = result.data?.description?.trim();
         if (result.success && nextDescription) {
           setDetailedDescription(nextDescription);
+          setDetailedCitations(result.data?.citations || null);
           setDetailedError(null);
         } else {
           setDetailedError(result.error || t("ai.retryDetailedDescription"));
@@ -132,6 +156,7 @@ const AiDescription = memo(
 
     useEffect(() => {
       setDetailedDescription(null);
+      setDetailedCitations(null);
       setDetailedError(null);
       setHasRequestedDetailed(false);
       setIsLoadingDetailed(false);
@@ -187,6 +212,7 @@ const AiDescription = memo(
                   </div>
                 );
               })}
+              <CitationLinks citations={citations} />
             </div>
 
             {!hasRequestedDetailed && !detailedDescription && (
@@ -257,6 +283,7 @@ const AiDescription = memo(
                         </div>
                       );
                     })}
+                  <CitationLinks citations={detailedCitations} />
                 </div>
               </div>
             )}
@@ -271,6 +298,7 @@ const AiDescription = memo(
     prevProps.isLoading === nextProps.isLoading &&
     prevProps.error === nextProps.error &&
     prevProps.description === nextProps.description &&
+    prevProps.citations === nextProps.citations &&
     prevProps.retries === nextProps.retries &&
     prevProps.panoId === nextProps.panoId,
 );

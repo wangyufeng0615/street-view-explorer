@@ -29,6 +29,7 @@ const useStore = create(
 
             // ===== Description相关状态 =====
             description: null,
+            descriptionCitations: null,
             descriptionError: null,
             isDescriptionLoading: false,
             descriptionRetries: 0,
@@ -194,6 +195,7 @@ const useStore = create(
                     if (resp.success && resp.data?.description) {
                         set({
                             description: resp.data.description,
+                            descriptionCitations: resp.data.citations || null,
                             descriptionError: null
                         });
                     } else {
