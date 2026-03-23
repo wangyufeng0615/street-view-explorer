@@ -106,7 +106,11 @@ func extractLandRegionsFromGeoJSON(fc *geojson.FeatureCollection, isMinorIsland 
 					countryName = nameStr
 				}
 			}
-			if code, exists := feature.Properties["ISO_A3"]; exists {
+			// 使用 ADM0_A3 替代 ISO_A3：ISO_A3 对争议/未识别地区统一标为 "-99"，
+			// 导致 Kosovo、Somaliland、N. Cyprus 等 22 个不同实体被错误合并为一组。
+			// ADM0_A3 为每个实体提供唯一代码（如 KOS、SOL、CYN），同时 Norway 的
+			// Svalbard（ADM0_A3=NOR）能正确归入挪威。
+			if code, exists := feature.Properties["ADM0_A3"]; exists {
 				if codeStr, ok := code.(string); ok {
 					countryCode = codeStr
 				}
