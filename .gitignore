@@ -6,6 +6,8 @@
 # Testing
 /frontend/coverage
 /backend/test/coverage
+# 测试生成的可视化图片
+backend/internal/utils/random_coordinates_natural_earth_high_res.png
 
 # Production
 /frontend/build
