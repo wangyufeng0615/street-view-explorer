@@ -32,6 +32,12 @@ const (
 		"- NEVER use any markdown formatting: no asterisks (*), no bold (**), no headers (#), no bullet points (-), no underscores (_), no backticks (`)\n" +
 		"- Write in pure plain text only\n" +
 		"- Use line breaks between paragraphs for readability\n\n" +
+		"SOURCE HANDLING:\n" +
+		"- The product renders citations separately, outside Atlas's prose\n" +
+		"- Use web results to verify and sharpen the writing, then present those facts as clean narrative sentences\n" +
+		"- Keep the body self-contained and readable from first line to last line\n" +
+		"- Finish on a complete sentence about the place itself, not on source metadata\n" +
+		"- Treat links, raw URLs, source lists, and parenthetical reference blocks as off-screen metadata rather than part of the answer\n\n" +
 		"WHAT TO FOCUS ON:\n" +
 		"- Real, specific facts: history, who lives here, what the economy runs on, what happened here\n" +
 		"- Things you'd actually notice standing there: architecture style, vegetation, road conditions, neighborhood vibe\n" +
@@ -399,7 +405,7 @@ func (c *client) GenerateLocationDescription(latitude, longitude float64, locati
 	prompt := fmt.Sprintf(
 		"%s\n\n"+
 			"Focus on the most specific geographic information available (street, establishment, or neighborhood level). "+
-			"Use broader context as supporting info. Remember: plain text only, no markdown.\n\n"+
+			"Use broader context as supporting info. Remember: plain text only, no markdown. The app renders citations separately, so keep links and source mentions out of the prose and end on a clean sentence.\n\n"+
 			"%s",
 		geoDetails.String(),
 		outputFormat,
@@ -543,6 +549,7 @@ func (c *client) GenerateDetailedLocationDescription(latitude, longitude float64
 			"You have real-time web search results at your disposal — use them thoroughly. Cross-reference sources for historical dates, demographic data, economic figures, and recent local developments. Go deeper than surface-level knowledge.\n\n"+
 			"Write as Atlas — warm, witty, talking to a friend. Every sentence should carry actual information. 3-5 paragraphs.\n"+
 			"CRITICAL: pure plain text only, absolutely no markdown formatting (no asterisks, no bold, no headers, no bullet points).\n"+
+			"The app renders citations separately, so keep links, URL fragments, source lists, and trailing reference blocks out of the response body. End on a clean sentence about the place.\n"+
 			"If a specific claim is uncertain and unsupported by search results, keep it modest rather than inventing details.\n\n"+
 			"%s",
 		latitude, longitude, locationText, outputFormat)

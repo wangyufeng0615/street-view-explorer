@@ -1,6 +1,9 @@
 package openai
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func ann(url string, start, end int) annotation {
 	return annotation{
@@ -69,5 +72,19 @@ func TestStripInlineCitations(t *testing.T) {
 				t.Errorf("got %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestGeographerSystemPromptKeepsCitationsOutOfBody(t *testing.T) {
+	requiredPhrases := []string{
+		"The product renders citations separately",
+		"Finish on a complete sentence about the place itself",
+		"Treat links, raw URLs, source lists, and parenthetical reference blocks as off-screen metadata",
+	}
+
+	for _, phrase := range requiredPhrases {
+		if !strings.Contains(geographerSystemPrompt, phrase) {
+			t.Fatalf("geographerSystemPrompt missing phrase %q", phrase)
+		}
 	}
 }
