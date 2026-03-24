@@ -154,5 +154,13 @@
   "auth.sending": "Sending...",
   "auth.user": "User",
   "auth.login_required": "Please login first",
-  "auth.login_to_use": "Login to use this feature"
+  "auth.login_to_use": "Login to use this feature",
+  "footprint.title": "Atlas's Footprints",
+  "footprint.total": "Atlas has visited {{count}} places",
+  "footprint.empty": "No footprints yet. Start exploring!",
+  "footprint.loading": "Loading footprints...",
+  "footprint.loading_map": "Loading satellite map...",
+  "footprint.reset_view": "Global View",
+  "footprint.close": "Close",
+  "more": "More"
 } 

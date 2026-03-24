@@ -23,6 +23,26 @@ type Region struct {
 	RegionInfo string `json:"region_info"`
 }
 
+const (
+	VisitSourceRandom = "random"
+	VisitSourceLookup = "lookup"
+	VisitSourceShared = "shared"
+)
+
+// VisitRecord 访问记录
+type VisitRecord struct {
+	ID               int64     `json:"id"`
+	SessionID        string    `json:"session_id,omitempty"`
+	PanoID           string    `json:"pano_id"`
+	Latitude         float64   `json:"latitude"`
+	Longitude        float64   `json:"longitude"`
+	Country          string    `json:"country"`
+	City             string    `json:"city"`
+	FormattedAddress string    `json:"formatted_address"`
+	Source           string    `json:"source"`
+	VisitedAt        time.Time `json:"visited_at"`
+}
+
 // PaginatedResult 分页结果通用结构
 type PaginatedResult[T any] struct {
 	Items    []T   `json:"items"`

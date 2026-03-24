@@ -1,7 +1,6 @@
 package api
 
 import (
-	"fmt"
 	"math"
 	"net/http"
 	"regexp"
@@ -10,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/my-streetview-project/backend/internal/models"
 	"github.com/my-streetview-project/backend/internal/services"
 	"github.com/my-streetview-project/backend/internal/utils"
 )
@@ -19,6 +19,8 @@ var (
 	trailingSpacesRegex   = regexp.MustCompile(`[ \t]+\n`)
 	excessiveNewlines     = regexp.MustCompile(`\n{3,}`)
 )
+
+const maxVisitHistoryLimit = 5000
 
 // sanitizeDescription 移除模型偶发输出在结尾的 markdown 链接行，保留正文。
 func sanitizeDescription(text string) string {
@@ -105,6 +107,14 @@ func (h *Handlers) GetRandomLocation(c *gin.Context) {
 	// 获取随机位置（自动处理用户偏好）
 	loc, err := svc.LocationService.GetRandomLocation(sessionID, language)
 	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	if err := svc.LocationService.RecordVisit(sessionID, loc, models.VisitSourceRandom); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
 			"error":   err.Error(),
@@ -328,6 +338,18 @@ func (h *Handlers) LookupLocation(c *gin.Context) {
 		return
 	}
 
+	sessionID := h.getOptionalSessionID(c)
+	if sessionID != "" {
+		source := normalizeVisitSource(c.DefaultQuery("source", models.VisitSourceLookup))
+		if err := svc.LocationService.RecordVisit(sessionID, *loc, source); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"error":   err.Error(),
+			})
+			return
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data": gin.H{
@@ -462,6 +484,41 @@ func (h *Handlers) DeleteExplorationPreference(c *gin.Context) {
 	})
 }
 
+// GetVisitHistory 获取访问历史
+func (h *Handlers) GetVisitHistory(c *gin.Context) {
+	sessionID := h.getSessionID(c)
+	if sessionID == "" {
+		return
+	}
+
+	limit := parseIntParam(c, "limit", 1000)
+	offset := parseIntParam(c, "offset", 0)
+	if limit > maxVisitHistoryLimit {
+		limit = maxVisitHistoryLimit
+	}
+
+	svc := h.servicesForMode(c)
+
+	visits, totalVisits, uniquePlaces, err := svc.LocationService.GetVisitHistory(sessionID, limit, offset)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data": gin.H{
+			"visits":        visits,
+			"total":         totalVisits,
+			"total_visits":  totalVisits,
+			"unique_places": uniquePlaces,
+		},
+	})
+}
+
 // ==================== 辅助方法 ====================
 
 // getSessionID 从上下文获取 sessionID，如果失败则返回空字符串并设置错误响应
@@ -485,17 +542,42 @@ func (h *Handlers) getSessionID(c *gin.Context) string {
 	return sessionID
 }
 
+func (h *Handlers) getOptionalSessionID(c *gin.Context) string {
+	sessionIDInterface, exists := c.Get("sessionID")
+	if !exists {
+		return ""
+	}
+	sessionID, ok := sessionIDInterface.(string)
+	if !ok {
+		return ""
+	}
+	return sessionID
+}
+
+func normalizeVisitSource(source string) string {
+	switch strings.TrimSpace(source) {
+	case models.VisitSourceShared:
+		return models.VisitSourceShared
+	default:
+		return models.VisitSourceLookup
+	}
+}
+
 // parseIntParam 解析整数参数，失败则返回默认值
 func parseIntParam(c *gin.Context, key string, defaultValue int) int {
 	value := c.DefaultQuery(key, "")
 	if value == "" {
 		return defaultValue
 	}
-	var result int
-	if _, err := fmt.Sscanf(value, "%d", &result); err != nil {
+	result, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil {
 		return defaultValue
 	}
-	if result < 1 {
+	minValue := 1
+	if defaultValue == 0 {
+		minValue = 0
+	}
+	if result < minValue {
 		return defaultValue
 	}
 	return result

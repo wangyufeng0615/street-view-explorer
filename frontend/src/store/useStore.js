@@ -139,7 +139,7 @@ const useStore = create(
 
                 try {
                     const currentLanguage = i18n.language || 'en';
-                    const resp = await lookupLocation(lat, lng, currentLanguage);
+                    const resp = await lookupLocation(lat, lng, currentLanguage, 'shared');
 
                     if (!get().isLoadingLocation) return;
 

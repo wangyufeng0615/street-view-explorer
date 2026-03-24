@@ -277,6 +277,16 @@ func (ls *LocationService) LookupLocation(lat, lng float64, language string) (*m
 	return &location, nil
 }
 
+// RecordVisit 记录用户访问
+func (ls *LocationService) RecordVisit(sessionID string, loc models.Location, source string) error {
+	return ls.repo.RecordVisit(sessionID, loc, source)
+}
+
+// GetVisitHistory 获取用户的访问历史
+func (ls *LocationService) GetVisitHistory(sessionID string, limit, offset int) ([]models.VisitRecord, int64, int64, error) {
+	return ls.repo.GetVisitHistory(sessionID, limit, offset)
+}
+
 // DeleteExplorationPreference 删除用户的探索偏好
 func (ls *LocationService) DeleteExplorationPreference(sessionID string) error {
 	return ls.repo.DeleteExplorationPreference(sessionID)

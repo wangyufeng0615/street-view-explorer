@@ -154,5 +154,13 @@
   "auth.sending": "发送中...",
   "auth.user": "用户",
   "auth.login_required": "请先登录",
-  "auth.login_to_use": "登录后即可使用此功能"
+  "auth.login_to_use": "登录后即可使用此功能",
+  "footprint.title": "Atlas 的足迹",
+  "footprint.total": "Atlas 已去过 {{count}} 个地方",
+  "footprint.empty": "还没有足迹，开始探索吧！",
+  "footprint.loading": "加载足迹中...",
+  "footprint.loading_map": "卫星地图加载中...",
+  "footprint.reset_view": "全球视图",
+  "footprint.close": "关闭",
+  "more": "更多"
 } 

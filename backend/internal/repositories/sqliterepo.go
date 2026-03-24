@@ -87,6 +87,24 @@ func (r *SQLiteRepository) migrate() error {
 	);
 
 	CREATE INDEX IF NOT EXISTS idx_rate_limits_expires ON rate_limits(expires_at);
+
+	CREATE TABLE IF NOT EXISTS visit_history (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		session_id TEXT NOT NULL,
+		pano_id TEXT NOT NULL,
+		latitude REAL NOT NULL,
+		longitude REAL NOT NULL,
+		country TEXT DEFAULT '',
+		city TEXT DEFAULT '',
+		formatted_address TEXT DEFAULT '',
+		source TEXT DEFAULT 'random',
+		visited_at DATETIME DEFAULT (datetime('now'))
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_visit_history_session ON visit_history(session_id);
+	CREATE INDEX IF NOT EXISTS idx_visit_history_visited_at ON visit_history(visited_at);
+	CREATE INDEX IF NOT EXISTS idx_visit_history_session_pano ON visit_history(session_id, pano_id);
+	CREATE INDEX IF NOT EXISTS idx_visit_history_session_visited_at ON visit_history(session_id, visited_at DESC, id DESC);
 	`
 
 	_, err := r.db.Exec(schema)
@@ -295,6 +313,68 @@ func (r *SQLiteRepository) GetCount(key string) (int64, error) {
 		return 0, err
 	}
 	return count, nil
+}
+
+// ==================== 访问记录相关方法 ====================
+
+func (r *SQLiteRepository) RecordVisit(sessionID string, loc models.Location, source string) error {
+	_, err := r.db.Exec(`
+		INSERT INTO visit_history (session_id, pano_id, latitude, longitude, country, city, formatted_address, source)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+	`,
+		sessionID, loc.PanoID, loc.Latitude, loc.Longitude,
+		loc.Country, loc.City, loc.FormattedAddress, source,
+	)
+	if err != nil {
+		return fmt.Errorf("记录访问失败: %w", err)
+	}
+	return nil
+}
+
+func (r *SQLiteRepository) GetVisitHistory(sessionID string, limit, offset int) ([]models.VisitRecord, int64, int64, error) {
+	// 获取总访问次数
+	var totalVisits int64
+	err := r.db.QueryRow("SELECT COUNT(*) FROM visit_history WHERE session_id = ?", sessionID).Scan(&totalVisits)
+	if err != nil {
+		return nil, 0, 0, fmt.Errorf("获取访问记录总数失败: %w", err)
+	}
+
+	// 获取唯一地点数
+	var uniquePlaces int64
+	err = r.db.QueryRow("SELECT COUNT(DISTINCT pano_id) FROM visit_history WHERE session_id = ?", sessionID).Scan(&uniquePlaces)
+	if err != nil {
+		return nil, 0, 0, fmt.Errorf("获取唯一地点数失败: %w", err)
+	}
+
+	// 获取分页数据
+	rows, err := r.db.Query(`
+		SELECT id, session_id, pano_id, latitude, longitude, country, city, formatted_address, source, visited_at
+		FROM visit_history
+		WHERE session_id = ?
+		ORDER BY visited_at DESC, id DESC
+		LIMIT ? OFFSET ?
+	`, sessionID, limit, offset)
+	if err != nil {
+		return nil, 0, 0, fmt.Errorf("获取访问记录失败: %w", err)
+	}
+	defer rows.Close()
+
+	var visits []models.VisitRecord
+	for rows.Next() {
+		var v models.VisitRecord
+		if err := rows.Scan(&v.ID, &v.SessionID, &v.PanoID, &v.Latitude, &v.Longitude,
+			&v.Country, &v.City, &v.FormattedAddress, &v.Source, &v.VisitedAt); err != nil {
+			return nil, 0, 0, fmt.Errorf("扫描访问记录失败: %w", err)
+		}
+		v.SessionID = "" // 不返回 session_id 给前端
+		visits = append(visits, v)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, 0, 0, fmt.Errorf("遍历访问记录失败: %w", err)
+	}
+
+	return visits, totalVisits, uniquePlaces, nil
 }
 
 // ==================== 辅助函数 ====================

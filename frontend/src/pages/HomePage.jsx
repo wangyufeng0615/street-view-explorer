@@ -1,4 +1,5 @@
 import React, {
+  useState,
   useEffect,
   useCallback,
   useMemo,
@@ -24,6 +25,9 @@ const StreetView = isCNMode
 const GlobalLoading = lazy(() => import("../components/GlobalLoading"));
 const ErrorDisplay = lazy(() => import("../components/ErrorDisplay"));
 const Toast = lazy(() => import("../components/Toast"));
+const FootprintMap = isCNMode
+  ? lazy(() => import("../components/BaiduFootprintMap"))
+  : lazy(() => import("../components/FootprintMap"));
 
 // 自定义钩子
 import useLocationData from "../hooks/useLocationData";
@@ -152,6 +156,8 @@ export default function HomePage() {
 
   const { heading, setHeading, handleCopyEmail, toastMessage, showToast } =
     useUIHandlers();
+
+  const [showFootprint, setShowFootprint] = useState(false);
 
   // 使用键盘导航钩子
   useKeyboardNavigation(loadRandomLocation, isLoading, loadingRef);
@@ -311,6 +317,7 @@ export default function HomePage() {
         onPreferenceChange={handlePreferenceChange}
         isSavingPreference={isSavingPreference}
         preferenceError={preferenceError}
+        onOpenFootprint={() => setShowFootprint(true)}
       />
 
       {/* 主要内容区域 */}
@@ -348,6 +355,13 @@ export default function HomePage() {
       <Suspense fallback={null}>
         <Toast message={toastMessage} visible={showToast} />
       </Suspense>
+
+      {/* 全球足迹地图 */}
+      {showFootprint && (
+        <Suspense fallback={null}>
+          <FootprintMap onClose={() => setShowFootprint(false)} />
+        </Suspense>
+      )}
     </div>
   );
 }

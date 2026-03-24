@@ -1,7 +1,6 @@
 import React, {
   memo,
   useState,
-  useCallback,
   useLayoutEffect,
   useRef,
 } from "react";
@@ -21,6 +20,7 @@ const TopBar = memo(function TopBar({
   onPreferenceChange,
   isSavingPreference,
   preferenceError,
+  onOpenFootprint,
 }) {
   const { t, i18n } = useTranslation();
   const [showDropdown, setShowDropdown] = useState(false);
@@ -184,18 +184,30 @@ const TopBar = memo(function TopBar({
             </span>
           </button>
 
-          {/* 设置菜单 */}
+          {/* 更多功能菜单 */}
           <div style={styles.dropdownContainer}>
             <button
               style={styles.settingsButton}
               className="hover-scale"
               onClick={() => setShowDropdown(!showDropdown)}
             >
-              ⚙️
+              ⋯
             </button>
 
             {showDropdown && (
               <div style={styles.dropdown}>
+                <button
+                  style={styles.dropdownButton}
+                  onClick={() => {
+                    setShowDropdown(false);
+                    onOpenFootprint();
+                  }}
+                >
+                  🌍 {t("footprint.title")}
+                </button>
+
+                <div style={styles.dropdownDivider} />
+
                 <div style={styles.dropdownItem}>
                   <span style={styles.dropdownLabel}>{t("language")}</span>
                   <div style={styles.languageButtons}>
@@ -346,7 +358,7 @@ const styles = {
     alignItems: "center",
   },
   addressContainer: {
-    maxWidth: "500px",
+    maxWidth: "100%",
   },
   address: {
     fontSize: "14px",
@@ -422,10 +434,14 @@ const styles = {
     minWidth: "160px",
     zIndex: 1001,
   },
+  dropdownDivider: {
+    height: "1px",
+    backgroundColor: "rgba(0, 0, 0, 0.08)",
+    margin: "4px 0",
+  },
   dropdownItem: {
-    marginBottom: "8px",
-    paddingBottom: "8px",
-    borderBottom: "1px solid rgba(0, 0, 0, 0.1)",
+    marginBottom: "4px",
+    paddingBottom: "4px",
   },
   dropdownLabel: {
     fontSize: "12px",

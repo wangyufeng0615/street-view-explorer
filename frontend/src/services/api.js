@@ -107,12 +107,17 @@ export async function getRandomLocation(language = null) {
 }
 
 // 根据坐标查找位置
-export async function lookupLocation(lat, lng, language = null) {
+export async function lookupLocation(
+  lat,
+  lng,
+  language = null,
+  source = "lookup",
+) {
   const lang = language || getCurrentLanguage();
 
   try {
     const resp = await fetchWithTimeout(
-      `${API_V1}/locations/lookup?lat=${lat}&lng=${lng}&lang=${lang}${modeParam()}`,
+      `${API_V1}/locations/lookup?lat=${lat}&lng=${lng}&lang=${lang}&source=${encodeURIComponent(source)}${modeParam()}`,
       {
         method: "GET",
         headers: getHeaders(),
@@ -262,6 +267,41 @@ export async function deleteExplorationPreference(language = null) {
           ? "请求超时"
           : err.message || "删除探索兴趣失败",
       message: null,
+    };
+  }
+}
+
+// 获取访问历史
+export async function getVisitHistory(limit = 1000, offset = 0) {
+  try {
+    const resp = await fetchWithTimeout(
+      `${API_V1}/visits?limit=${limit}&offset=${offset}${modeParam()}`,
+      {
+        method: "GET",
+        headers: getHeaders(),
+      },
+    );
+    const data = await resp.json();
+
+    if (data.success) {
+      return {
+        success: true,
+        data: data.data,
+        error: null,
+      };
+    }
+
+    return {
+      success: false,
+      data: null,
+      error: data.error || "获取访问历史失败",
+    };
+  } catch (err) {
+    return {
+      success: false,
+      data: null,
+      error:
+        err.name === "AbortError" ? "请求超时" : err.message || "网络请求失败",
     };
   }
 }

@@ -16,6 +16,10 @@ type Repository interface {
 	SaveExplorationPreference(sessionID string, pref models.ExplorationPreference) error
 	GetExplorationPreference(sessionID string) (*models.ExplorationPreference, error)
 	DeleteExplorationPreference(sessionID string) error
+
+	// 访问记录相关
+	RecordVisit(sessionID string, loc models.Location, source string) error
+	GetVisitHistory(sessionID string, limit, offset int) ([]models.VisitRecord, int64, int64, error)
 }
 
 // RateLimiter 限流器接口

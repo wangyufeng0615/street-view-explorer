@@ -17,6 +17,9 @@ func SetupRoutes(r *gin.Engine, h *Handlers) {
 			locations.GET("/:panoId/detailed-description", h.GetLocationDetailedDescription)
 		}
 
+		// 访问记录
+		v1.GET("/visits", h.GetVisitHistory)
+
 		// 探索偏好相关 (基于 sessionID)
 		preferences := v1.Group("/preferences")
 		{
