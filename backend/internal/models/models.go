@@ -50,3 +50,40 @@ type PaginatedResult[T any] struct {
 	Page     int   `json:"page"`
 	PageSize int   `json:"page_size"`
 }
+
+// ==================== Agent Journey ====================
+
+const (
+	JourneyStatusPending    = "pending"
+	JourneyStatusInProgress = "in_progress"
+	JourneyStatusCompleted  = "completed"
+)
+
+// AgentJourney 代表一次 AI 探索旅程
+type AgentJourney struct {
+	ID         string    `json:"id"`
+	Token      string    `json:"token,omitempty"`
+	StartLat   float64   `json:"start_lat"`
+	StartLng   float64   `json:"start_lng"`
+	TotalStops int       `json:"total_stops"`
+	Status     string    `json:"status"`
+	Letter     string    `json:"letter,omitempty"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+}
+
+// AgentJourneyStop 旅程中的一站
+type AgentJourneyStop struct {
+	ID             int64     `json:"id"`
+	JourneyID      string    `json:"journey_id"`
+	StopNumber     int       `json:"stop_number"`
+	Lat            float64   `json:"lat"`
+	Lng            float64   `json:"lng"`
+	PanoID         string    `json:"pano_id,omitempty"`
+	PhotoHeading   int       `json:"photo_heading"`
+	LocationInfo   string    `json:"location_info,omitempty"`
+	AIDescription  string    `json:"ai_description,omitempty"`
+	JournalEntry   string    `json:"journal_entry,omitempty"`
+	NextReasoning  string    `json:"next_reasoning,omitempty"`
+	CreatedAt      time.Time `json:"created_at"`
+}

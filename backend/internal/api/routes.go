@@ -4,7 +4,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func SetupRoutes(r *gin.Engine, h *Handlers) {
+func SetupRoutes(r *gin.Engine, h *Handlers, ah *AgentHandlers) {
 	// API 版本组
 	v1 := r.Group("/api/v1")
 	{
@@ -25,6 +25,21 @@ func SetupRoutes(r *gin.Engine, h *Handlers) {
 		{
 			preferences.POST("/exploration", h.SetExplorationPreference)
 			preferences.POST("/exploration/remove", h.DeleteExplorationPreference)
+		}
+
+		// Agent Journey (token-based auth)
+		agent := v1.Group("/agent")
+		{
+			agent.POST("/journeys", ah.CreateJourney)
+			agent.GET("/journeys", ah.ListJourneys)
+			agent.GET("/journeys/:id", ah.GetJourney)
+			agent.PUT("/journeys/:id/status", ah.UpdateJourneyStatus)
+			agent.GET("/journeys/:id/public-letter", ah.GetPublicLetter)
+			agent.GET("/explore", ah.AgentExplore)
+			agent.GET("/streetview", ah.StreetViewImage)
+			agent.POST("/journeys/:id/stops", ah.SaveJourneyStop)
+			agent.GET("/journeys/:id/stops", ah.GetJourneyStops)
+			agent.POST("/journeys/:id/letter", ah.SaveJourneyLetter)
 		}
 	}
 }

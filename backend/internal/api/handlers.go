@@ -75,6 +75,11 @@ func NewHandlers(
 	}
 }
 
+// GlobalServices returns the global mode services (used by AgentHandlers).
+func (h *Handlers) GlobalServices() *ModeServices {
+	return h.global
+}
+
 // SetCNServices sets the CN mode services.
 func (h *Handlers) SetCNServices(locationService *services.LocationService, aiService *services.AIService) {
 	h.cn = &ModeServices{

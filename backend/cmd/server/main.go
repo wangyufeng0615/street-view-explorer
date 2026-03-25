@@ -199,7 +199,8 @@ func main() {
 	if cnLocationService != nil && cnAIService != nil {
 		handlers.SetCNServices(cnLocationService, cnAIService)
 	}
-	api.SetupRoutes(r, handlers)
+	agentHandlers := api.NewAgentHandlers(repo, repo, handlers.GlobalServices(), cfg.GoogleMapsAPIKey())
+	api.SetupRoutes(r, handlers, agentHandlers)
 
 	addr := cfg.ServerAddress()
 	logger := utils.SystemLogger()

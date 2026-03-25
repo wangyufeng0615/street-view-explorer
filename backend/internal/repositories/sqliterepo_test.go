@@ -3,6 +3,7 @@ package repositories
 import (
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/my-streetview-project/backend/internal/models"
 )
@@ -94,5 +95,186 @@ func TestGetVisitHistoryReturnsVisitAndUniqueCounts(t *testing.T) {
 		if visit.SessionID != "" {
 			t.Fatalf("visit.SessionID = %q, want empty string", visit.SessionID)
 		}
+	}
+}
+
+// ==================== Agent Journey Repository Tests ====================
+
+func newTestRepo(t *testing.T) *SQLiteRepository {
+	t.Helper()
+	repo, err := NewSQLiteRepository(testSQLiteConfig{
+		path: filepath.Join(t.TempDir(), "agent-repo.db"),
+	})
+	if err != nil {
+		t.Fatalf("NewSQLiteRepository() error = %v", err)
+	}
+	t.Cleanup(func() { repo.Close() })
+	return repo
+}
+
+func TestCreateAndGetJourney(t *testing.T) {
+	repo := newTestRepo(t)
+	now := time.Now()
+
+	journey := models.AgentJourney{
+		ID: "j-001", Token: "tok-abc",
+		StartLat: 48.8566, StartLng: 2.3522,
+		TotalStops: 5, Status: models.JourneyStatusPending,
+		CreatedAt: now, UpdatedAt: now,
+	}
+	if err := repo.CreateJourney(journey); err != nil {
+		t.Fatalf("CreateJourney error: %v", err)
+	}
+
+	got, err := repo.GetJourney("j-001")
+	if err != nil {
+		t.Fatalf("GetJourney error: %v", err)
+	}
+	if got == nil {
+		t.Fatal("GetJourney returned nil")
+	}
+	if got.Token != "tok-abc" {
+		t.Fatalf("Token = %q, want tok-abc", got.Token)
+	}
+	if got.TotalStops != 5 {
+		t.Fatalf("TotalStops = %d, want 5", got.TotalStops)
+	}
+	if got.Status != models.JourneyStatusPending {
+		t.Fatalf("Status = %q, want pending", got.Status)
+	}
+}
+
+func TestGetJourneyNotFound(t *testing.T) {
+	repo := newTestRepo(t)
+	got, err := repo.GetJourney("nonexistent")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != nil {
+		t.Fatal("expected nil for nonexistent journey")
+	}
+}
+
+func TestGetJourneysByToken(t *testing.T) {
+	repo := newTestRepo(t)
+	now := time.Now()
+
+	for _, id := range []string{"j-a", "j-b"} {
+		repo.CreateJourney(models.AgentJourney{
+			ID: id, Token: "shared-tok",
+			StartLat: 10, StartLng: 20, TotalStops: 3,
+			Status: models.JourneyStatusPending, CreatedAt: now, UpdatedAt: now,
+		})
+	}
+	// Different token
+	repo.CreateJourney(models.AgentJourney{
+		ID: "j-c", Token: "other-tok",
+		StartLat: 10, StartLng: 20, TotalStops: 3,
+		Status: models.JourneyStatusPending, CreatedAt: now, UpdatedAt: now,
+	})
+
+	journeys, err := repo.GetJourneysByToken("shared-tok")
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+	if len(journeys) != 2 {
+		t.Fatalf("count = %d, want 2", len(journeys))
+	}
+	// Token should be empty in response
+	for _, j := range journeys {
+		if j.Token != "" {
+			t.Fatalf("Token should be empty in list response, got %q", j.Token)
+		}
+	}
+}
+
+func TestUpdateJourneyStatus(t *testing.T) {
+	repo := newTestRepo(t)
+	now := time.Now()
+	repo.CreateJourney(models.AgentJourney{
+		ID: "j-up", Token: "tok",
+		StartLat: 10, StartLng: 20, TotalStops: 3,
+		Status: models.JourneyStatusPending, CreatedAt: now, UpdatedAt: now,
+	})
+
+	if err := repo.UpdateJourneyStatus("j-up", "tok", models.JourneyStatusInProgress); err != nil {
+		t.Fatalf("error: %v", err)
+	}
+
+	got, _ := repo.GetJourney("j-up")
+	if got.Status != models.JourneyStatusInProgress {
+		t.Fatalf("status = %q, want in_progress", got.Status)
+	}
+
+	// Wrong token should fail
+	if err := repo.UpdateJourneyStatus("j-up", "wrong", models.JourneyStatusCompleted); err == nil {
+		t.Fatal("expected error for wrong token")
+	}
+}
+
+func TestSaveJourneyLetter(t *testing.T) {
+	repo := newTestRepo(t)
+	now := time.Now()
+	repo.CreateJourney(models.AgentJourney{
+		ID: "j-let", Token: "tok",
+		StartLat: 10, StartLng: 20, TotalStops: 3,
+		Status: models.JourneyStatusInProgress, CreatedAt: now, UpdatedAt: now,
+	})
+
+	if err := repo.SaveJourneyLetter("j-let", "tok", "Dear human..."); err != nil {
+		t.Fatalf("error: %v", err)
+	}
+
+	got, _ := repo.GetJourney("j-let")
+	if got.Letter != "Dear human..." {
+		t.Fatalf("letter = %q", got.Letter)
+	}
+	if got.Status != models.JourneyStatusCompleted {
+		t.Fatalf("status = %q, want completed", got.Status)
+	}
+}
+
+func TestSaveAndGetJourneyStops(t *testing.T) {
+	repo := newTestRepo(t)
+	now := time.Now()
+	repo.CreateJourney(models.AgentJourney{
+		ID: "j-stops", Token: "tok",
+		StartLat: 10, StartLng: 20, TotalStops: 3,
+		Status: models.JourneyStatusInProgress, CreatedAt: now, UpdatedAt: now,
+	})
+
+	stops := []models.AgentJourneyStop{
+		{JourneyID: "j-stops", StopNumber: 1, Lat: 10, Lng: 20, PanoID: "p1", JournalEntry: "First!", CreatedAt: now},
+		{JourneyID: "j-stops", StopNumber: 2, Lat: 11, Lng: 21, PanoID: "p2", JournalEntry: "Second!", CreatedAt: now},
+	}
+	for _, s := range stops {
+		if err := repo.SaveJourneyStop(s); err != nil {
+			t.Fatalf("SaveJourneyStop error: %v", err)
+		}
+	}
+
+	got, err := repo.GetJourneyStops("j-stops")
+	if err != nil {
+		t.Fatalf("GetJourneyStops error: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("count = %d, want 2", len(got))
+	}
+	if got[0].StopNumber != 1 || got[1].StopNumber != 2 {
+		t.Fatal("stops not in order")
+	}
+	if got[0].JournalEntry != "First!" {
+		t.Fatalf("entry = %q", got[0].JournalEntry)
+	}
+}
+
+func TestGetJourneyStopsEmpty(t *testing.T) {
+	repo := newTestRepo(t)
+	stops, err := repo.GetJourneyStops("nonexistent")
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+	if stops != nil && len(stops) != 0 {
+		t.Fatalf("expected empty stops, got %d", len(stops))
 	}
 }

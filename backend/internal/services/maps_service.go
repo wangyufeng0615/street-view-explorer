@@ -121,6 +121,7 @@ func (s *MapsService) getHTTPClient() *http.Client {
 	return &http.Client{}
 }
 
+
 // 检查坐标是否有街景可用，并返回街景坐标
 // 使用兜底措施确保总是能找到可用的街景
 func (s *MapsService) HasStreetView(ctx context.Context, latitude, longitude float64, hasInterest bool) (bool, float64, float64, string) {

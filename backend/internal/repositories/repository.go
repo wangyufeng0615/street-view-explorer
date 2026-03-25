@@ -20,6 +20,16 @@ type Repository interface {
 	// 访问记录相关
 	RecordVisit(sessionID string, loc models.Location, source string) error
 	GetVisitHistory(sessionID string, limit, offset int) ([]models.VisitRecord, int64, int64, error)
+
+	// Agent Journey 相关
+	CreateJourney(journey models.AgentJourney) error
+	GetJourney(id string) (*models.AgentJourney, error)
+	GetJourneysByToken(token string) ([]models.AgentJourney, error)
+	UpdateJourneyStatus(id, token, status string) error
+	SaveJourneyLetter(id, token, letter string) error
+	SaveJourneyStop(stop models.AgentJourneyStop) error
+	GetJourneyStops(journeyID string) ([]models.AgentJourneyStop, error)
+	GetTotalPlacesByToken(token string) (int64, error)
 }
 
 // RateLimiter 限流器接口

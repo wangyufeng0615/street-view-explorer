@@ -1,0 +1,638 @@
+/* ============================================================
+   Agent Page — Lonely Planet / Ocean & Nature theme
+
+   Color system:
+     Title:   #1a2b3c
+     Body:    #4b5563  (all normal text)
+     Muted:   #9ca3af  (secondary hints, meta)
+     Accent:  #0e7490  (teal)
+     Body font-size: 15px
+   ============================================================ */
+
+.agent-page {
+  height: 100vh;
+  background: #f7f5f0;
+  color: #4b5563;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 15px;
+  line-height: 1.7;
+  overflow-y: auto;
+}
+
+.agent-header {
+  display: flex;
+  align-items: center;
+  padding: 14px 24px;
+  background: #fff;
+  border-bottom: 1px solid #e8e4de;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.agent-back-btn {
+  background: none;
+  border: none;
+  color: #0e7490;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-weight: 500;
+  transition: background 0.15s;
+}
+
+.agent-back-btn:hover {
+  background: rgba(14, 116, 144, 0.08);
+}
+
+.agent-content {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 40px 24px 100px;
+}
+
+/* Feedback */
+.agent-feedback {
+  margin-bottom: 20px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  font-size: 15px;
+  line-height: 1.5;
+  border: 1px solid transparent;
+}
+
+.agent-feedback.success {
+  background: #ecfdf5;
+  border-color: #a7f3d0;
+  color: #065f46;
+}
+
+.agent-feedback.error {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #991b1b;
+}
+
+/* Hero */
+.agent-hero {
+  text-align: center;
+  margin-bottom: 48px;
+  padding-top: 8px;
+}
+
+.agent-hero h1 {
+  font-size: 42px;
+  font-weight: 700;
+  color: #1a2b3c;
+  margin: 0 0 14px;
+  letter-spacing: 2px;
+  font-family: 'LXGW WenKai', 'Playfair Display', Georgia, serif;
+}
+
+.agent-hero p {
+  font-size: 17px;
+  color: #4b5563;
+  line-height: 1.7;
+  margin: 0 auto;
+}
+
+/* ==================== Steps ==================== */
+.agent-step {
+  margin-bottom: 44px;
+}
+
+.agent-step-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #0e7490;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+
+.agent-step-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: #1a2b3c;
+  margin: 0 0 14px;
+}
+
+.agent-step-desc {
+  font-size: 15px;
+  color: #4b5563;
+  line-height: 1.7;
+  margin: 0 0 16px;
+}
+
+.agent-step-info {
+  margin-bottom: 18px;
+  font-size: 15px;
+  color: #4b5563;
+  line-height: 1.8;
+}
+
+.agent-step-info p {
+  margin: 0 0 8px;
+}
+
+.hl-memory {
+  color: #0e7490;
+  font-weight: 600;
+}
+
+.hl-letter {
+  color: #b45309;
+  font-weight: 600;
+}
+
+.hl-id {
+  color: #7c3aed;
+  font-weight: 600;
+}
+
+/* ==================== Map ==================== */
+.agent-map-container {
+  width: 100%;
+  height: 380px;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+  border: 1px solid #e0ddd6;
+  position: relative;
+  background: #dce8f0;
+}
+
+.agent-map-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: rgba(247, 245, 240, 0.92);
+  color: #4b5563;
+  text-align: center;
+  padding: 24px;
+}
+
+.agent-map-overlay-title {
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.agent-map-hint {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(255,255,255,0.92);
+  color: #4b5563;
+  font-size: 15px;
+  padding: 7px 16px;
+  border-radius: 20px;
+  pointer-events: none;
+  z-index: 2;
+  white-space: nowrap;
+  box-shadow: 0 1px 6px rgba(0,0,0,0.1);
+  border: 1px solid #e5e7eb;
+}
+
+.agent-coords {
+  margin-top: 12px;
+  font-size: 15px;
+  color: #4b5563;
+}
+
+.agent-coords span {
+  color: #0e7490;
+  font-weight: 500;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+/* ==================== Buttons ==================== */
+.agent-generate-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #0e7490;
+  color: #fff;
+  border: none;
+  padding: 12px 28px;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-top: 20px;
+}
+
+.agent-generate-btn:hover {
+  background: #0c6a83;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(14, 116, 144, 0.25);
+}
+
+.agent-generate-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.agent-generate-btn.copied {
+  background: #059669;
+}
+
+.agent-secondary-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: #fff;
+  border: 1px solid #d1d5db;
+  color: #4b5563;
+  padding: 8px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.15s;
+}
+
+.agent-secondary-btn:hover {
+  background: #f9fafb;
+  border-color: #9ca3af;
+}
+
+.agent-secondary-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ==================== Journey viewer ==================== */
+.agent-viewer-hint {
+  font-size: 15px;
+  color: #4b5563;
+  line-height: 1.7;
+  margin: 0 0 12px;
+}
+
+.agent-viewer-input {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.agent-viewer-input input {
+  flex: 1;
+  padding: 10px 14px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 15px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  color: #4b5563;
+  background: #fff;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.agent-viewer-input input:focus {
+  border-color: #0e7490;
+}
+
+.agent-viewer-input input::placeholder {
+  color: #d1d5db;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.agent-traveler-stats {
+  font-size: 15px;
+  color: #0e7490;
+  font-weight: 600;
+  margin-bottom: 16px;
+  padding: 10px 14px;
+  background: #f0fdfa;
+  border: 1px solid #ccfbf1;
+  border-radius: 8px;
+}
+
+.agent-inline-note {
+  margin-bottom: 14px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #1e40af;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* ==================== Skills ==================== */
+.agent-skills-box {
+  background: #fff;
+  border: 1px solid #e0ddd6;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+}
+
+.agent-skills-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px 8px 16px;
+  background: #fafaf8;
+  border-bottom: 1px solid #e8e4de;
+}
+
+.agent-skills-header span {
+  font-size: 11px;
+  color: #9ca3af;
+  font-weight: 600;
+  letter-spacing: 1px;
+}
+
+.agent-copy-btn {
+  background: #fff;
+  border: 1px solid #d1d5db;
+  color: #4b5563;
+  padding: 4px 12px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.15s;
+}
+
+.agent-copy-btn:hover {
+  background: #f3f4f6;
+}
+
+.agent-copy-btn.copied {
+  background: #ecfdf5;
+  border-color: #6ee7b7;
+  color: #059669;
+}
+
+.agent-skills-content {
+  padding: 16px;
+  max-height: 280px;
+  overflow-y: auto;
+  background: #fcfcfa;
+}
+
+.agent-skills-content pre {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #4b5563;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+}
+
+/* ==================== Journeys list ==================== */
+.agent-journeys {
+  margin-top: 48px;
+}
+
+.agent-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.agent-journey-card {
+  background: #fff;
+  border: 1px solid #e0ddd6;
+  border-radius: 10px;
+  padding: 16px 20px;
+  margin-bottom: 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.agent-journey-card:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+.agent-journey-card.latest {
+  border-color: #67e8f9;
+  background: #f0fdfa;
+}
+
+.agent-journey-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.agent-journey-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.agent-share-btn {
+  background: none;
+  border: 1px solid #d1d5db;
+  color: #4b5563;
+  padding: 3px 10px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.15s;
+}
+
+.agent-share-btn:hover {
+  background: #f3f4f6;
+  border-color: #9ca3af;
+}
+
+.agent-journey-card-title {
+  font-size: 15px;
+  color: #1a2b3c;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.agent-journey-card-meta {
+  font-size: 13px;
+  color: #9ca3af;
+  margin-top: 4px;
+}
+
+.agent-status-badge {
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-weight: 600;
+}
+
+.agent-status-badge.pending {
+  background: #fef9c3;
+  color: #a16207;
+}
+
+.agent-status-badge.in_progress {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.agent-status-badge.completed {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.agent-meta-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #e0f2fe;
+  color: #0369a1;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.agent-no-journeys {
+  text-align: center;
+  padding: 36px;
+  color: #9ca3af;
+  font-size: 15px;
+  background: #fff;
+  border: 1px dashed #d1d5db;
+  border-radius: 10px;
+}
+
+/* ==================== Journey detail ==================== */
+.agent-journey-detail {
+  margin-top: 12px;
+  padding-top: 16px;
+  border-top: 1px solid #e8e4de;
+}
+
+.agent-detail-state {
+  padding: 18px;
+  border-radius: 10px;
+  background: #f9fafb;
+  color: #4b5563;
+  font-size: 15px;
+  line-height: 1.6;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.agent-detail-state.error {
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.agent-detail-subtle {
+  font-size: 13px;
+  color: #9ca3af;
+  margin-bottom: 12px;
+}
+
+/* ==================== Letter ==================== */
+.agent-letter-section {
+  padding: 24px;
+  background: linear-gradient(135deg, #fefce8 0%, #fff7ed 100%);
+  border: 1px solid #fde68a;
+  border-radius: 12px;
+}
+
+.agent-letter-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #b45309;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  margin-bottom: 14px;
+}
+
+.agent-letter-content {
+  font-size: 16px;
+  color: #44403c;
+  line-height: 1.8;
+  font-family: Georgia, 'Times New Roman', serif;
+}
+
+.agent-letter-img {
+  display: block;
+  width: 100%;
+  max-width: 560px;
+  height: auto;
+  border-radius: 10px;
+  margin: 16px 0;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+}
+
+.agent-letter-h1 {
+  font-size: 22px;
+  font-weight: 700;
+  color: #1a2b3c;
+  margin: 24px 0 12px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.agent-letter-h2 {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1a2b3c;
+  margin: 20px 0 10px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.agent-letter-h3 {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1a2b3c;
+  margin: 16px 0 8px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.agent-letter-hr {
+  border: none;
+  border-top: 1px solid #e0ddd6;
+  margin: 24px 0;
+}
+
+.agent-letter-standalone {
+  background: #fff;
+  border: 1px solid #e0ddd6;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+  padding: 32px;
+}
+
+/* ==================== Responsive ==================== */
+@media (max-width: 640px) {
+  .agent-content {
+    padding: 24px 16px 60px;
+  }
+
+  .agent-hero h1 {
+    font-size: 32px;
+  }
+
+  .agent-map-container {
+    height: 280px;
+  }
+
+  .agent-section-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

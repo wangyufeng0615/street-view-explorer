@@ -105,6 +105,38 @@ func (r *SQLiteRepository) migrate() error {
 	CREATE INDEX IF NOT EXISTS idx_visit_history_visited_at ON visit_history(visited_at);
 	CREATE INDEX IF NOT EXISTS idx_visit_history_session_pano ON visit_history(session_id, pano_id);
 	CREATE INDEX IF NOT EXISTS idx_visit_history_session_visited_at ON visit_history(session_id, visited_at DESC, id DESC);
+
+	CREATE TABLE IF NOT EXISTS agent_journeys (
+		id TEXT PRIMARY KEY,
+		token TEXT NOT NULL,
+		start_lat REAL NOT NULL,
+		start_lng REAL NOT NULL,
+		total_stops INTEGER NOT NULL,
+		status TEXT NOT NULL DEFAULT 'pending',
+		letter TEXT DEFAULT '',
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_agent_journeys_token ON agent_journeys(token);
+
+	CREATE TABLE IF NOT EXISTS agent_journey_stops (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		journey_id TEXT NOT NULL,
+		stop_number INTEGER NOT NULL,
+		lat REAL NOT NULL,
+		lng REAL NOT NULL,
+		pano_id TEXT DEFAULT '',
+		photo_heading INTEGER DEFAULT 0,
+		location_info TEXT DEFAULT '',
+		ai_description TEXT DEFAULT '',
+		journal_entry TEXT DEFAULT '',
+		next_reasoning TEXT DEFAULT '',
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		FOREIGN KEY (journey_id) REFERENCES agent_journeys(id)
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_agent_stops_journey ON agent_journey_stops(journey_id);
 	`
 
 	_, err := r.db.Exec(schema)
@@ -375,6 +407,145 @@ func (r *SQLiteRepository) GetVisitHistory(sessionID string, limit, offset int) 
 	}
 
 	return visits, totalVisits, uniquePlaces, nil
+}
+
+// ==================== Agent Journey 相关方法 ====================
+
+func (r *SQLiteRepository) CreateJourney(journey models.AgentJourney) error {
+	_, err := r.db.Exec(`
+		INSERT INTO agent_journeys (id, token, start_lat, start_lng, total_stops, status, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+	`,
+		journey.ID, journey.Token, journey.StartLat, journey.StartLng,
+		journey.TotalStops, journey.Status, journey.CreatedAt, journey.UpdatedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("创建旅程失败: %w", err)
+	}
+	return nil
+}
+
+func (r *SQLiteRepository) GetJourney(id string) (*models.AgentJourney, error) {
+	row := r.db.QueryRow(`
+		SELECT id, token, start_lat, start_lng, total_stops, status, letter, created_at, updated_at
+		FROM agent_journeys WHERE id = ?
+	`, id)
+
+	var j models.AgentJourney
+	err := row.Scan(&j.ID, &j.Token, &j.StartLat, &j.StartLng,
+		&j.TotalStops, &j.Status, &j.Letter, &j.CreatedAt, &j.UpdatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("获取旅程失败: %w", err)
+	}
+	return &j, nil
+}
+
+func (r *SQLiteRepository) GetJourneysByToken(token string) ([]models.AgentJourney, error) {
+	rows, err := r.db.Query(`
+		SELECT id, token, start_lat, start_lng, total_stops, status, letter, created_at, updated_at
+		FROM agent_journeys WHERE token = ?
+		ORDER BY created_at DESC
+	`, token)
+	if err != nil {
+		return nil, fmt.Errorf("获取旅程列表失败: %w", err)
+	}
+	defer rows.Close()
+
+	var journeys []models.AgentJourney
+	for rows.Next() {
+		var j models.AgentJourney
+		if err := rows.Scan(&j.ID, &j.Token, &j.StartLat, &j.StartLng,
+			&j.TotalStops, &j.Status, &j.Letter, &j.CreatedAt, &j.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("扫描旅程记录失败: %w", err)
+		}
+		j.Token = "" // 不返回 token
+		journeys = append(journeys, j)
+	}
+	return journeys, rows.Err()
+}
+
+func (r *SQLiteRepository) UpdateJourneyStatus(id, token, status string) error {
+	result, err := r.db.Exec(`
+		UPDATE agent_journeys SET status = ?, updated_at = ?
+		WHERE id = ? AND token = ?
+	`, status, time.Now(), id, token)
+	if err != nil {
+		return fmt.Errorf("更新旅程状态失败: %w", err)
+	}
+	n, _ := result.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("旅程不存在或 token 不匹配")
+	}
+	return nil
+}
+
+func (r *SQLiteRepository) SaveJourneyLetter(id, token, letter string) error {
+	result, err := r.db.Exec(`
+		UPDATE agent_journeys SET letter = ?, status = ?, updated_at = ?
+		WHERE id = ? AND token = ?
+	`, letter, models.JourneyStatusCompleted, time.Now(), id, token)
+	if err != nil {
+		return fmt.Errorf("保存旅程信件失败: %w", err)
+	}
+	n, _ := result.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("旅程不存在或 token 不匹配")
+	}
+	return nil
+}
+
+func (r *SQLiteRepository) SaveJourneyStop(stop models.AgentJourneyStop) error {
+	_, err := r.db.Exec(`
+		INSERT INTO agent_journey_stops (journey_id, stop_number, lat, lng, pano_id, photo_heading, location_info, ai_description, journal_entry, next_reasoning, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`,
+		stop.JourneyID, stop.StopNumber, stop.Lat, stop.Lng,
+		stop.PanoID, stop.PhotoHeading, stop.LocationInfo, stop.AIDescription,
+		stop.JournalEntry, stop.NextReasoning, stop.CreatedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("保存旅程站点失败: %w", err)
+	}
+	return nil
+}
+
+func (r *SQLiteRepository) GetJourneyStops(journeyID string) ([]models.AgentJourneyStop, error) {
+	rows, err := r.db.Query(`
+		SELECT id, journey_id, stop_number, lat, lng, pano_id, photo_heading, location_info, ai_description, journal_entry, next_reasoning, created_at
+		FROM agent_journey_stops WHERE journey_id = ?
+		ORDER BY stop_number ASC
+	`, journeyID)
+	if err != nil {
+		return nil, fmt.Errorf("获取旅程站点失败: %w", err)
+	}
+	defer rows.Close()
+
+	var stops []models.AgentJourneyStop
+	for rows.Next() {
+		var s models.AgentJourneyStop
+		if err := rows.Scan(&s.ID, &s.JourneyID, &s.StopNumber, &s.Lat, &s.Lng,
+			&s.PanoID, &s.PhotoHeading, &s.LocationInfo, &s.AIDescription,
+			&s.JournalEntry, &s.NextReasoning, &s.CreatedAt); err != nil {
+			return nil, fmt.Errorf("扫描旅程站点失败: %w", err)
+		}
+		stops = append(stops, s)
+	}
+	return stops, rows.Err()
+}
+
+func (r *SQLiteRepository) GetTotalPlacesByToken(token string) (int64, error) {
+	var count int64
+	err := r.db.QueryRow(`
+		SELECT COUNT(*) FROM agent_journey_stops
+		WHERE journey_id IN (SELECT id FROM agent_journeys WHERE token = ?)
+	`, token).Scan(&count)
+	if err != nil {
+		return 0, err
+	}
+	return count, nil
 }
 
 // ==================== 辅助函数 ====================

@@ -306,6 +306,38 @@ export async function getVisitHistory(limit = 1000, offset = 0) {
   }
 }
 
+// ==================== Agent Journey API ====================
+
+// 获取旅程列表
+export async function getAgentJourneys(token) {
+  try {
+    const resp = await fetchWithTimeout(
+      `${API_V1}/agent/journeys?token=${encodeURIComponent(token)}`,
+      { method: "GET" },
+    );
+    const text = await resp.text();
+    if (!text) return { success: false, error: "Empty response" };
+    return JSON.parse(text);
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+// 获取旅程详情 (含 stops)
+export async function getAgentJourneyDetail(journeyId, token) {
+  try {
+    const resp = await fetchWithTimeout(
+      `${API_V1}/agent/journeys/${journeyId}?token=${encodeURIComponent(token)}`,
+      { method: "GET" },
+    );
+    const text = await resp.text();
+    if (!text) return { success: false, error: "Empty response" };
+    return JSON.parse(text);
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
 // 获取位置的详细AI介绍
 export async function getLocationDetailedDescription(
   panoId,
