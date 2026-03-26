@@ -22,12 +22,40 @@
 .agent-header {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   padding: 14px 24px;
   background: #fff;
   border-bottom: 1px solid #e8e4de;
-  position: sticky;
-  top: 0;
-  z-index: 10;
+}
+
+.agent-header-lang {
+  display: flex;
+  gap: 4px;
+}
+
+.agent-lang-btn {
+  background: none;
+  border: 1px solid #e8e4de;
+  color: #9ca3af;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-weight: 500;
+  transition: all 0.15s;
+}
+
+.agent-lang-btn:hover:not(:disabled) {
+  background: rgba(14, 116, 144, 0.06);
+  border-color: #0e7490;
+  color: #0e7490;
+}
+
+.agent-lang-btn.active {
+  background: #0e7490;
+  border-color: #0e7490;
+  color: #fff;
+  cursor: default;
 }
 
 .agent-back-btn {
@@ -52,26 +80,35 @@
   padding: 40px 24px 100px;
 }
 
-/* Feedback */
-.agent-feedback {
-  margin-bottom: 20px;
-  padding: 12px 16px;
+/* Feedback toast */
+.agent-feedback-toast {
+  position: fixed;
+  top: 72px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 10px 24px;
   border-radius: 8px;
-  font-size: 15px;
+  font-size: 14px;
   line-height: 1.5;
-  border: 1px solid transparent;
+  z-index: 100;
+  animation: agent-toast-in 0.25s ease-out;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  pointer-events: none;
 }
 
-.agent-feedback.success {
-  background: #ecfdf5;
-  border-color: #a7f3d0;
-  color: #065f46;
+.agent-feedback-toast.success {
+  background: #065f46;
+  color: #fff;
 }
 
-.agent-feedback.error {
-  background: #fef2f2;
-  border-color: #fecaca;
-  color: #991b1b;
+.agent-feedback-toast.error {
+  background: #991b1b;
+  color: #fff;
+}
+
+@keyframes agent-toast-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(-8px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
 }
 
 /* Hero */
@@ -566,7 +603,7 @@
 .agent-letter-content {
   font-size: 16px;
   color: #44403c;
-  line-height: 1.8;
+  line-height: 1.6;
   font-family: Georgia, 'Times New Roman', serif;
 }
 
@@ -576,7 +613,7 @@
   max-width: 560px;
   height: auto;
   border-radius: 10px;
-  margin: 16px 0;
+  margin: 16px auto;
   box-shadow: 0 2px 10px rgba(0,0,0,0.08);
 }
 

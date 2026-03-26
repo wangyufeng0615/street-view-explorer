@@ -239,6 +239,9 @@ unless the file grows too long — only then condense to stay concise.
   to hear how you think, not just what you saw.
 - Let each place influence where you go next. Don't preplan.
 - Pick meaningful photos — the heading that captures what moved you.
+- **End with a sign-off** that includes today's date and the name of your last stop
+  (the place where you're "writing from"). For example:
+  "— Your Traveler, from Hallstatt, 2026-03-26"
 `;
 }
 
@@ -367,6 +370,9 @@ Body: \`{"status": "in_progress"}\`（带认证头）
   不仅仅是你看到了什么。
 - 让每个地点影响你的下一站。不要预先规划。
 - 拍有意义的照片——选择最能打动你的方向。
+- **落款要有日期和地点**——在来信末尾署上今天的日期和最后一站的地名
+  （你"写信"的地方）。例如：
+  "—— 你的旅行者，写于哈尔施塔特，2026-03-26"
 `;
 }
 
@@ -386,7 +392,9 @@ export default function AgentPage() {
   const [feedback, setFeedback] = useState(null);
 
   // Journey viewer state
-  const [viewerTravelerId, setViewerTravelerId] = useState("");
+  const [viewerTravelerId, setViewerTravelerId] = useState(
+    () => localStorage.getItem("atlas_traveler_id") || "",
+  );
   const [journeys, setJourneys] = useState([]);
   const [totalPlaces, setTotalPlaces] = useState(0);
   const [isLoadingJourneys, setIsLoadingJourneys] = useState(false);
@@ -418,6 +426,14 @@ export default function AgentPage() {
     return () => { if (copyTimerRef.current) clearTimeout(copyTimerRef.current); };
   }, []);
 
+  // Persist traveler ID to localStorage & auto-query
+  const hasMountQueried = useRef(false);
+  useEffect(() => {
+    if (viewerTravelerId.trim()) {
+      localStorage.setItem("atlas_traveler_id", viewerTravelerId.trim());
+    }
+  }, [viewerTravelerId]);
+
   // Initialize map
   useEffect(() => {
     let cancelled = false;
@@ -435,7 +451,7 @@ export default function AgentPage() {
           styles: NATURAL_MAP_STYLE,
           disableDefaultUI: true,
           zoomControl: true,
-          gestureHandling: "greedy",
+          gestureHandling: "none",
           backgroundColor: "#dce8f0",
         });
         map.addListener("click", (e) => {
@@ -512,6 +528,13 @@ export default function AgentPage() {
     loadJourneys(id);
   }, [loadJourneys, viewerTravelerId]);
 
+  useEffect(() => {
+    if (hasMountQueried.current) return;
+    hasMountQueried.current = true;
+    const cached = viewerTravelerId.trim();
+    if (cached) loadJourneys(cached);
+  }, [loadJourneys, viewerTravelerId]);
+
   const loadJourneyDetail = useCallback(
     async (journeyId, travelerId) => {
       setJourneyDetailLoadingId(journeyId);
@@ -574,7 +597,6 @@ export default function AgentPage() {
         {loading && <div className="agent-detail-subtle">{t("agent.refreshing")}</div>}
         {data.journey.letter ? (
           <div className="agent-letter-section">
-            <div className="agent-letter-label">{t("agent.letter_from_ai")}</div>
             <div
               className="agent-letter-content"
               dangerouslySetInnerHTML={{
@@ -607,12 +629,24 @@ export default function AgentPage() {
   return (
     <div className="agent-page">
       <div className="agent-header">
-        <button className="agent-back-btn" onClick={() => navigate("/")}>← Atlas</button>
+        <button className="agent-back-btn" onClick={() => navigate("/")}>← {t("agent.back_home")}</button>
+        <div className="agent-header-lang">
+          <button
+            className={`agent-lang-btn${currentLanguage === "en" ? " active" : ""}`}
+            onClick={() => i18n.changeLanguage("en")}
+            disabled={currentLanguage === "en"}
+          >EN</button>
+          <button
+            className={`agent-lang-btn${currentLanguage === "zh" ? " active" : ""}`}
+            onClick={() => i18n.changeLanguage("zh")}
+            disabled={currentLanguage === "zh"}
+          >中</button>
+        </div>
       </div>
 
       <div className="agent-content">
         {feedback && (
-          <div className={`agent-feedback ${feedback.type}`}>{feedback.message}</div>
+          <div className={`agent-feedback-toast ${feedback.type}`}>{feedback.message}</div>
         )}
 
         {/* Hero */}
@@ -705,7 +739,7 @@ export default function AgentPage() {
               value={viewerTravelerId}
               onChange={(e) => setViewerTravelerId(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleLookup()}
-              placeholder="Traveler ID"
+              placeholder={t("agent.traveler_id_placeholder")}
             />
             <button
               className="agent-secondary-btn"
@@ -741,6 +775,7 @@ export default function AgentPage() {
                   <div>
                     <div className="agent-journey-card-title">
                       {t("agent.journey")} · {j.total_stops} {t("agent.stops")}
+                      <span className={`agent-status-badge ${j.status}`}>{statusLabel(j.status)}</span>
                     </div>
                     <div className="agent-journey-card-meta">
                       {new Date(j.created_at).toLocaleDateString(currentLocale, {
@@ -763,7 +798,6 @@ export default function AgentPage() {
                         {t("agent.share")}
                       </button>
                     )}
-                    <span className={`agent-status-badge ${j.status}`}>{statusLabel(j.status)}</span>
                   </div>
                 </div>
                 {expandedJourney === j.id && (
