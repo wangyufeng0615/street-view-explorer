@@ -41,10 +41,6 @@ yarn-error.log*
 *.swp
 *.swo
 
-# Redis
-*.rdb
-dump.rdb
-
 # IDE files
 .idea/
 .vscode/

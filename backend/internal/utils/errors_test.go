@@ -21,7 +21,7 @@ func TestAppError(t *testing.T) {
 
 func TestWrapError(t *testing.T) {
 	// 测试包装错误
-	originalErr := errors.New("redis timeout")
+	originalErr := errors.New("connection timeout")
 	wrappedErr := WrapError(originalErr, "操作超时，请稍后重试")
 	
 	if wrappedErr.Error() != "操作超时，请稍后重试" {
