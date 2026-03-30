@@ -4,15 +4,27 @@ import "../styles/AgentPage.css";
 
 const API_V1 = "/api/v1";
 
-// Same renderer as AgentPage
-function renderLetterMarkdown(text, stopImageMap = {}) {
+// Renderer for public letter — rewrites embedded token URLs to journey_id URLs
+function renderLetterMarkdown(text, stopImageMap = {}, journeyId = null) {
   const images = [];
   let processed = text.replace(
     /!\[([^\]]*)\]\(([^)]+)\)/g,
     (match, alt, url) => {
       let src = "";
       if (url.includes("/api/v1/agent/streetview")) {
-        src = url;
+        if (journeyId) {
+          // Rewrite: strip token, use journey_id for public access
+          try {
+            const u = new URL(url, window.location.origin);
+            u.searchParams.delete("token");
+            u.searchParams.set("journey_id", journeyId);
+            src = u.pathname + "?" + u.searchParams.toString();
+          } catch {
+            src = url;
+          }
+        } else {
+          src = url;
+        }
       } else {
         const stopMatch = url.match(/stop[_-]?(\d+)/i);
         if (stopMatch && stopImageMap[parseInt(stopMatch[1], 10)]) {
@@ -47,12 +59,16 @@ export default function LetterPage() {
   const navigate = useNavigate();
   const [letter, setLetter] = useState(null);
   const [photos, setPhotos] = useState([]);
-  const [token, setToken] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function load() {
+      if (!id || id === "undefined") {
+        setError("Invalid letter ID");
+        setLoading(false);
+        return;
+      }
       try {
         const resp = await fetch(`${API_V1}/agent/journeys/${id}/public-letter`);
         const text = await resp.text();
@@ -61,7 +77,6 @@ export default function LetterPage() {
         if (data.success && data.data) {
           setLetter(data.data.letter);
           setPhotos(data.data.photos || []);
-          setToken(data.data.token || "");
         } else {
           setError(data.error || "Letter not found");
         }
@@ -78,7 +93,7 @@ export default function LetterPage() {
   for (const p of photos) {
     if (p.pano_id) {
       stopImageMap[p.stop_number] =
-        `/api/v1/agent/streetview?pano_id=${p.pano_id}&heading=${p.photo_heading || 0}&token=${token}`;
+        `/api/v1/agent/streetview?pano_id=${p.pano_id}&heading=${p.photo_heading || 0}&journey_id=${id}`;
     }
   }
 
@@ -117,7 +132,7 @@ export default function LetterPage() {
         <div className="agent-letter-section agent-letter-standalone">
           <div
             className="agent-letter-content"
-            dangerouslySetInnerHTML={{ __html: renderLetterMarkdown(letter, stopImageMap) }}
+            dangerouslySetInnerHTML={{ __html: renderLetterMarkdown(letter, stopImageMap, id) }}
           />
         </div>
       </div>

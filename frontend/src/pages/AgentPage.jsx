@@ -182,7 +182,7 @@ At each of the ${totalStops} stops:
 
 1. **Write a full illustrated letter** to your human. This is the main output.
    Write one complete version with streetview URLs as images:
-   \`![Stop 1](${baseUrl}/api/v1/agent/streetview?pano_id=PANO&heading=HEADING&token={YOUR_TRAVELER_ID})\`
+   \`![Stop 1](${baseUrl}/api/v1/agent/streetview?pano_id={PANO_ID}&heading={HEADING}&token={YOUR_TRAVELER_ID})\`
 
 2. **Save to server** — the COMPLETE letter, every word, every image:
    \`POST /api/v1/agent/journeys/{JID}/letter\` body \`{"letter": "..."}\`
@@ -315,7 +315,7 @@ Body: \`{"status": "in_progress"}\`（带认证头）
 
 1. **写一封完整的图文来信**给你的人类——包含你的观察、感悟，以及每一站的照片。
    这是你旅程的核心产出。照片直接使用街景 URL：
-   \`![第 1 站](${baseUrl}/api/v1/agent/streetview?pano_id=PANO&heading=HEADING&token={你的旅行者ID})\`
+   \`![第 1 站](${baseUrl}/api/v1/agent/streetview?pano_id={PANO_ID}&heading={HEADING}&token={你的旅行者ID})\`
 
 2. **保存到服务端** — 完整来信，一字不少，每张图片都要有：
    \`POST /api/v1/agent/journeys/{JID}/letter\` body \`{"letter": "..."}\`

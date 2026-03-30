@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -254,7 +255,6 @@ func RequestLoggingMiddleware() gin.HandlerFunc {
 	logger := utils.APILogger()
 
 	return gin.LoggerWithFormatter(func(param gin.LogFormatterParams) string {
-		// 只记录失败的请求
 		if param.StatusCode >= 400 {
 			logger.Error("request_failed", "HTTP request failed", nil, map[string]interface{}{
 				"method":     param.Method,
@@ -264,8 +264,16 @@ func RequestLoggingMiddleware() gin.HandlerFunc {
 				"client_ip":  param.ClientIP,
 				"user_agent": param.Request.UserAgent(),
 			})
+		} else if strings.HasPrefix(param.Path, "/api/v1/agent/") {
+			// Log successful agent requests for observability
+			logger.Info("agent_request", "Agent API request", map[string]interface{}{
+				"method":   param.Method,
+				"path":     param.Path,
+				"status":   param.StatusCode,
+				"duration": param.Latency.String(),
+			})
 		}
 
-		return "" // 返回空字符串避免重复日志
+		return ""
 	})
 }

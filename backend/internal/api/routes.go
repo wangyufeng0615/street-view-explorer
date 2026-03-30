@@ -40,6 +40,14 @@ func SetupRoutes(r *gin.Engine, h *Handlers, ah *AgentHandlers) {
 			agent.POST("/journeys/:id/stops", ah.SaveJourneyStop)
 			agent.GET("/journeys/:id/stops", ah.GetJourneyStops)
 			agent.POST("/journeys/:id/letter", ah.SaveJourneyLetter)
+
+			// Catch common AI mistakes: missing journey ID in URL
+			agent.PUT("/journeys/status", func(c *gin.Context) {
+				c.JSON(400, gin.H{
+					"success": false,
+					"error":   "Missing journey ID in URL. Correct format: PUT /api/v1/agent/journeys/{JOURNEY_ID}/status",
+				})
+			})
 		}
 	}
 }

@@ -22,7 +22,7 @@ RUN yarn build
 FROM nginx:alpine
 
 # 创建必要的目录
-RUN mkdir -p /usr/share/nginx/html
+RUN mkdir -p /usr/share/nginx/html /var/cache/nginx/streetview
 
 # 从构建阶段复制前端静态文件
 COPY --from=frontend-builder /app/build /usr/share/nginx/html

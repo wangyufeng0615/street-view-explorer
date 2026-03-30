@@ -297,9 +297,9 @@ func (ah *AgentHandlers) AgentExplore(c *gin.Context) {
 
 	loc, err := ah.global.LocationService.LookupLocation(lat, lng, language)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
+		c.JSON(http.StatusNotFound, gin.H{
 			"success": false,
-			"error":   "No street view found near these coordinates. Try adjusting to a location closer to roads or populated areas.",
+			"error":   "No street view found near these coordinates. Try adjusting lat/lng to a location closer to roads or populated areas. Do NOT call streetview API without a valid pano_id from a successful explore response.",
 		})
 		return
 	}
@@ -524,7 +524,6 @@ func (ah *AgentHandlers) GetPublicLetter(c *gin.Context) {
 		"success": true,
 		"data": gin.H{
 			"letter":     journey.Letter,
-			"token":      journey.Token,
 			"start_lat":  journey.StartLat,
 			"start_lng":  journey.StartLng,
 			"created_at": journey.CreatedAt,
@@ -535,20 +534,38 @@ func (ah *AgentHandlers) GetPublicLetter(c *gin.Context) {
 
 // StreetViewImage — GET /agent/streetview?pano_id=X&heading=Y&token=T
 // Proxies Google Street View Static API image so the AI can see the actual street view.
+// Auth: either token (for AI agents) or journey_id (for public letter viewing).
 func (ah *AgentHandlers) StreetViewImage(c *gin.Context) {
 	token := extractToken(c)
-	if token == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"success": false, "error": "Token is required"})
-		return
-	}
-	if err := validateAgentToken(token); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
+	journeyID := c.Query("journey_id")
+
+	if token == "" && journeyID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"success": false, "error": "Token or journey_id is required"})
 		return
 	}
 
+	// Auth path: token (AI agents) or journey_id (public letter readers)
+	if token != "" {
+		if err := validateAgentToken(token); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
+			return
+		}
+	} else {
+		// journey_id auth: only allow for journeys with completed letters
+		journey, err := ah.repo.GetJourney(journeyID)
+		if err != nil || journey == nil || journey.Letter == "" {
+			c.JSON(http.StatusForbidden, gin.H{"success": false, "error": "Invalid journey_id or letter not published"})
+			return
+		}
+	}
+
 	panoID := c.Query("pano_id")
-	if panoID == "" || len(panoID) > 100 || !panoIDRegex.MatchString(panoID) {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "Invalid or missing pano_id"})
+	if panoID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "pano_id is required. Make sure your explore call returned success=true with a valid pano_id before calling streetview."})
+		return
+	}
+	if len(panoID) > 100 || !panoIDRegex.MatchString(panoID) {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "Invalid pano_id format. Use the exact pano_id string returned by the explore API."})
 		return
 	}
 
@@ -572,14 +589,16 @@ func (ah *AgentHandlers) StreetViewImage(c *gin.Context) {
 	}
 
 	if ah.limiter != nil {
-		// Per-token: 120 images/hour
-		allowed, _, _ := ah.limiter.CheckAndIncrement("agent_sv_img:"+token, 120, time.Hour)
-		if !allowed {
-			c.JSON(http.StatusTooManyRequests, gin.H{"success": false, "error": "Rate limit exceeded"})
-			return
+		// Per-token rate limit (only when using token auth)
+		if token != "" {
+			allowed, _, _ := ah.limiter.CheckAndIncrement("agent_sv_img:"+token, 120, time.Hour)
+			if !allowed {
+				c.JSON(http.StatusTooManyRequests, gin.H{"success": false, "error": "Rate limit exceeded"})
+				return
+			}
 		}
-		// Per-IP global: 300 images/hour
-		allowed, _, _ = ah.limiter.CheckAndIncrement("agent_sv_img_ip:"+clientIP(c), 300, time.Hour)
+		// Per-IP global: 300 images/hour (always applied)
+		allowed, _, _ := ah.limiter.CheckAndIncrement("agent_sv_img_ip:"+clientIP(c), 300, time.Hour)
 		if !allowed {
 			c.JSON(http.StatusTooManyRequests, gin.H{"success": false, "error": "Rate limit exceeded"})
 			return
