@@ -15,19 +15,13 @@ type LocationService struct {
 	repo      repositories.Repository
 	aiService *AIService
 	maps      MapProvider
-	cnMode    bool
 }
 
-func NewLocationService(repo repositories.Repository, ai *AIService, maps MapProvider, cnMode ...bool) *LocationService {
-	isCN := false
-	if len(cnMode) > 0 {
-		isCN = cnMode[0]
-	}
+func NewLocationService(repo repositories.Repository, ai *AIService, maps MapProvider) *LocationService {
 	return &LocationService{
 		repo:      repo,
 		aiService: ai,
 		maps:      maps,
-		cnMode:    isCN,
 	}
 }
 
@@ -70,12 +64,7 @@ func (ls *LocationService) generateRandomLocation(regions []models.Region, langu
 	ctx := context.Background()
 
 	// 生成随机坐标
-	var lat, lng float64
-	if ls.cnMode && len(regions) == 0 {
-		lat, lng = utils.GenerateRandomChineseCoordinate()
-	} else {
-		lat, lng = utils.GenerateRandomCoordinate(regions)
-	}
+	lat, lng := utils.GenerateRandomCoordinate(regions)
 	logger := utils.LocationLogger()
 
 	// 使用带兜底机制的街景搜索，总是能找到可用街景

@@ -315,48 +315,6 @@ func getRegionHeight(region Region) float64 {
 	return region.North - region.South
 }
 
-// GenerateRandomChineseCoordinate generates random coordinates within China's land borders.
-// Uses the global GeoJSON data filtered to Chinese regions for accuracy.
-func GenerateRandomChineseCoordinate() (latitude, longitude float64) {
-	landRegions, err := getLandMassRegions()
-	if err != nil || len(landRegions) == 0 {
-		// Fallback: simple bounding box for populated eastern China
-		lat := 22.0 + rng.Float64()*18.0 // 22-40°N (eastern populated areas)
-		lng := 100.0 + rng.Float64()*23.0 // 100-123°E
-		return lat, lng
-	}
-
-	// Filter to Chinese regions
-	var chineseRegions []Region
-	for _, region := range landRegions {
-		if region.CountryCode == "CHN" || region.CountryName == "China" {
-			chineseRegions = append(chineseRegions, region)
-		}
-	}
-
-	if len(chineseRegions) == 0 {
-		// Fallback if no Chinese regions found in GeoJSON
-		lat := 22.0 + rng.Float64()*18.0
-		lng := 100.0 + rng.Float64()*23.0
-		return lat, lng
-	}
-
-	// Select a region weighted by area
-	region := selectRegionWithinCountry(chineseRegions)
-
-	// Generate coordinate within the polygon
-	if len(region.Polygons) > 0 {
-		polygon := region.Polygons[rng.Intn(len(region.Polygons))]
-		lat, lng, success := generateCoordinateInPolygon(polygon, 100)
-		if success {
-			return lat, lng
-		}
-	}
-
-	// Fallback to bounding box
-	return generateCoordinateInBounds(region.North, region.South, region.East, region.West)
-}
-
 // GenerateRandomCoordinate 统一的随机坐标生成函数
 // 支持随机场景（regions为nil或空）和用户偏好场景（传入regions）
 // 简化逻辑，依赖街景搜索的兜底机制来处理无街景区域

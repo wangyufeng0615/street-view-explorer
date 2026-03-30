@@ -52,7 +52,7 @@ func sanitizeDescription(text string) string {
 	return cleaned
 }
 
-// ModeServices groups services for a specific mode (global or cn).
+// ModeServices groups the location and AI services.
 type ModeServices struct {
 	LocationService *services.LocationService
 	AIService       *services.AIService
@@ -60,7 +60,6 @@ type ModeServices struct {
 
 type Handlers struct {
 	global *ModeServices
-	cn     *ModeServices
 }
 
 func NewHandlers(
@@ -80,20 +79,8 @@ func (h *Handlers) GlobalServices() *ModeServices {
 	return h.global
 }
 
-// SetCNServices sets the CN mode services.
-func (h *Handlers) SetCNServices(locationService *services.LocationService, aiService *services.AIService) {
-	h.cn = &ModeServices{
-		LocationService: locationService,
-		AIService:       aiService,
-	}
-}
-
-// servicesForMode returns the appropriate services based on the mode query parameter.
+// servicesForMode returns the services for the current request.
 func (h *Handlers) servicesForMode(c *gin.Context) *ModeServices {
-	mode := c.DefaultQuery("mode", "global")
-	if mode == "cn" && h.cn != nil {
-		return h.cn
-	}
 	return h.global
 }
 

@@ -13,8 +13,6 @@ type Config interface {
 	SQLitePath() string
 	OpenAIAPIKey() string
 	GoogleMapsAPIKey() string
-	BaiduMapAK() string
-	CNAIModel() string
 	EnableOpenAI() bool
 	EnableGoogleAPI() bool
 	SecurityConfig() *SecurityConfig
@@ -32,8 +30,6 @@ type config struct {
 	sqlitePath       string
 	openAIAPIKey     string
 	googleMapsAPIKey string
-	baiduMapAK       string
-	cnAIModel        string
 	enableOpenAI     bool
 	enableGoogleAPI  bool
 	securityConfig   *SecurityConfig
@@ -76,17 +72,6 @@ func (c *config) OpenAIAPIKey() string {
 
 func (c *config) GoogleMapsAPIKey() string {
 	return c.googleMapsAPIKey
-}
-
-func (c *config) BaiduMapAK() string {
-	return c.baiduMapAK
-}
-
-func (c *config) CNAIModel() string {
-	if c.cnAIModel != "" {
-		return c.cnAIModel
-	}
-	return "minimax/minimax-m2.7"
 }
 
 func (c *config) EnableOpenAI() bool {
@@ -146,8 +131,6 @@ func New() Config {
 		sqlitePath:     getEnvOrDefault("SQLITE_PATH", "data/streetview.db"),
 		openAIAPIKey:   os.Getenv("AI_API_KEY"),
 		googleMapsAPIKey: os.Getenv("GOOGLE_API_KEY"),
-		baiduMapAK:      os.Getenv("BAIDU_MAP_AK"),
-		cnAIModel:       os.Getenv("CN_AI_MODEL"),
 		enableOpenAI:   getEnvOrDefault("ENABLE_AI", "true") == "true",
 		enableGoogleAPI: getEnvOrDefault("ENABLE_GOOGLE_API", "true") == "true",
 		proxyURL:       os.Getenv("PROXY_URL"),

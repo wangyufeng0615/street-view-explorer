@@ -9,7 +9,6 @@ import { useTranslation } from "react-i18next";
 import { formatAddress } from "../utils/addressUtils";
 import { EXPLORATION_MODES } from "../hooks/useExplorationMode";
 import { hardResetGoogleMapsPromise } from "../utils/googleMaps";
-import { isCNMode } from "../config/mode";
 
 const TopBar = memo(function TopBar({
   location,
@@ -209,17 +208,15 @@ const TopBar = memo(function TopBar({
                   🌍 {t("footprint.title")}
                 </button>
 
-                {!isCNMode && (
-                  <button
-                    style={styles.dropdownButton}
-                    onClick={() => {
-                      setShowDropdown(false);
-                      navigate("/agent");
-                    }}
-                  >
-                    🤖 {t("agent.menu_item")}
-                  </button>
-                )}
+                <button
+                  style={styles.dropdownButton}
+                  onClick={() => {
+                    setShowDropdown(false);
+                    navigate("/agent");
+                  }}
+                >
+                  🤖 {t("agent.menu_item")}
+                </button>
 
                 <div style={styles.dropdownDivider} />
 

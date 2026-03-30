@@ -18,6 +18,11 @@ An immersive web application for exploring random street views around the world 
 - ⌨️ **Keyboard Navigation**: Press Space to jump to the next random location
 - 📱 **Responsive Design**: Optimized for desktop, tablet, and mobile devices
 
+### Odyssey (AI Agent Journey)
+- 🤖 **AI-Powered Exploration**: Let your AI autonomously explore the world via street view
+- 📝 **Travel Letters**: AI writes illustrated letters about its journey discoveries
+- 🗺️ **Journey Tracking**: View all stops, routes, and AI observations on a map
+
 ### Advanced Features
 - 🎯 **Regional Preferences**: Focus exploration on specific continents or regions
 - 📊 **Real-time Monitoring**: Sentry integration for performance tracking
@@ -137,7 +142,7 @@ make deploy
 ### Tech Stack
 
 #### Frontend
-- **Framework**: React 18 with TypeScript
+- **Framework**: React 18 with JavaScript (JSX)
 - **Build Tool**: Vite 7.1 (fast HMR, optimized builds)
 - **State Management**: Zustand with devtools
 - **Maps**: Google Maps JavaScript API
@@ -169,9 +174,11 @@ make deploy
 │   │   ├── hooks/         # Custom React hooks
 │   │   ├── store/         # Zustand state management
 │   │   ├── services/      # API client and external services
+│   │   ├── locales/       # i18n translations (en/zh)
+│   │   ├── config/        # Application configuration
+│   │   ├── constants/     # Constants
 │   │   ├── utils/         # Utility functions
 │   │   └── styles/        # CSS modules
-│   └── public/locales/    # i18n translations (en/zh)
 ├── backend/               # Go backend server
 │   ├── cmd/server/        # Application entry point
 │   ├── internal/
@@ -179,6 +186,7 @@ make deploy
 │   │   ├── services/      # Business logic
 │   │   ├── repositories/  # Data access layer
 │   │   ├── models/        # Data structures
+│   │   ├── sentry/        # Error tracking integration
 │   │   ├── utils/         # Geographic algorithms
 │   │   └── config/        # Configuration management
 │   └── data/maps/         # GeoJSON world polygons

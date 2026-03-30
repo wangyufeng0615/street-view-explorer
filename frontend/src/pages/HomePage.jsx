@@ -9,25 +9,19 @@ import React, {
   lazy,
   Suspense,
 } from "react";
-import { isCNMode } from "../config/mode";
 import TopBar from "../components/TopBar";
 import Sidebar from "../components/Sidebar";
 import "../styles/animations.css";
 import "../styles/HomePage.css";
 import "../styles/responsive.css";
 
-// Load StreetView component based on mode
-const StreetView = isCNMode
-  ? lazy(() => import("../components/BaiduStreetView"))
-  : lazy(() => import("../components/StreetView"));
+const StreetView = lazy(() => import("../components/StreetView"));
 
 // Lazy load components that are not immediately visible
 const GlobalLoading = lazy(() => import("../components/GlobalLoading"));
 const ErrorDisplay = lazy(() => import("../components/ErrorDisplay"));
 const Toast = lazy(() => import("../components/Toast"));
-const FootprintMap = isCNMode
-  ? lazy(() => import("../components/BaiduFootprintMap"))
-  : lazy(() => import("../components/FootprintMap"));
+const FootprintMap = lazy(() => import("../components/FootprintMap"));
 
 // 自定义钩子
 import useLocationData from "../hooks/useLocationData";

@@ -118,24 +118,6 @@ func main() {
 	aiService := services.NewAIService(cfg, repo, googleMaps, globalAIClient)
 	locationService := services.NewLocationService(repo, aiService, googleMaps)
 
-	// 初始化服务 — CN 模式 (Baidu Maps + OpenRouter CN model)
-	var cnLocationService *services.LocationService
-	var cnAIService *services.AIService
-
-	if cfg.BaiduMapAK() != "" {
-		baiduMaps, err := services.NewBaiduMapsService(cfg.BaiduMapAK())
-		if err != nil {
-			log.Printf("警告: 初始化百度地图服务失败: %v（CN 模式不可用）", err)
-		} else {
-			cnAIClient := openai.NewClient(cfg.OpenAIAPIKey(), cfg.CNAIModel())
-			cnAIService = services.NewAIService(cfg, repo, baiduMaps, cnAIClient)
-			cnLocationService = services.NewLocationService(repo, cnAIService, baiduMaps, true)
-			log.Printf("CN 模式已启用 (百度地图 + %s)", cfg.CNAIModel())
-		}
-	} else {
-		log.Println("BAIDU_MAP_AK 未配置，CN 模式不可用")
-	}
-
 	// 设置 Gin 路由
 	if cfg.SecurityConfig().RateLimit.Enabled {
 		gin.SetMode(gin.ReleaseMode)
@@ -196,9 +178,6 @@ func main() {
 
 	// 设置路由
 	handlers := api.NewHandlers(locationService, aiService)
-	if cnLocationService != nil && cnAIService != nil {
-		handlers.SetCNServices(cnLocationService, cnAIService)
-	}
 	agentHandlers := api.NewAgentHandlers(repo, repo, handlers.GlobalServices(), cfg.GoogleMapsAPIKey())
 	api.SetupRoutes(r, handlers, agentHandlers)
 

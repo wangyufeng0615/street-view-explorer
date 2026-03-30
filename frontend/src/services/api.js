@@ -1,7 +1,6 @@
 // Basic API wrappers to call backend
 
 import { getOrCreateSessionId } from "../utils/session";
-import { APP_MODE } from "../config/mode";
 import i18n from "../i18n";
 
 const API_V1 = "/api/v1";
@@ -10,11 +9,6 @@ const DEFAULT_TIMEOUT = 25000; // 25 seconds (AI generation can take longer)
 // 获取当前语言，默认为英文
 function getCurrentLanguage() {
   return i18n.language || "en";
-}
-
-// 构建带 mode 参数的查询字符串
-function modeParam() {
-  return APP_MODE !== "global" ? `&mode=${APP_MODE}` : "";
 }
 
 // 创建请求头
@@ -72,7 +66,7 @@ export async function getRandomLocation(language = null) {
 
   try {
     const resp = await fetchWithTimeout(
-      `${API_V1}/locations/random?lang=${lang}${modeParam()}`,
+      `${API_V1}/locations/random?lang=${lang}`,
       {
         method: "GET",
         headers: getHeaders(),
@@ -117,7 +111,7 @@ export async function lookupLocation(
 
   try {
     const resp = await fetchWithTimeout(
-      `${API_V1}/locations/lookup?lat=${lat}&lng=${lng}&lang=${lang}&source=${encodeURIComponent(source)}${modeParam()}`,
+      `${API_V1}/locations/lookup?lat=${lat}&lng=${lng}&lang=${lang}&source=${encodeURIComponent(source)}`,
       {
         method: "GET",
         headers: getHeaders(),
@@ -176,7 +170,7 @@ export async function getLocationDescription(
     }
 
     const resp = await fetchWithTimeout(
-      `${API_V1}/locations/${panoId}/description?lang=${lang}${modeParam()}`,
+      `${API_V1}/locations/${panoId}/description?lang=${lang}`,
       fetchOptions,
     );
     const data = await resp.json();
@@ -215,7 +209,7 @@ export async function setExplorationPreference(interest, language = null) {
 
   try {
     const resp = await fetchWithTimeout(
-      `${API_V1}/preferences/exploration?lang=${lang}${modeParam()}`,
+      `${API_V1}/preferences/exploration?lang=${lang}`,
       {
         method: "POST",
         headers: getHeaders(),
@@ -245,7 +239,7 @@ export async function deleteExplorationPreference(language = null) {
 
   try {
     const response = await fetchWithTimeout(
-      `${API_V1}/preferences/exploration/remove?lang=${lang}${modeParam()}`,
+      `${API_V1}/preferences/exploration/remove?lang=${lang}`,
       {
         method: "POST",
         headers: getHeaders(),
@@ -275,7 +269,7 @@ export async function deleteExplorationPreference(language = null) {
 export async function getVisitHistory(limit = 1000, offset = 0) {
   try {
     const resp = await fetchWithTimeout(
-      `${API_V1}/visits?limit=${limit}&offset=${offset}${modeParam()}`,
+      `${API_V1}/visits?limit=${limit}&offset=${offset}`,
       {
         method: "GET",
         headers: getHeaders(),
@@ -366,7 +360,7 @@ export async function getLocationDetailedDescription(
     }
 
     const resp = await fetchWithTimeout(
-      `${API_V1}/locations/${panoId}/detailed-description?lang=${lang}${modeParam()}`,
+      `${API_V1}/locations/${panoId}/detailed-description?lang=${lang}`,
       fetchOptions,
       30000, // 30秒超时，详细描述需要更长的AI处理时间
     );

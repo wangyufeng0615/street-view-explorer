@@ -1,16 +1,10 @@
 import React, { memo, useRef, useEffect, lazy, Suspense } from "react";
 import { useTranslation } from "react-i18next";
-import { isCNMode } from "../config/mode";
 import AiDescription from "./AiDescription";
 import "../styles/Sidebar.css";
 
-// Load map components based on mode
-const GlobalMap = isCNMode
-  ? lazy(() => import("./BaiduGlobalMap"))
-  : lazy(() => import("./GlobalMap"));
-const PreviewMap = isCNMode
-  ? lazy(() => import("./BaiduPreviewMap"))
-  : lazy(() => import("./PreviewMap"));
+const GlobalMap = lazy(() => import("./GlobalMap"));
+const PreviewMap = lazy(() => import("./PreviewMap"));
 
 const Sidebar = memo(function Sidebar({
   location,

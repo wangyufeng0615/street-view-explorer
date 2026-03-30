@@ -2,7 +2,7 @@ package services
 
 import "context"
 
-// MapProvider abstracts map service operations (Google Maps, Baidu Maps, etc.)
+// MapProvider abstracts map service operations.
 type MapProvider interface {
 	// HasStreetView checks if street view is available near given coordinates.
 	// Returns the validated coordinates and pano ID if found.
