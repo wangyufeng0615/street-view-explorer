@@ -179,7 +179,8 @@ func main() {
 	// 设置路由
 	handlers := api.NewHandlers(locationService, aiService)
 	agentHandlers := api.NewAgentHandlers(repo, repo, handlers.GlobalServices(), cfg.GoogleMapsAPIKey())
-	api.SetupRoutes(r, handlers, agentHandlers)
+	geoHandlers := api.NewGeoHandlers(globalAIClient, cfg.GoogleMapsAPIKey(), googleMaps.HTTPClient())
+	api.SetupRoutes(r, handlers, agentHandlers, geoHandlers)
 
 	addr := cfg.ServerAddress()
 	logger := utils.SystemLogger()

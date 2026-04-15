@@ -3,7 +3,6 @@ import React, {
   useEffect,
   useCallback,
   useMemo,
-  useReducer,
   useRef,
   memo,
   lazy,
@@ -58,26 +57,6 @@ const StreetViewContainer = memo(
 
 StreetViewContainer.displayName = "StreetViewContainer";
 
-// State reducer to batch updates
-const pageStateReducer = (state, action) => {
-  switch (action.type) {
-    case "SET_LOCATION":
-      return { ...state, location: action.payload };
-    case "SET_HEADING":
-      return { ...state, heading: action.payload };
-    case "SET_DESCRIPTION":
-      return { ...state, description: action.payload };
-    case "SET_LOADING":
-      return { ...state, isLoading: action.payload };
-    case "SET_ERROR":
-      return { ...state, error: action.payload };
-    case "BATCH_UPDATE":
-      return { ...state, ...action.payload };
-    default:
-      return state;
-  }
-};
-
 // 解析 URL 中的位置参数
 function getLocationFromURL() {
   const params = new URLSearchParams(window.location.search);
@@ -105,15 +84,6 @@ function updateURL(lat, lng) {
 }
 
 export default function HomePage() {
-  // Use reducer for batched state updates
-  const [pageState, dispatch] = useReducer(pageStateReducer, {
-    heading: 0,
-    location: null,
-    description: null,
-    isLoading: false,
-    error: null,
-  });
-
   const loadLocationFromURL = useStore((state) => state.loadLocationFromURL);
   const urlLocationRef = useRef(getLocationFromURL());
 

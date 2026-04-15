@@ -34,6 +34,8 @@ const NATURAL_MAP_STYLE = [
 ];
 
 const TOTAL_STOPS = 5;
+const IMAGE_PLACEHOLDER_PREFIX = "__ATLAS_IMG_";
+const IMAGE_PLACEHOLDER_SUFFIX = "__";
 
 async function copyText(text) {
   if (navigator.clipboard?.writeText) {
@@ -72,7 +74,7 @@ function renderLetterMarkdown(text, stopImageMap = {}) {
       if (!src) return "";
       const idx = images.length;
       images.push(`<img src="${src}" alt="${alt}" loading="lazy" class="agent-letter-img" />`);
-      return `\x00IMG${idx}\x00`;
+      return `${IMAGE_PLACEHOLDER_PREFIX}${idx}${IMAGE_PLACEHOLDER_SUFFIX}`;
     },
   );
 
@@ -97,7 +99,11 @@ function renderLetterMarkdown(text, stopImageMap = {}) {
   processed = processed.replace(/\n/g, "<br />");
 
   // 7. Restore images
-  processed = processed.replace(/\x00IMG(\d+)\x00/g, (_, idx) => images[parseInt(idx, 10)]);
+  const imagePlaceholderPattern = new RegExp(
+    `${IMAGE_PLACEHOLDER_PREFIX}(\\d+)${IMAGE_PLACEHOLDER_SUFFIX}`,
+    "g",
+  );
+  processed = processed.replace(imagePlaceholderPattern, (_, idx) => images[parseInt(idx, 10)]);
 
   return processed;
 }

@@ -106,12 +106,16 @@ func (h *Handlers) GetRandomLocation(c *gin.Context) {
 		return
 	}
 
-	if err := svc.LocationService.RecordVisit(sessionID, loc, models.VisitSourceRandom); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"error":   err.Error(),
-		})
-		return
+	// Skip visit recording for geo game rounds (source=geo_game)
+	source := c.DefaultQuery("source", "")
+	if source != "geo_game" {
+		if err := svc.LocationService.RecordVisit(sessionID, loc, models.VisitSourceRandom); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"error":   err.Error(),
+			})
+			return
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{

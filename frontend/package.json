@@ -6,8 +6,11 @@
     "build": "vite build",
     "preview": "vite preview",
     "start": "vite",
-    "lint": "eslint src --ext .ts,.tsx",
-    "format": "prettier --write \"src/**/*.{ts,tsx,css,md}\""
+    "lint": "eslint src --ext .js,.jsx,.ts,.tsx",
+    "format": "prettier --write \"src/**/*.{ts,tsx,css,md}\"",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@sentry/react": "^9.35.0",
@@ -23,6 +26,9 @@
   "devDependencies": {
     "@babel/core": "^7.23.3",
     "@babel/preset-react": "^7.23.3",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
     "@types/node": "^20.19.11",
     "@types/react": "^18.2.39",
     "@types/react-dom": "^18.2.17",
@@ -32,11 +38,13 @@
     "eslint": "^8.54.0",
     "eslint-config-prettier": "^9.0.0",
     "eslint-plugin-react": "^7.33.2",
+    "jsdom": "^29.0.1",
     "prettier": "^3.1.0",
-    "typescript": "^4.9.5",
+    "typescript": "5.1.6",
     "vite": "^7.1.3",
     "vite-plugin-svgr": "^4.3.0",
-    "vite-tsconfig-paths": "^5.1.4"
+    "vite-tsconfig-paths": "^5.1.4",
+    "vitest": "^3"
   },
   "browserslist": {
     "production": [

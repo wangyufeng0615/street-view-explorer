@@ -4,7 +4,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func SetupRoutes(r *gin.Engine, h *Handlers, ah *AgentHandlers) {
+func SetupRoutes(r *gin.Engine, h *Handlers, ah *AgentHandlers, gh ...*GeoHandlers) {
 	// API 版本组
 	v1 := r.Group("/api/v1")
 	{
@@ -48,6 +48,15 @@ func SetupRoutes(r *gin.Engine, h *Handlers, ah *AgentHandlers) {
 					"error":   "Missing journey ID in URL. Correct format: PUT /api/v1/agent/journeys/{JOURNEY_ID}/status",
 				})
 			})
+		}
+
+		// Geo Game
+		if len(gh) > 0 && gh[0] != nil {
+			geo := v1.Group("/geo")
+			{
+				geo.GET("/satellite", gh[0].SatelliteImage)
+				geo.POST("/ai-guess", gh[0].AIGuess)
+			}
 		}
 	}
 }

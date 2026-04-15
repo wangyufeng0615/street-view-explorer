@@ -121,6 +121,11 @@ func (s *MapsService) getHTTPClient() *http.Client {
 	return &http.Client{}
 }
 
+// HTTPClient returns the proxy-aware HTTP client for reuse by other components.
+func (s *MapsService) HTTPClient() *http.Client {
+	return s.getHTTPClient()
+}
+
 
 // 检查坐标是否有街景可用，并返回街景坐标
 // 使用兜底措施确保总是能找到可用的街景

@@ -110,4 +110,12 @@ export default defineConfig({
   
   // Environment variable prefix
   envPrefix: 'VITE_',
+
+  // Test configuration
+  test: {
+    environment: 'jsdom',
+    globals: true,
+    setupFiles: ['./src/test/setup.js'],
+    include: ['src/**/*.test.{js,jsx,ts,tsx}'],
+  },
 });

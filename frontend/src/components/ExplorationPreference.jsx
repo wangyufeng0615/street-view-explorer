@@ -1,8 +1,8 @@
-import React, { useState, useCallback, useEffect, useRef, forwardRef } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import '../styles/ExplorationPreference.css';
 
-const ExplorationPreference = forwardRef(({ 
+export default function ExplorationPreference({
     onPreferenceChange, 
     onRandomExplore, 
     isSavingPreference, 
@@ -10,12 +10,11 @@ const ExplorationPreference = forwardRef(({
     onModeChange,
     explorationMode = 'random',
     explorationInterest: initialInterest
-}, ref) => {
+}) {
     const { t } = useTranslation();
     const [preference, setPreference] = useState(initialInterest || '');
     const [showEffect, setShowEffect] = useState(false);
     const [lastSuccessInterest, setLastSuccessInterest] = useState(initialInterest || '');
-    const inputRef = useRef(null);
 
     // 确保在组件挂载时设置为随机模式（如果没有保存的兴趣）
     useEffect(() => {
@@ -186,6 +185,4 @@ const ExplorationPreference = forwardRef(({
             </div>
         </div>
     );
-});
-
-export default ExplorationPreference; 
+}

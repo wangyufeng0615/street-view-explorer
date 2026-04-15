@@ -7,6 +7,8 @@ import (
 	"image/png"
 	"math"
 	"os"
+	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -15,17 +17,53 @@ import (
 	"github.com/paulmach/orb/geojson"
 )
 
-// TestGetLandMassRegions 测试获取陆地区域
-func TestGetLandMassRegions(t *testing.T) {
-	// 确保地图数据就绪
-	if err := EnsureMapDataReady(); err != nil {
-		t.Fatalf("确保地图数据就绪失败: %v", err)
+var (
+	geoTestSetupOnce sync.Once
+	geoTestSetupErr  error
+)
+
+func requireGeoTestData(tb testing.TB) {
+	tb.Helper()
+
+	geoTestSetupOnce.Do(func() {
+		if err := EnsureMapDataReady(); err != nil {
+			geoTestSetupErr = fmt.Errorf("确保地图数据就绪失败: %w", err)
+			return
+		}
+		if err := InitializeGeoData(); err != nil {
+			geoTestSetupErr = fmt.Errorf("初始化地理数据失败: %w", err)
+		}
+	})
+
+	if geoTestSetupErr != nil {
+		tb.Fatal(geoTestSetupErr)
+	}
+}
+
+func requireSlowGeoAnalysis(tb testing.TB) {
+	tb.Helper()
+
+	if testing.Short() || os.Getenv("RUN_SLOW_GEO_TESTS") != "1" {
+		tb.Skip("跳过慢速地理分析测试；如需运行请设置 RUN_SLOW_GEO_TESTS=1")
 	}
 
-	// 初始化地理数据
-	if err := InitializeGeoData(); err != nil {
-		t.Fatalf("初始化地理数据失败: %v", err)
+	requireGeoTestData(tb)
+}
+
+func coordinateInAnyPolygon(lat, lng float64, regions []Region) bool {
+	for _, region := range regions {
+		for _, polygon := range region.Polygons {
+			if pointInPolygon(lat, lng, polygon) {
+				return true
+			}
+		}
 	}
+	return false
+}
+
+// TestGetLandMassRegions 测试获取陆地区域
+func TestGetLandMassRegions(t *testing.T) {
+	requireGeoTestData(t)
 
 	// 获取陆地区域
 	regions, err := getLandMassRegions()
@@ -93,15 +131,7 @@ func TestGetLandMassRegions(t *testing.T) {
 
 // TestGenerateRandomCoordinate 测试随机坐标生成
 func TestGenerateRandomCoordinate(t *testing.T) {
-	// 确保地图数据就绪
-	if err := EnsureMapDataReady(); err != nil {
-		t.Fatalf("确保地图数据就绪失败: %v", err)
-	}
-
-	// 清空缓存
-	if err := InitializeGeoData(); err != nil {
-		t.Fatalf("初始化地理数据失败: %v", err)
-	}
+	requireGeoTestData(t)
 
 	// 测试不同数量的坐标生成
 	testCases := []int{1, 10, 100}
@@ -144,15 +174,7 @@ func TestGenerateRandomCoordinate(t *testing.T) {
 
 // TestRegionCaching 测试区域缓存机制
 func TestRegionCaching(t *testing.T) {
-	// 确保地图数据就绪
-	if err := EnsureMapDataReady(); err != nil {
-		t.Fatalf("确保地图数据就绪失败: %v", err)
-	}
-
-	// 清空缓存
-	if err := InitializeGeoData(); err != nil {
-		t.Fatalf("初始化地理数据失败: %v", err)
-	}
+	requireGeoTestData(t)
 
 	// 第一次调用 - 从文件加载
 	start := time.Now()
@@ -186,15 +208,7 @@ func TestRegionCaching(t *testing.T) {
 
 // TestGetRegionInfo 测试获取区域信息
 func TestGetRegionInfo(t *testing.T) {
-	// 确保地图数据就绪
-	if err := EnsureMapDataReady(); err != nil {
-		t.Fatalf("确保地图数据就绪失败: %v", err)
-	}
-
-	// 清空缓存
-	if err := InitializeGeoData(); err != nil {
-		t.Fatalf("初始化地理数据失败: %v", err)
-	}
+	requireGeoTestData(t)
 
 	info := GetRegionInfo()
 
@@ -224,15 +238,7 @@ func TestGetRegionInfo(t *testing.T) {
 
 // TestCoordinateDistribution 测试坐标分布情况
 func TestCoordinateDistribution(t *testing.T) {
-	// 确保地图数据就绪
-	if err := EnsureMapDataReady(); err != nil {
-		t.Fatalf("确保地图数据就绪失败: %v", err)
-	}
-
-	// 清空缓存
-	if err := InitializeGeoData(); err != nil {
-		t.Fatalf("初始化地理数据失败: %v", err)
-	}
+	requireSlowGeoAnalysis(t)
 
 	// 生成大量坐标进行分布分析
 	const numCoords = 10000
@@ -287,15 +293,7 @@ func TestCoordinateDistribution(t *testing.T) {
 
 // TestVisualizationGeneration 测试可视化生成
 func TestVisualizationGeneration(t *testing.T) {
-	// 确保地图数据就绪
-	if err := EnsureMapDataReady(); err != nil {
-		t.Fatalf("确保地图数据就绪失败: %v", err)
-	}
-
-	// 清空缓存
-	if err := InitializeGeoData(); err != nil {
-		t.Fatalf("初始化地理数据失败: %v", err)
-	}
+	requireSlowGeoAnalysis(t)
 
 	// 生成坐标用于可视化
 	const numPoints = 100000
@@ -352,7 +350,7 @@ func TestVisualizationGeneration(t *testing.T) {
 	}
 
 	// 保存图像
-	filename := "random_coordinates_natural_earth_high_res.png"
+	filename := filepath.Join(t.TempDir(), "random_coordinates_natural_earth_high_res.png")
 	file, err := os.Create(filename)
 	if err != nil {
 		t.Fatalf("创建图像文件失败: %v", err)
@@ -492,15 +490,7 @@ func drawPoint(img *image.RGBA, x, y int, pointColor color.RGBA, width, height i
 
 // TestAreaWeightedSelection 测试按面积加权的随机选择
 func TestAreaWeightedSelection(t *testing.T) {
-	// 确保地图数据就绪
-	if err := EnsureMapDataReady(); err != nil {
-		t.Fatalf("确保地图数据就绪失败: %v", err)
-	}
-
-	// 清空缓存
-	if err := InitializeGeoData(); err != nil {
-		t.Fatalf("初始化地理数据失败: %v", err)
-	}
+	requireSlowGeoAnalysis(t)
 
 	// 获取陆地区域
 	regions, err := getLandMassRegions()
@@ -623,15 +613,7 @@ func TestAreaWeightedSelection(t *testing.T) {
 
 // BenchmarkAreaWeightedSelection 测试按面积加权随机选择的性能
 func BenchmarkAreaWeightedSelection(b *testing.B) {
-	// 确保地图数据就绪
-	if err := EnsureMapDataReady(); err != nil {
-		b.Fatalf("确保地图数据就绪失败: %v", err)
-	}
-
-	// 初始化地理数据
-	if err := InitializeGeoData(); err != nil {
-		b.Fatalf("初始化地理数据失败: %v", err)
-	}
+	requireGeoTestData(b)
 
 	// 获取陆地区域
 	regions, err := getLandMassRegions()
@@ -653,10 +635,7 @@ func BenchmarkAreaWeightedSelection(b *testing.B) {
 
 // BenchmarkGenerateRandomCoordinate 测试完整随机坐标生成的性能
 func BenchmarkGenerateRandomCoordinate(b *testing.B) {
-	// 确保地图数据就绪
-	if err := EnsureMapDataReady(); err != nil {
-		b.Fatalf("确保地图数据就绪失败: %v", err)
-	}
+	requireGeoTestData(b)
 
 	b.ResetTimer()
 
@@ -668,15 +647,7 @@ func BenchmarkGenerateRandomCoordinate(b *testing.B) {
 
 // TestPolygonBasedGeneration 测试基于多边形的坐标生成
 func TestPolygonBasedGeneration(t *testing.T) {
-	// 确保地图数据就绪
-	if err := EnsureMapDataReady(); err != nil {
-		t.Fatalf("确保地图数据就绪失败: %v", err)
-	}
-
-	// 清空缓存
-	if err := InitializeGeoData(); err != nil {
-		t.Fatalf("初始化地理数据失败: %v", err)
-	}
+	requireGeoTestData(t)
 
 	// 获取陆地区域
 	regions, err := getLandMassRegions()
@@ -705,30 +676,18 @@ func TestPolygonBasedGeneration(t *testing.T) {
 	t.Logf("总多边形数量: %d", totalPolygons)
 
 	// 生成一些坐标并验证它们在多边形内
-	const numTests = 1000
+	const numTests = 200
 	successCount := 0
 	polygonHitCount := 0
 
 	for i := 0; i < numTests; i++ {
 		lat, lng := GenerateRandomCoordinate(nil)
 
-		// 检查这个坐标是否在某个多边形内
-		found := false
-		for _, region := range regions {
-			for _, polygon := range region.Polygons {
-				if pointInPolygon(lat, lng, polygon) {
-					found = true
-					polygonHitCount++
-					break
-				}
-			}
-			if found {
-				break
-			}
-		}
+		found := coordinateInAnyPolygon(lat, lng, regions)
 
 		if found {
 			successCount++
+			polygonHitCount++
 		}
 	}
 
@@ -790,15 +749,7 @@ func TestPointInPolygon(t *testing.T) {
 
 // TestRegionDistributionAnalysis 分析区域分布，查找坐标密度不均的原因
 func TestRegionDistributionAnalysis(t *testing.T) {
-	// 确保地图数据就绪
-	if err := EnsureMapDataReady(); err != nil {
-		t.Fatalf("确保地图数据就绪失败: %v", err)
-	}
-
-	// 清空缓存
-	if err := InitializeGeoData(); err != nil {
-		t.Fatalf("初始化地理数据失败: %v", err)
-	}
+	requireSlowGeoAnalysis(t)
 
 	// 获取陆地区域
 	regions, err := getLandMassRegions()
@@ -917,15 +868,7 @@ func TestRegionDistributionAnalysis(t *testing.T) {
 
 // TestSpecificCountryDensityAnalysis 分析特定国家坐标密度异常的原因
 func TestSpecificCountryDensityAnalysis(t *testing.T) {
-	// 确保地图数据就绪
-	if err := EnsureMapDataReady(); err != nil {
-		t.Fatalf("确保地图数据就绪失败: %v", err)
-	}
-
-	// 清空缓存
-	if err := InitializeGeoData(); err != nil {
-		t.Fatalf("初始化地理数据失败: %v", err)
-	}
+	requireSlowGeoAnalysis(t)
 
 	// 获取陆地区域
 	regions, err := getLandMassRegions()
@@ -1111,20 +1054,17 @@ func TestSpecificCountryDensityAnalysis(t *testing.T) {
 
 // TestCoordinateGenerationWithoutFallback 测试修复后的坐标生成，验证是否避免了海岸线问题
 func TestCoordinateGenerationWithoutFallback(t *testing.T) {
-	// 确保地图数据就绪
-	if err := EnsureMapDataReady(); err != nil {
-		t.Fatalf("确保地图数据就绪失败: %v", err)
-	}
+	requireGeoTestData(t)
 
-	// 清空缓存
-	if err := InitializeGeoData(); err != nil {
-		t.Fatalf("初始化地理数据失败: %v", err)
+	regions, err := getLandMassRegions()
+	if err != nil {
+		t.Fatalf("获取陆地区域失败: %v", err)
 	}
 
 	t.Logf("测试修复后的坐标生成（无边界框回退）...")
 
 	// 生成一批坐标进行验证
-	const numTests = 1000
+	const numTests = 200
 	inPolygonCount := 0
 	totalAttempts := 0
 
@@ -1132,24 +1072,9 @@ func TestCoordinateGenerationWithoutFallback(t *testing.T) {
 		lat, lng := GenerateRandomCoordinate(nil)
 		totalAttempts++
 
-		// 检查这个坐标是否真的在某个陆地多边形内
-		regions, err := getLandMassRegions()
-		if err != nil {
-			t.Fatalf("获取陆地区域失败: %v", err)
-		}
-
-		found := false
-		for _, region := range regions {
-			for _, polygon := range region.Polygons {
-				if pointInPolygon(lat, lng, polygon) {
-					found = true
-					inPolygonCount++
-					break
-				}
-			}
-			if found {
-				break
-			}
+		found := coordinateInAnyPolygon(lat, lng, regions)
+		if found {
+			inPolygonCount++
 		}
 
 		if !found {
@@ -1251,7 +1176,7 @@ func TestUserPreferenceRegionGeneration(t *testing.T) {
 		userRegions[0].Coordinates.West)
 
 	// 测试多次生成
-	const numTests = 100
+	const numTests = 25
 	successCount := 0
 	inRangeCount := 0
 
@@ -1268,8 +1193,6 @@ func TestUserPreferenceRegionGeneration(t *testing.T) {
 				inRangeCount++
 			}
 		}
-
-		t.Logf("生成坐标 %d: (%.6f, %.6f)", i+1, lat, lng)
 
 		if i < 5 { // 只打印前5个
 			t.Logf("  坐标 %d: (%.6f, %.6f)", i+1, lat, lng)

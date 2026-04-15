@@ -42,7 +42,7 @@ async function loadSentry() {
         // Console logging integration
         Sentry.consoleLoggingIntegration({ levels: ["error", "warn"] }),
       ],
-      beforeSend: function(event, hint) {
+      beforeSend: function(event) {
         // Add frontend metadata
         if (!event.contexts) {
           event.contexts = {};

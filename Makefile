@@ -6,7 +6,14 @@ FRONTEND_LOG := $(LOG_DIR)/frontend.log
 BACKEND_PID := $(LOG_DIR)/backend.pid
 FRONTEND_PID := $(LOG_DIR)/frontend.pid
 
-.PHONY: deploy clean dev-start dev-stop backend-dev frontend-dev
+.PHONY: deploy clean dev dev-start dev-stop backend-dev frontend-dev
+
+# 前台启动开发环境（Ctrl+C 同时停止）
+dev:
+	@trap 'kill 0' INT TERM; \
+	(cd backend && go run cmd/server/main.go 2>&1 | sed 's/^/[BE] /') & \
+	(cd frontend && yarn dev 2>&1 | sed 's/^/[FE] /') & \
+	wait
 
 # 部署命令
 deploy:

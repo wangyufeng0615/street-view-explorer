@@ -85,12 +85,12 @@ export default function useLocationDescription() {
     }, [cleanup]);
     
     // 为了向后兼容，提供setter函数
-    const setDescription = useCallback((desc) => {
+    const setDescription = useCallback((_desc) => {
         // 由store管理
         console.log('setDescription called, but state is managed by Zustand store');
     }, []);
     
-    const setIsLoadingDesc = useCallback((loading) => {
+    const setIsLoadingDesc = useCallback((_loading) => {
         // 由store管理
         console.log('setIsLoadingDesc called, but state is managed by Zustand store');
     }, []);
@@ -102,7 +102,7 @@ export default function useLocationDescription() {
         // 其他错误设置由store内部处理
     }, [resetDescriptionError]);
     
-    const setDescRetries = useCallback((retries) => {
+    const setDescRetries = useCallback((_retries) => {
         // 由store管理
         console.log('setDescRetries called, but state is managed by Zustand store');
     }, []);

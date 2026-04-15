@@ -76,7 +76,6 @@ export default function StreetView({ latitude, longitude, onPovChanged }) {
     const autoRotateRef = useRef(null); // 存储自动旋转定时器的引用
     const userInteractionTimerRef = useRef(null); // 存储用户交互恢复定时器
     const isAutoRotatingRef = useRef(false); // 标记是否正在自动旋转
-    const lastUserInteractionRef = useRef(0); // 记录最后一次用户交互时间
     const cleanupFunctionsRef = useRef([]); // 存储所有需要清理的函数
     const mountedRef = useRef(true); // 跟踪组件是否已挂载
     const [error, setError] = useState(null);

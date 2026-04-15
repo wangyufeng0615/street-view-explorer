@@ -73,6 +73,7 @@ type Client interface {
 	GenerateLocationDescription(latitude, longitude float64, locationInfo map[string]string, language string) (string, []Citation, error)
 	GenerateDetailedLocationDescription(latitude, longitude float64, locationInfo map[string]string, language string) (string, []Citation, error)
 	GenerateRegionsForInterest(interest string) ([]models.Region, error)
+	GuessLocationFromImage(ctx context.Context, imageBase64 string, zoom int) (lat float64, lng float64, reasoning string, err error)
 }
 
 type client struct {
@@ -834,6 +835,138 @@ func (c *client) tryGenerateRegions(interest string) ([]models.Region, error) {
 	}
 
 	return validRegions, nil
+}
+
+// ─── Vision: Geo Game AI Guess ──────────────────────────────
+
+// visionContentPart represents one part of a multimodal message content array.
+type visionContentPart struct {
+	Type     string          `json:"type"`
+	Text     string          `json:"text,omitempty"`
+	ImageURL *visionImageURL `json:"image_url,omitempty"`
+}
+
+type visionImageURL struct {
+	URL string `json:"url"`
+}
+
+// visionMessage is a chat message with multimodal content.
+type visionMessage struct {
+	Role    interface{} `json:"role"`
+	Content interface{} `json:"content"` // string or []visionContentPart
+}
+
+type visionChatRequest struct {
+	Model    string          `json:"model"`
+	Messages []visionMessage `json:"messages"`
+}
+
+func (c *client) GuessLocationFromImage(parentCtx context.Context, imageBase64 string, zoom int) (float64, float64, string, error) {
+	startTime := time.Now()
+	ctx, cancel := context.WithTimeout(parentCtx, 30*time.Second)
+	defer cancel()
+
+	prompt := fmt.Sprintf(
+		"You are playing a geography guessing game. You are shown a satellite image at zoom level %d.\n\n"+
+			"Based ONLY on visual clues in this image (terrain, vegetation, road patterns, building layouts, coastlines, "+
+			"urban density, agricultural patterns, etc.), guess the latitude and longitude of the center of this image.\n\n"+
+			"Respond with ONLY a JSON object, no other text:\n"+
+			"{\"lat\": <number>, \"lng\": <number>, \"reasoning\": \"<brief explanation of visual clues you used>\"}",
+		zoom,
+	)
+
+	dataURI := "data:image/png;base64," + imageBase64
+
+	reqBody := visionChatRequest{
+		Model: c.modelName,
+		Messages: []visionMessage{
+			{
+				Role:    "user",
+				Content: []visionContentPart{
+					{Type: "image_url", ImageURL: &visionImageURL{URL: dataURI}},
+					{Type: "text", Text: prompt},
+				},
+			},
+		},
+	}
+
+	reqJSON, err := json.Marshal(reqBody)
+	if err != nil {
+		return 0, 0, "", fmt.Errorf("encode request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", apiEndpoint, bytes.NewBuffer(reqJSON))
+	if err != nil {
+		return 0, 0, "", fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+c.apiKey)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return 0, 0, "", fmt.Errorf("AI guess timed out")
+		}
+		return 0, 0, "", fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return 0, 0, "", fmt.Errorf("read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		log.Printf("[GEO_AI] status=%d response=%s duration=%v", resp.StatusCode, truncateString(string(body), 200), time.Since(startTime))
+		return 0, 0, "", fmt.Errorf("API error (status %d)", resp.StatusCode)
+	}
+
+	var chatResp chatResponse
+	if err := json.Unmarshal(body, &chatResp); err != nil {
+		return 0, 0, "", fmt.Errorf("parse response: %w", err)
+	}
+	if chatResp.Error != nil {
+		return 0, 0, "", fmt.Errorf("AI error: %s", chatResp.Error.Message)
+	}
+	if len(chatResp.Choices) == 0 {
+		return 0, 0, "", fmt.Errorf("no response from AI")
+	}
+
+	content := chatResp.Choices[0].Message.Content
+
+	// Parse JSON from response (may be wrapped in markdown code block)
+	jsonStr := content
+	if idx := strings.Index(jsonStr, "{"); idx >= 0 {
+		jsonStr = jsonStr[idx:]
+		if end := strings.LastIndex(jsonStr, "}"); end >= 0 {
+			jsonStr = jsonStr[:end+1]
+		}
+	}
+
+	var result struct {
+		Lat       float64 `json:"lat"`
+		Lng       float64 `json:"lng"`
+		Reasoning string  `json:"reasoning"`
+	}
+	if err := json.Unmarshal([]byte(jsonStr), &result); err != nil {
+		log.Printf("[GEO_AI] failed to parse AI guess JSON: %v, raw=%s", err, truncateString(content, 200))
+		return 0, 0, "", fmt.Errorf("failed to parse AI guess")
+	}
+
+	// Clamp coordinates to valid range
+	if result.Lat < -90 {
+		result.Lat = -90
+	} else if result.Lat > 90 {
+		result.Lat = 90
+	}
+	if result.Lng < -180 {
+		result.Lng = -180
+	} else if result.Lng > 180 {
+		result.Lng = 180
+	}
+
+	log.Printf("[GEO_AI] guess=(%.4f,%.4f) zoom=%d duration=%v", result.Lat, result.Lng, zoom, time.Since(startTime))
+	return result.Lat, result.Lng, result.Reasoning, nil
 }
 
 // 验证坐标是否有效

@@ -218,6 +218,16 @@ const TopBar = memo(function TopBar({
                   🤖 {t("agent.menu_item")}
                 </button>
 
+                <button
+                  style={styles.dropdownButton}
+                  onClick={() => {
+                    setShowDropdown(false);
+                    navigate("/geo");
+                  }}
+                >
+                  🌍 {t("geo.menu_item")}
+                </button>
+
                 <div style={styles.dropdownDivider} />
 
                 <div style={styles.dropdownItem}>

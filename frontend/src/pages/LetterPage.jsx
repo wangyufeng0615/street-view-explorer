@@ -3,6 +3,8 @@ import { useParams, useNavigate } from "react-router-dom";
 import "../styles/AgentPage.css";
 
 const API_V1 = "/api/v1";
+const IMAGE_PLACEHOLDER_PREFIX = "__ATLAS_IMG_";
+const IMAGE_PLACEHOLDER_SUFFIX = "__";
 
 // Renderer for public letter — rewrites embedded token URLs to journey_id URLs
 function renderLetterMarkdown(text, stopImageMap = {}, journeyId = null) {
@@ -34,7 +36,7 @@ function renderLetterMarkdown(text, stopImageMap = {}, journeyId = null) {
       if (!src) return "";
       const idx = images.length;
       images.push(`<img src="${src}" alt="${alt}" loading="lazy" class="agent-letter-img" />`);
-      return `\x00IMG${idx}\x00`;
+      return `${IMAGE_PLACEHOLDER_PREFIX}${idx}${IMAGE_PLACEHOLDER_SUFFIX}`;
     },
   );
 
@@ -49,7 +51,11 @@ function renderLetterMarkdown(text, stopImageMap = {}, journeyId = null) {
   processed = processed.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
   processed = processed.replace(/^---$/gm, '<hr class="agent-letter-hr" />');
   processed = processed.replace(/\n/g, "<br />");
-  processed = processed.replace(/\x00IMG(\d+)\x00/g, (_, idx) => images[parseInt(idx, 10)]);
+  const imagePlaceholderPattern = new RegExp(
+    `${IMAGE_PLACEHOLDER_PREFIX}(\\d+)${IMAGE_PLACEHOLDER_SUFFIX}`,
+    "g",
+  );
+  processed = processed.replace(imagePlaceholderPattern, (_, idx) => images[parseInt(idx, 10)]);
 
   return processed;
 }

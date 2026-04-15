@@ -6,6 +6,7 @@ import { testSentry } from './services/sentryLazy';
 
 const AgentPage = lazy(() => import('./pages/AgentPage'));
 const LetterPage = lazy(() => import('./pages/LetterPage'));
+const GeoGamePage = lazy(() => import('./pages/GeoGamePage'));
 
 // Create router with future flags enabled
 const router = {
@@ -59,6 +60,24 @@ function App() {
                             </div>
                         }>
                             <AgentPage />
+                        </Suspense>
+                    } />
+                    <Route path="/geo" element={
+                        <Suspense fallback={
+                            <div style={{
+                                width: '100%',
+                                height: '100%',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                background: '#f7f5f0',
+                                color: '#4b5563',
+                                fontSize: '14px'
+                            }}>
+                                Loading...
+                            </div>
+                        }>
+                            <GeoGamePage />
                         </Suspense>
                     } />
                     <Route path="/agent/letter/:id" element={
