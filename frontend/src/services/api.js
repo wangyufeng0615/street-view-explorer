@@ -67,13 +67,10 @@ export async function getRandomLocation(language = null, source = null) {
   if (source) url += `&source=${encodeURIComponent(source)}`;
 
   try {
-    const resp = await fetchWithTimeout(
-      url,
-      {
-        method: "GET",
-        headers: getHeaders(),
-      },
-    );
+    const resp = await fetchWithTimeout(url, {
+      method: "GET",
+      headers: getHeaders(),
+    });
     const data = await resp.json();
 
     if (data.success && data.data?.location) {
@@ -396,4 +393,127 @@ export async function getLocationDetailedDescription(
           : err.message || "获取详细介绍失败",
     };
   }
+}
+
+async function requestJson(path, options = {}, timeout = DEFAULT_TIMEOUT) {
+  try {
+    const resp = await fetchWithTimeout(
+      `${API_V1}${path}`,
+      {
+        headers: {
+          ...getHeaders(),
+          ...(options.headers || {}),
+        },
+        ...options,
+      },
+      timeout,
+    );
+
+    const contentType = resp.headers.get("content-type") || "";
+    const payload = contentType.includes("application/json")
+      ? await resp.json()
+      : null;
+
+    return {
+      success: resp.ok && payload?.success !== false,
+      status: resp.status,
+      data: payload?.data || null,
+      message: payload?.message || null,
+      error: payload?.error || (resp.ok ? null : "请求失败"),
+    };
+  } catch (err) {
+    return {
+      success: false,
+      status: 0,
+      data: null,
+      message: null,
+      error:
+        err.name === "AbortError" ? "请求超时" : err.message || "网络请求失败",
+    };
+  }
+}
+
+export async function fetchGeoBattleImage(roomId, signal = null) {
+  const fetchOptions = { method: "GET", headers: getHeaders() };
+  if (signal instanceof AbortSignal) fetchOptions.signal = signal;
+
+  const resp = await fetch(
+    `${API_V1}/geo/online/rooms/${encodeURIComponent(roomId)}/image`,
+    fetchOptions,
+  );
+  if (!resp.ok) {
+    throw new Error(`image ${resp.status}`);
+  }
+  const blob = await resp.blob();
+  return URL.createObjectURL(blob);
+}
+
+export async function createGeoBattleRoom(nickname) {
+  return requestJson("/geo/online/rooms", {
+    method: "POST",
+    body: JSON.stringify({ nickname }),
+  });
+}
+
+export async function joinGeoBattleRoom(code, nickname) {
+  return requestJson("/geo/online/rooms/join", {
+    method: "POST",
+    body: JSON.stringify({ code, nickname }),
+  });
+}
+
+export async function getGeoBattleRoom(roomId) {
+  return requestJson(`/geo/online/rooms/${encodeURIComponent(roomId)}`, {
+    method: "GET",
+  });
+}
+
+export async function setGeoBattleReady(roomId, ready) {
+  return requestJson(`/geo/online/rooms/${encodeURIComponent(roomId)}/ready`, {
+    method: "POST",
+    body: JSON.stringify({ ready }),
+  });
+}
+
+export async function zoomOutGeoBattle(roomId) {
+  return requestJson(
+    `/geo/online/rooms/${encodeURIComponent(roomId)}/zoom-out`,
+    {
+      method: "POST",
+      body: JSON.stringify({}),
+    },
+  );
+}
+
+export async function submitGeoBattleGuess(roomId, payload) {
+  return requestJson(`/geo/online/rooms/${encodeURIComponent(roomId)}/guess`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function leaveGeoBattleRoom(roomId) {
+  return requestJson(`/geo/online/rooms/${encodeURIComponent(roomId)}/leave`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}
+
+export async function joinGeoBattleMatchmaking(nickname) {
+  return requestJson("/geo/online/matchmaking", {
+    method: "POST",
+    body: JSON.stringify({ nickname }),
+  });
+}
+
+export async function getGeoBattleMatchmakingStatus() {
+  return requestJson("/geo/online/matchmaking", {
+    method: "GET",
+  });
+}
+
+export async function cancelGeoBattleMatchmaking() {
+  return requestJson("/geo/online/matchmaking", {
+    method: "DELETE",
+  });
 }

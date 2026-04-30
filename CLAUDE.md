@@ -1,98 +1,177 @@
 # CLAUDE.md
 
-Street View Explorer - 随机全球街景探索 + AI 描述生成
+Street View Explorer - 随机全球街景探索、AI 讲解、AI 旅程，以及卫星图猜地理游戏。
 
 ## 常用命令
 
 ```bash
+# 一次性前台启动前后端
+make dev
+
+# 后台启动/停止开发环境，日志在 logs/dev/
+make dev-start
+make dev-stop
+
 # 前端
-cd frontend && yarn dev          # 开发服务器 (port 3000)
-cd frontend && yarn build        # 生产构建
+cd frontend && yarn dev
+cd frontend && yarn build
+cd frontend && yarn test
+cd frontend && yarn typecheck
+cd frontend && yarn lint
 
 # 后端
-cd backend && go run cmd/server/main.go    # 启动服务器 (port 8080)
-cd backend && go test ./...                 # 运行测试
+cd backend && go run cmd/server/main.go
+cd backend && go test ./...
 
 # 部署
-make deploy                      # Docker Compose 部署
+make deploy
+make clean
+```
+
+后端代理启动参数：
+
+```bash
+cd backend
+go run cmd/server/main.go --proxy http://127.0.0.1:10086
+go run cmd/server/main.go --openai-proxy http://127.0.0.1:10086 --maps-proxy http://127.0.0.1:10086
 ```
 
 ## 项目结构
 
-```
+```text
 frontend/src/
-├── components/     # UI组件 (StreetView, GlobalMap, Sidebar...)
-├── pages/          # 页面 (HomePage.jsx, AgentPage.jsx, LetterPage.jsx)
-├── hooks/          # 自定义hooks (useLocationData, useExplorationMode...)
-├── store/          # Zustand状态管理 (useStore.js)
-├── services/       # API客户端 (api.js)
-├── locales/        # i18n 翻译 (en/, zh/)
-├── config/         # 应用配置
-├── constants/      # 常量
-├── utils/          # 工具函数
-└── styles/         # CSS样式
+├── components/     # StreetView, GlobalMap, PreviewMap, Sidebar, TopBar 等
+├── pages/          # HomePage, AgentPage, LetterPage, GeoGamePage, GeoBattlePage
+├── hooks/          # useLocationData, useExplorationMode, useKeyboardNavigation 等
+├── store/          # Zustand 状态管理
+├── services/       # api.js，同源 /api/v1 包装
+├── locales/        # en/zh 翻译
+├── data/           # geoDatabase.js，单人猜地理题库
+├── utils/          # googleMaps, session, geoGameUtils, addressUtils
+└── styles/         # 页面 CSS
 
 backend/
-├── cmd/server/     # 入口 main.go
-├── internal/api/   # handlers.go, agent_handlers.go, routes.go, middleware.go
-├── internal/services/   # location_service, ai_service, maps_service
-├── internal/repositories/  # sqliterepo.go (SQLite 数据库 + 限流)
-├── internal/openai/ # AI API 客户端
-├── internal/models/ # 数据模型
-├── internal/sentry/ # Sentry 错误追踪
-├── internal/config/ # 配置管理
-└── internal/utils/  # 工具函数 (地理算法, 日志, 代理)
+├── cmd/server/        # main.go
+├── internal/api/      # routes.go, handlers, middleware, geo online handlers
+├── internal/services/ # location, ai, maps, geo battle service
+├── internal/repositories/ # SQLite repository + migrate
+├── internal/models/   # location, journey, geo battle DTO
+├── internal/openai/   # OpenRouter client
+├── internal/sentry/   # Sentry 初始化和 Gin middleware
+├── internal/config/   # 环境变量配置
+└── internal/utils/    # 地理算法、map data、proxy、logger
 ```
 
-## 关键技术决策
+## 关键约定
 
-- **数据库**: SQLite (WAL 模式，纯 Go 实现 modernc.org/sqlite，零外部依赖)
-- **限流**: SQLite 表 (rate_limits)，替代 Redis
-- **状态管理**: Zustand (frontend/src/store/useStore.js)
-- **API响应格式**: `{ success: bool, data: {}, error: string }`
+- API 响应格式默认是 `{ success: bool, data: ..., error: string }`。
+- 浏览器请求通过 `X-Session-ID` 维持匿名会话；缺失时后端会生成新 session，并写回响应头。
+- SQLite 使用 `modernc.org/sqlite`，WAL 模式，schema 在 `internal/repositories/sqliterepo.go` 的 `migrate()` 自动创建。
+- Docker Compose 中后端数据库挂载在 `sqlite_data` volume，开发默认在 `backend/data/streetview.db`。
+- Vite 构建输出目录是 `frontend/build`，Nginx Dockerfile 会复制这个目录。
+- `frontend/src/services/api.js` 当前使用同源 `/api/v1`，`VITE_API_BASE_URL` 是历史配置字段，不要假设它会改变请求根路径。
+- `CORSMiddleware()` 存在但 `main.go` 当前没有注册；部署态 CORS 主要由 `nginx/conf.d/default.conf` 处理。
+
+## UI 路由
+
+- `/` - 随机街景探索首页。
+- `/agent` - Odyssey，给外部 AI 复制旅行 skill 和旅程入口。
+- `/agent/letter/:id` - 公开旅程来信。
+- `/geo` - 单人卫星图猜地理。
+- `/geo/online` - 在线 1v1 对战大厅。
+- `/geo/online/:roomId` - 在线对战房间。
 
 ## API 路由
 
-- `GET /api/v1/locations/random` — 获取随机街景位置（基于 sessionID 匹配偏好）
-- `GET /api/v1/locations/lookup` — 根据坐标查找位置
-- `GET /api/v1/locations/:panoId/description` — 获取 AI 描述
-- `GET /api/v1/locations/:panoId/detailed-description` — 获取详细 AI 描述
-- `GET /api/v1/visits` — 获取访问历史
-- `POST /api/v1/preferences/exploration` — 设置探索偏好
-- `POST /api/v1/preferences/exploration/remove` — 删除探索偏好
+### 基础探索
 
-### 奥德赛 (Agent Journey) — token-based auth
+- `GET /api/v1/locations/random` - 随机街景位置，支持 `lang` 和 `source`。
+- `GET /api/v1/locations/lookup` - 根据坐标反查位置。
+- `GET /api/v1/locations/:panoId/description` - AI 简短描述。
+- `GET /api/v1/locations/:panoId/detailed-description` - AI 详细描述。
+- `GET /api/v1/visits` - 当前 session 访问历史。
+- `POST /api/v1/preferences/exploration` - 设置探索偏好。
+- `POST /api/v1/preferences/exploration/remove` - 删除探索偏好。
 
-- `POST /api/v1/agent/journeys` — AI 创建旅程
-- `GET /api/v1/agent/journeys` — 按 token 查询旅程列表 + 总访问地点数
-- `GET /api/v1/agent/journeys/:id` — 获取旅程详情（含 stops）
-- `PUT /api/v1/agent/journeys/:id/status` — 更新旅程状态
-- `GET /api/v1/agent/journeys/:id/public-letter` — 获取公开来信（无需 token）
-- `GET /api/v1/agent/explore` — 在指定坐标附近找街景
-- `GET /api/v1/agent/streetview` — 代理 Google Street View 静态图片
-- `POST /api/v1/agent/journeys/:id/stops` — 保存一站数据
-- `GET /api/v1/agent/journeys/:id/stops` — 获取所有站点
-- `POST /api/v1/agent/journeys/:id/letter` — 保存来信
+### Odyssey Agent Journey
+
+- `POST /api/v1/agent/journeys`
+- `GET /api/v1/agent/journeys`
+- `GET /api/v1/agent/journeys/:id`
+- `PUT /api/v1/agent/journeys/:id/status`
+- `GET /api/v1/agent/journeys/:id/public-letter`
+- `GET /api/v1/agent/explore`
+- `GET /api/v1/agent/streetview`
+- `POST /api/v1/agent/journeys/:id/stops`
+- `GET /api/v1/agent/journeys/:id/stops`
+- `POST /api/v1/agent/journeys/:id/letter`
+
+### Geo Game
+
+- `GET /api/v1/geo/satellite` - 代理 Google Static Maps 卫星图，参数 `lat,lng,zoom`。
+- `POST /api/v1/geo/ai-guess` - 拉取同一卫星图并让 AI 猜测坐标。
+
+### Geo Online Duel
+
+- `POST /api/v1/geo/online/rooms` - 创建好友房。
+- `POST /api/v1/geo/online/rooms/join` - 使用 6 位房间码加入好友房。
+- `GET /api/v1/geo/online/rooms/:roomId` - 获取房间快照。
+- `POST /api/v1/geo/online/rooms/:roomId/ready` - 准备/取消准备。
+- `POST /api/v1/geo/online/rooms/:roomId/zoom-out` - 当前轮拉远一级。
+- `POST /api/v1/geo/online/rooms/:roomId/guess` - 提交猜测或 `{ give_up: true }`。
+- `POST /api/v1/geo/online/rooms/:roomId/leave` - 离开房间。
+- `GET /api/v1/geo/online/rooms/:roomId/image` - 当前轮卫星图，`Cache-Control: no-store`。
+- `POST /api/v1/geo/online/matchmaking` - 加入随机匹配队列。
+- `GET /api/v1/geo/online/matchmaking` - 查询匹配状态。
+- `DELETE /api/v1/geo/online/matchmaking` - 取消匹配。
+
+## Geo Game 实现要点
+
+- 单人局总轮数来自 `frontend/src/utils/geoGameUtils.js` 的 `TOTAL_ROUNDS = 5`。
+- `generateRoundPlan()` 会从 `geoDatabase.js` 选 2 或 3 个题库点，其余使用后端随机位置；题库点会经过 `jitterCoord()` 小偏移。
+- `GeoGamePage.jsx` 的 loading effect 使用 `langRef` 读取语言，避免语言切换重新抽题。
+- 计分公式在前后端一致：`5000 * exp(-zoomSteps * 0.12) * exp(-distanceKm / 1500)`。
+- 以前审查中关注过近邻题库点、`roundPlan` 生命周期和小轮数边界；修改这些文件时要补充相应测试。
+
+## Geo Online Duel 实现要点
+
+- 当前在线对战是固定 1v1，服务端权威状态保存在 `GeoBattleService` 的内存 map 中，后端重启会丢房间和匹配队列。
+- 房间模式：`private` 和 `matchmaking`。
+- 阶段：`lobby -> preparing -> countdown -> playing -> reveal -> finished`。
+- 默认 5 轮，每轮 90 秒，reveal 8 秒，countdown 5 秒。
+- 好友房需要双方 ready 后才开始；随机匹配成功后自动进入 preparing。
+- 前端用 polling 同步状态：playing 约 1.5 秒，其余约 2.5 秒；服务端 `server_time` 用于修正倒计时。
+- 房间码 6 位，来自 `ABCDEFGHJKLMNPQRSTUVWXYZ23456789`；昵称最多 20 个 rune，会去掉控制字符。
+- `GET /image` 根据当前玩家 zoom 返回同一目标卫星图；reveal/finished 阶段最多展示 zoom 5。
+- finished 或 lobby 阶段离开会移除玩家；playing 等中途离开会直接结束房间。
 
 ## 环境变量
 
-后端必须配置: `AI_API_KEY`, `GOOGLE_API_KEY`
-后端可选配置: `SQLITE_PATH` (默认 `data/streetview.db`), `SERVER_ADDRESS` (默认 `:8080`)
-前端必须配置: `VITE_GOOGLE_MAPS_API_KEY`
+后端必须配置：
 
-## 奥德赛功能 (/agent)
+- `AI_API_KEY`
+- `GOOGLE_API_KEY`
 
-用户在页面上选出发地 → 复制 Skills 给自己的 AI → AI 自主探索街景、拍照、写图文来信。
+后端常用可选：
 
-- **前端路由**: `/agent`（lazy loaded），入口在 TopBar 更多菜单
-- **AI 身份**: Traveler ID（7 位 hex），AI 自己生成并存入 `memory_with_atlas.md`
-- **记忆机制**: `memory_with_atlas.md` 结构化文件，含身份、旅程记录（100 条）、感悟（重写式）、未完线索
-- **来信**: 服务端存完整图文（街景 URL），本地存同内容但图片下载为 `atlas-photos/`
-- **安全**: 街景代理 pano_id 正则校验 + 数值参数校验；双层限流（per-token + per-IP）
-- **数据库表**: `agent_journeys`（旅程）、`agent_journey_stops`（站点 + photo_heading）
+- `SERVER_ADDRESS`，默认 `:8080`
+- `SQLITE_PATH`，默认 `data/streetview.db`
+- `RATE_LIMIT_ENABLED`，默认 `true`
+- `PROXY_URL` / `AI_PROXY_URL` / `MAPS_PROXY_URL`
+- `SENTRY_DSN` / `SENTRY_ENABLED` / `GO_ENV`
 
-## 注意事项
+前端必须配置：
 
-- SQLite 数据库文件自动创建，schema 自动迁移（sqliterepo.go 中的 migrate 方法）
-- Docker 部署时数据库文件挂载在 `sqlite_data` volume 中
-- 开发环境数据库默认在 `backend/data/streetview.db`
+- `VITE_GOOGLE_MAPS_API_KEY`
+
+前端常用可选：
+
+- `VITE_GOOGLE_MAPS_MAP_ID`
+- `VITE_SENTRY_DSN`
+- `VITE_VERSION`
+
+## 文档位置
+
+- `README.md` - 面向新人和外部读者的入口。
+- `docs/architecture.md` - 当前架构、数据流和状态机。
+- `docs/runbook.md` - 安装、冒烟、部署和故障排查。

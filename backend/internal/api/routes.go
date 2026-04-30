@@ -56,6 +56,17 @@ func SetupRoutes(r *gin.Engine, h *Handlers, ah *AgentHandlers, gh ...*GeoHandle
 			{
 				geo.GET("/satellite", gh[0].SatelliteImage)
 				geo.POST("/ai-guess", gh[0].AIGuess)
+				geo.POST("/online/rooms", gh[0].CreateOnlineRoom)
+				geo.POST("/online/rooms/join", gh[0].JoinOnlineRoom)
+				geo.GET("/online/rooms/:roomId", gh[0].GetOnlineRoom)
+				geo.POST("/online/rooms/:roomId/ready", gh[0].SetOnlineRoomReady)
+				geo.POST("/online/rooms/:roomId/zoom-out", gh[0].ZoomOutOnlineRoom)
+				geo.POST("/online/rooms/:roomId/guess", gh[0].SubmitOnlineGuess)
+				geo.POST("/online/rooms/:roomId/leave", gh[0].LeaveOnlineRoom)
+				geo.GET("/online/rooms/:roomId/image", gh[0].OnlineRoomImage)
+				geo.POST("/online/matchmaking", gh[0].JoinOnlineMatchmaking)
+				geo.GET("/online/matchmaking", gh[0].GetOnlineMatchmaking)
+				geo.DELETE("/online/matchmaking", gh[0].CancelOnlineMatchmaking)
 			}
 		}
 	}

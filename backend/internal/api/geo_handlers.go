@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -11,18 +12,27 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/my-streetview-project/backend/internal/openai"
+	"github.com/my-streetview-project/backend/internal/services"
 )
 
 // GeoHandlers handles the geo guessing game endpoints.
 type GeoHandlers struct {
-	aiClient     openai.Client
-	googleAPIKey string
-	httpClient   *http.Client
+	aiClient        openai.Client
+	googleAPIKey    string
+	httpClient      *http.Client
+	locationService *services.LocationService
+	battleService   *services.GeoBattleService
 }
 
 // NewGeoHandlers creates a new GeoHandlers instance.
 // Accepts an optional *http.Client; if nil, falls back to default with timeout.
-func NewGeoHandlers(aiClient openai.Client, googleAPIKey string, httpClient ...*http.Client) *GeoHandlers {
+func NewGeoHandlers(
+	aiClient openai.Client,
+	googleAPIKey string,
+	locationService *services.LocationService,
+	battleService *services.GeoBattleService,
+	httpClient ...*http.Client,
+) *GeoHandlers {
 	var c *http.Client
 	if len(httpClient) > 0 && httpClient[0] != nil {
 		// Wrap with timeout if the provided client doesn't have one
@@ -34,9 +44,11 @@ func NewGeoHandlers(aiClient openai.Client, googleAPIKey string, httpClient ...*
 		c = &http.Client{Timeout: 15 * time.Second}
 	}
 	return &GeoHandlers{
-		aiClient:     aiClient,
-		googleAPIKey: googleAPIKey,
-		httpClient:   c,
+		aiClient:        aiClient,
+		googleAPIKey:    googleAPIKey,
+		httpClient:      c,
+		locationService: locationService,
+		battleService:   battleService,
 	}
 }
 
@@ -68,30 +80,7 @@ func (gh *GeoHandlers) SatelliteImage(c *gin.Context) {
 		return
 	}
 
-	imageURL := fmt.Sprintf(
-		"https://maps.googleapis.com/maps/api/staticmap?center=%.6f,%.6f&zoom=%d&size=800x600&maptype=satellite&key=%s",
-		lat, lng, zoom, gh.googleAPIKey,
-	)
-
-	resp, err := gh.httpClient.Get(imageURL)
-	if err != nil {
-		log.Printf("[GEO] satellite image fetch failed: %v", err)
-		c.JSON(http.StatusBadGateway, gin.H{"success": false, "error": "image fetch failed"})
-		return
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		log.Printf("[GEO] Google Static Maps status %d", resp.StatusCode)
-		c.Status(resp.StatusCode)
-		io.Copy(c.Writer, resp.Body)
-		return
-	}
-
-	c.Header("Content-Type", resp.Header.Get("Content-Type"))
-	c.Header("Cache-Control", "public, max-age=86400")
-	c.Status(http.StatusOK)
-	io.Copy(c.Writer, resp.Body)
+	gh.proxySatelliteImage(c, lat, lng, zoom, "public, max-age=86400")
 }
 
 type geoAIGuessRequest struct {
@@ -167,4 +156,68 @@ func (gh *GeoHandlers) AIGuess(c *gin.Context) {
 			"reasoning": reasoning,
 		},
 	})
+}
+
+func (gh *GeoHandlers) proxySatelliteImage(c *gin.Context, lat, lng float64, zoom int, cacheControl string) {
+	imageURL := fmt.Sprintf(
+		"https://maps.googleapis.com/maps/api/staticmap?center=%.6f,%.6f&zoom=%d&size=800x600&maptype=satellite&key=%s",
+		lat, lng, zoom, gh.googleAPIKey,
+	)
+
+	resp, err := gh.httpClient.Get(imageURL)
+	if err != nil {
+		log.Printf("[GEO] satellite image fetch failed: %v", err)
+		c.JSON(http.StatusBadGateway, gin.H{"success": false, "error": "image fetch failed"})
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		log.Printf("[GEO] Google Static Maps status %d", resp.StatusCode)
+		c.Status(resp.StatusCode)
+		io.Copy(c.Writer, resp.Body)
+		return
+	}
+
+	c.Header("Content-Type", resp.Header.Get("Content-Type"))
+	c.Header("Cache-Control", cacheControl)
+	c.Status(http.StatusOK)
+	io.Copy(c.Writer, resp.Body)
+}
+
+func (gh *GeoHandlers) geoBattleStatusCode(err error) int {
+	switch {
+	case errors.Is(err, services.ErrGeoBattleInvalidNickname),
+		errors.Is(err, services.ErrGeoBattleInvalidCode):
+		return http.StatusBadRequest
+	case errors.Is(err, services.ErrGeoBattleRoomNotFound):
+		return http.StatusNotFound
+	case errors.Is(err, services.ErrGeoBattleNotInRoom):
+		return http.StatusForbidden
+	case errors.Is(err, services.ErrGeoBattleRoomFull),
+		errors.Is(err, services.ErrGeoBattleRoomClosed),
+		errors.Is(err, services.ErrGeoBattleAlreadyQueued),
+		errors.Is(err, services.ErrGeoBattleNotQueued),
+		errors.Is(err, services.ErrGeoBattleAlreadyGuessed),
+		errors.Is(err, services.ErrGeoBattleAlreadyInRoom),
+		errors.Is(err, services.ErrGeoBattleInvalidPhase),
+		errors.Is(err, services.ErrGeoBattleImageNotReady):
+		return http.StatusConflict
+	default:
+		return http.StatusInternalServerError
+	}
+}
+
+func (gh *GeoHandlers) geoBattleSessionID(c *gin.Context) (string, error) {
+	sessionIDValue, exists := c.Get("sessionID")
+	if !exists {
+		return "", fmt.Errorf("missing session id")
+	}
+
+	sessionID, ok := sessionIDValue.(string)
+	if !ok || sessionID == "" {
+		return "", fmt.Errorf("missing session id")
+	}
+
+	return sessionID, nil
 }

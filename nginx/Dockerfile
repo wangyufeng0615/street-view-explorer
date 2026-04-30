@@ -34,8 +34,9 @@ COPY nginx/conf.d/default.conf /etc/nginx/conf.d/default.conf
 RUN mkdir -p /usr/share/nginx/html/nginx_status
 
 # 健康检查 - 使用wget检查nginx状态（不使用--spider避免HEAD请求问题）
+# 用 127.0.0.1 而非 localhost：部分环境 localhost 解析到 IPv6 [::1]，而 nginx 只监听 IPv4
 HEALTHCHECK --interval=30s --timeout=3s \
-    CMD wget --no-verbose --tries=1 -O /dev/null http://localhost:3000/nginx_status || exit 1
+    CMD wget --no-verbose --tries=1 -O /dev/null http://127.0.0.1:3000/nginx_status || exit 1
 
 # 暴露端口
 EXPOSE 3000

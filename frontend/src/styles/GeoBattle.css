@@ -1,0 +1,433 @@
+.geo-battle-page {
+  min-height: 100vh;
+  background:
+    radial-gradient(
+      circle at top left,
+      rgba(123, 211, 137, 0.18),
+      transparent 26%
+    ),
+    radial-gradient(
+      circle at top right,
+      rgba(59, 130, 246, 0.16),
+      transparent 28%
+    ),
+    linear-gradient(180deg, #f7f4ec 0%, #efe8dc 100%);
+  color: #172033;
+}
+
+.geo-battle-shell {
+  min-height: 100vh;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.geo-battle-shell--hub,
+.geo-battle-shell--loading,
+.geo-battle-shell--error {
+  max-width: 1100px;
+  margin: 0 auto;
+  justify-content: center;
+}
+
+.geo-battle-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.geo-battle-back,
+.geo-battle-room-code {
+  border: 1px solid rgba(23, 32, 51, 0.15);
+  background: rgba(255, 255, 255, 0.65);
+  color: #172033;
+  border-radius: 999px;
+  padding: 10px 14px;
+  cursor: pointer;
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.geo-battle-back:hover,
+.geo-battle-room-code:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 24px rgba(23, 32, 51, 0.08);
+}
+
+.geo-battle-title-block {
+  flex: 1;
+  min-width: 0;
+}
+
+.geo-battle-title {
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  font-family: "Noto Serif SC", "LXGW WenKai", Georgia, serif;
+}
+
+.geo-battle-subtitle {
+  font-size: 14px;
+  color: #546075;
+  margin-top: 4px;
+}
+
+.geo-battle-room-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.geo-battle-sync-warning {
+  font-size: 13px;
+  color: #b45309;
+}
+
+.geo-battle-hub-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(300px, 0.75fr);
+  gap: 20px;
+}
+
+.geo-battle-panel {
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(23, 32, 51, 0.08);
+  border-radius: 24px;
+  padding: 24px;
+  box-shadow: 0 16px 40px rgba(23, 32, 51, 0.08);
+}
+
+.geo-battle-panel--side {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.geo-battle-side-title {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.geo-battle-side-copy,
+.geo-battle-action-hint,
+.geo-battle-result-distance {
+  color: #637087;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.geo-battle-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.geo-battle-field--compact {
+  margin-bottom: 0;
+}
+
+.geo-battle-field span,
+.geo-battle-result-label,
+.geo-battle-player-label,
+.geo-battle-phase-label {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #728097;
+}
+
+.geo-battle-field input {
+  border: 1px solid rgba(23, 32, 51, 0.12);
+  border-radius: 14px;
+  padding: 14px 16px;
+  font-size: 16px;
+  background: rgba(250, 248, 243, 0.85);
+  color: #172033;
+}
+
+.geo-battle-action-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+
+.geo-battle-primary-btn,
+.geo-battle-secondary-btn {
+  border: none;
+  border-radius: 16px;
+  padding: 14px 18px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease,
+    opacity 0.18s ease;
+}
+
+.geo-battle-primary-btn {
+  background: linear-gradient(135deg, #164e63 0%, #0f766e 100%);
+  color: #f8fafc;
+  box-shadow: 0 16px 30px rgba(15, 118, 110, 0.22);
+}
+
+.geo-battle-secondary-btn {
+  background: rgba(255, 255, 255, 0.78);
+  color: #172033;
+  border: 1px solid rgba(23, 32, 51, 0.1);
+}
+
+.geo-battle-primary-btn:hover:not(:disabled),
+.geo-battle-secondary-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.geo-battle-primary-btn:disabled,
+.geo-battle-secondary-btn:disabled,
+.geo-battle-back:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.geo-battle-rule-list {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 10px;
+  color: #22304b;
+  line-height: 1.6;
+}
+
+.geo-battle-matchmaking-card {
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+  border-radius: 18px;
+  background: linear-gradient(
+    135deg,
+    rgba(15, 118, 110, 0.08),
+    rgba(59, 130, 246, 0.08)
+  );
+}
+
+.geo-battle-banner {
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  color: #92400e;
+  border-radius: 16px;
+  padding: 12px 14px;
+}
+
+.geo-battle-notice {
+  background: rgba(15, 118, 110, 0.1);
+  border: 1px solid rgba(15, 118, 110, 0.22);
+  color: #0f766e;
+  border-radius: 16px;
+  padding: 12px 14px;
+}
+
+.geo-battle-status-bar {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(220px, 1.2fr) minmax(
+      220px,
+      1fr
+    );
+  gap: 16px;
+}
+
+.geo-battle-player-card,
+.geo-battle-phase-card {
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(23, 32, 51, 0.08);
+  border-radius: 20px;
+  padding: 18px;
+  display: grid;
+  gap: 8px;
+}
+
+.geo-battle-player-name,
+.geo-battle-phase-main,
+.geo-battle-result-score,
+.geo-battle-outcome {
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.geo-battle-player-meta,
+.geo-battle-result-total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: #4c5a70;
+}
+
+.geo-battle-phase-card {
+  text-align: center;
+}
+
+.geo-battle-phase-timer {
+  font-size: 30px;
+  font-weight: 700;
+  color: #0f766e;
+}
+
+.geo-battle-board {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(360px, 0.95fr);
+  gap: 18px;
+}
+
+.geo-battle-satellite,
+.geo-battle-map-panel {
+  min-height: 0;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(23, 32, 51, 0.08);
+  border-radius: 24px;
+  overflow: hidden;
+  position: relative;
+}
+
+.geo-battle-satellite {
+  display: flex;
+}
+
+.geo-battle-satellite-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+
+.geo-battle-satellite-img.loaded {
+  opacity: 1;
+}
+
+.geo-battle-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: rgba(243, 241, 235, 0.78);
+  color: #374151;
+}
+
+.geo-battle-overlay--placeholder {
+  position: static;
+  min-height: 420px;
+}
+
+.geo-battle-spinner {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  border: 3px solid rgba(15, 118, 110, 0.2);
+  border-top-color: #0f766e;
+  animation: geoBattleSpin 0.8s linear infinite;
+}
+
+@keyframes geoBattleSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.geo-battle-map-panel {
+  display: grid;
+  grid-template-rows: minmax(280px, 1fr) auto;
+}
+
+.geo-battle-map {
+  width: 100%;
+  height: 100%;
+  min-height: 320px;
+}
+
+.geo-battle-map-error {
+  min-height: 320px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #9f1239;
+  background: rgba(255, 241, 242, 0.8);
+}
+
+.geo-battle-controls {
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+  border-top: 1px solid rgba(23, 32, 51, 0.08);
+}
+
+.geo-battle-result-card {
+  display: grid;
+  gap: 12px;
+}
+
+.geo-battle-result-title {
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.geo-battle-result-location {
+  color: #172033;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.geo-battle-result-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.geo-battle-outcome {
+  color: #0f766e;
+}
+
+@media (max-width: 980px) {
+  .geo-battle-hub-grid,
+  .geo-battle-status-bar,
+  .geo-battle-board {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .geo-battle-topbar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .geo-battle-room-meta {
+    width: 100%;
+    justify-content: space-between;
+  }
+}
+
+@media (max-width: 640px) {
+  .geo-battle-shell {
+    padding: 16px;
+  }
+
+  .geo-battle-title {
+    font-size: 28px;
+  }
+
+  .geo-battle-result-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .geo-battle-map-panel {
+    grid-template-rows: minmax(260px, 1fr) auto;
+  }
+}

@@ -7,7 +7,8 @@
   flex-direction: column;
   background: #f7f5f0;
   overflow: hidden;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
 /* ─── Top Bar ─── */
@@ -240,7 +241,9 @@
 }
 
 @keyframes geoSpin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* ─── Modal Overlay ─── */
@@ -258,8 +261,12 @@
 }
 
 @keyframes geoFadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .geo-modal {
@@ -273,8 +280,14 @@
 }
 
 @keyframes geoSlideUp {
-  from { opacity: 0; transform: translateY(20px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .geo-modal-title {
@@ -282,7 +295,7 @@
   font-weight: 700;
   color: #1a2b3c;
   margin-bottom: 8px;
-  font-family: Georgia, 'Noto Serif SC', serif;
+  font-family: Georgia, "Noto Serif SC", serif;
 }
 
 .geo-modal-subtitle {
@@ -306,7 +319,7 @@
 }
 
 .geo-modal-rules li::before {
-  content: '·';
+  content: "·";
   position: absolute;
   left: 4px;
   color: #0e7490;
@@ -366,6 +379,29 @@
 .geo-start-btn:hover {
   transform: translateY(-1px);
   box-shadow: 0 6px 20px rgba(14, 116, 144, 0.3);
+}
+
+.geo-welcome-actions {
+  display: grid;
+  gap: 12px;
+}
+
+.geo-secondary-btn {
+  width: 100%;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.8);
+  color: #1a2b3c;
+  border: 1px solid rgba(26, 43, 60, 0.12);
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.geo-secondary-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(15, 23, 42, 0.08);
 }
 
 /* ─── Round Result Panel ─── */

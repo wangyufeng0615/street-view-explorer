@@ -117,6 +117,7 @@ func main() {
 	globalAIClient := openai.NewClient(cfg.OpenAIAPIKey())
 	aiService := services.NewAIService(cfg, repo, googleMaps, globalAIClient)
 	locationService := services.NewLocationService(repo, aiService, googleMaps)
+	geoBattleService := services.NewGeoBattleService(locationService)
 
 	// 设置 Gin 路由
 	if cfg.SecurityConfig().RateLimit.Enabled {
@@ -179,7 +180,7 @@ func main() {
 	// 设置路由
 	handlers := api.NewHandlers(locationService, aiService)
 	agentHandlers := api.NewAgentHandlers(repo, repo, handlers.GlobalServices(), cfg.GoogleMapsAPIKey())
-	geoHandlers := api.NewGeoHandlers(globalAIClient, cfg.GoogleMapsAPIKey(), googleMaps.HTTPClient())
+	geoHandlers := api.NewGeoHandlers(globalAIClient, cfg.GoogleMapsAPIKey(), locationService, geoBattleService, googleMaps.HTTPClient())
 	api.SetupRoutes(r, handlers, agentHandlers, geoHandlers)
 
 	addr := cfg.ServerAddress()
