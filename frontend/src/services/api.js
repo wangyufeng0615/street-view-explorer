@@ -8,7 +8,8 @@ const DEFAULT_TIMEOUT = 25000; // 25 seconds (AI generation can take longer)
 
 // 获取当前语言，默认为英文
 function getCurrentLanguage() {
-  return i18n.language || "en";
+  const language = i18n.resolvedLanguage || i18n.language || "en";
+  return language.startsWith("zh") ? "zh" : "en";
 }
 
 // 创建请求头
@@ -265,14 +266,16 @@ export async function deleteExplorationPreference(language = null) {
   }
 }
 
-// 获取访问历史
+// 获取全站共享访问历史
 export async function getVisitHistory(limit = 1000, offset = 0) {
   try {
     const resp = await fetchWithTimeout(
       `${API_V1}/visits?limit=${limit}&offset=${offset}`,
       {
         method: "GET",
-        headers: getHeaders(),
+        headers: {
+          "Content-Type": "application/json",
+        },
       },
     );
     const data = await resp.json();

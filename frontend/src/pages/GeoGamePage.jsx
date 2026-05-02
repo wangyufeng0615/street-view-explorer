@@ -13,13 +13,32 @@ import {
   TOTAL_ROUNDS,
   START_ZOOM,
   MIN_ZOOM,
+  PERFECT_GUESS_DISTANCE_KM,
   haversineDistance,
   calculateScore,
   formatDistance,
   generateRoundPlan,
+  isPerfectGuess,
   jitterCoord,
 } from "../utils/geoGameUtils";
 import "../styles/GeoGame.css";
+
+const PLAYER_MARKERS = {
+  target: {
+    color: "#10b981",
+    className: "geo-marker-pin--target",
+  },
+  player: {
+    color: "#ef4444",
+    className: "geo-marker-pin--player",
+  },
+  atlas: {
+    color: "#8b5cf6",
+    className: "geo-marker-pin--atlas",
+  },
+};
+const RESULT_PIN_SPREAD_DISTANCE_KM = 50;
+const RESULT_PIN_OFFSET_PX = 16;
 
 // ─── State ──────────────────────────────────────────────────
 
@@ -40,15 +59,13 @@ const initialState = {
 
 function reducer(state, action) {
   switch (action.type) {
-    case "TOGGLE_AI":
-      return { ...state, aiEnabled: !state.aiEnabled };
     case "START_GAME": {
       const roundPlan = generateRoundPlan(TOTAL_ROUNDS);
       return {
         ...initialState,
         phase: "LOADING",
         round: 1,
-        aiEnabled: state.aiEnabled,
+        aiEnabled: action.aiEnabled ?? state.aiEnabled,
         roundPlan,
       };
     }
@@ -77,6 +94,8 @@ function reducer(state, action) {
         phase: "ROUND_RESULT",
         guessResult: { lat, lng, distance: dist, score },
         guessPin: null,
+        aiGuess: null,
+        aiLoading: state.aiEnabled,
       };
     }
     case "GIVE_UP":
@@ -85,6 +104,8 @@ function reducer(state, action) {
         phase: "ROUND_RESULT",
         guessResult: { lat: null, lng: null, distance: null, score: 0 },
         guessPin: null,
+        aiGuess: null,
+        aiLoading: state.aiEnabled,
       };
     case "SET_AI_GUESS":
       return { ...state, aiGuess: action.payload, aiLoading: false };
@@ -96,6 +117,8 @@ function reducer(state, action) {
         distance: state.guessResult?.distance ?? null,
         zoomSteps: state.zoomSteps,
         aiScore: state.aiGuess?.score ?? null,
+        aiDistance: state.aiGuess?.distance ?? null,
+        locationLabel: getRoundLocationLabel(state.target),
       };
       const newScores = [...state.scores, roundResult];
       const isLast = state.round >= TOTAL_ROUNDS;
@@ -125,12 +148,219 @@ function satUrl(target, zoom) {
   return `/api/v1/geo/satellite?lat=${target.lat}&lng=${target.lng}&zoom=${zoom}`;
 }
 
+function getGeoLanguage(i18n) {
+  const language = i18n.resolvedLanguage || i18n.language || "en";
+  return language.startsWith("zh") ? "zh" : "en";
+}
+
+function createGuessPinIcon(maps, color, headOffsetX = 0) {
+  const width = 74;
+  const tipX = width / 2;
+  const headX = tipX + headOffsetX;
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="44" viewBox="0 0 ${width} 44">
+      <path d="M${tipX} 42C${tipX + headOffsetX * 0.45} 38 ${headX + 14} 25.7 ${headX + 14} 15.4C${headX + 14} 7.8 ${headX + 7.7} 2 ${headX} 2C${headX - 7.7} 2 ${headX - 14} 7.8 ${headX - 14} 15.4C${headX - 14} 25.7 ${tipX - headOffsetX * 0.45} 38 ${tipX} 42Z" fill="${color}" stroke="#ffffff" stroke-width="3"/>
+      <circle cx="${headX}" cy="15.5" r="5.5" fill="#ffffff" fill-opacity="0.94"/>
+    </svg>
+  `;
+  return {
+    url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
+    scaledSize: new maps.Size(width, 44),
+    anchor: new maps.Point(tipX, 42),
+  };
+}
+
+function getResultPinOffsets(target, guessResult, aiGuess) {
+  const closePlayer =
+    guessResult?.lat != null &&
+    guessResult.distance <= RESULT_PIN_SPREAD_DISTANCE_KM;
+  const closeAtlas =
+    aiGuess &&
+    haversineDistance(target.lat, target.lng, aiGuess.lat, aiGuess.lng) <=
+      RESULT_PIN_SPREAD_DISTANCE_KM;
+
+  if (closePlayer && closeAtlas) {
+    return {
+      target: 0,
+      player: -RESULT_PIN_OFFSET_PX,
+      atlas: RESULT_PIN_OFFSET_PX,
+    };
+  }
+  if (closePlayer) {
+    return {
+      target: RESULT_PIN_OFFSET_PX / 2,
+      player: -RESULT_PIN_OFFSET_PX / 2,
+      atlas: 0,
+    };
+  }
+  if (closeAtlas) {
+    return {
+      target: RESULT_PIN_OFFSET_PX / 2,
+      player: 0,
+      atlas: -RESULT_PIN_OFFSET_PX / 2,
+    };
+  }
+  return { target: 0, player: 0, atlas: 0 };
+}
+
+function formatPerfectDistanceLabel() {
+  return PERFECT_GUESS_DISTANCE_KM === 1
+    ? "1 km"
+    : formatDistance(PERFECT_GUESS_DISTANCE_KM);
+}
+
+function formatPerfectDistanceShortLabel(t) {
+  return PERFECT_GUESS_DISTANCE_KM === 1
+    ? t("geo.one_km")
+    : formatDistance(PERFECT_GUESS_DISTANCE_KM);
+}
+
+function formatResultDistance(distance, t, compact = false) {
+  if (isPerfectGuess(distance)) {
+    if (compact) {
+      return t("geo.perfect_distance_short", {
+        distance: formatPerfectDistanceShortLabel(t),
+      });
+    }
+    return t("geo.perfect_guess_distance", {
+      distance: formatPerfectDistanceLabel(),
+    });
+  }
+  return formatDistance(distance);
+}
+
+function formatScore(t, score) {
+  return t("geo.score_value", { score: score.toLocaleString() });
+}
+
+function formatPlainScore(t, score) {
+  if (score == null) return "-";
+  return t("geo.plain_score_value", { score: score.toLocaleString() });
+}
+
+function formatScoreboardScore(t, score) {
+  return t("geo.scoreboard_score", { score: score.toLocaleString() });
+}
+
+function sanitizePlacePart(value) {
+  return (value || "")
+    .replace(/\s+/g, " ")
+    .replace(/\b\d{4,}\b/g, "")
+    .trim();
+}
+
+function looksLikePreciseAddress(value) {
+  return (
+    /^[A-Z0-9]{3,}\+/.test(value) ||
+    /\d/.test(value) ||
+    /\b(road|street|avenue|lane|drive|highway|route|rd|st|ave)\b/i.test(value)
+  );
+}
+
+function getRoundLocationLabel(target) {
+  if (!target) return "";
+  const country = sanitizePlacePart(target.country);
+  const address = sanitizePlacePart(target.address);
+  if (!address) return country || "";
+
+  const parts = address.split(",").map(sanitizePlacePart).filter(Boolean);
+  const countryLower = country.toLowerCase();
+  const broadParts = parts.filter((part) => {
+    const partLower = part.toLowerCase();
+    return (
+      partLower !== countryLower &&
+      !partLower.includes(countryLower) &&
+      !looksLikePreciseAddress(part)
+    );
+  });
+  const place = broadParts.length > 0 ? broadParts[broadParts.length - 1] : "";
+  if (country && place) return `${country} · ${place}`;
+  return country || place || address;
+}
+
+function getCurrentPlayerScore(state) {
+  const completedScore = state.scores.reduce(
+    (sum, r) => sum + r.playerScore,
+    0,
+  );
+  const pendingScore =
+    state.phase === "ROUND_RESULT" ? state.guessResult?.score || 0 : 0;
+  return completedScore + pendingScore;
+}
+
+function getCurrentAtlasScore(state) {
+  const completedScore = state.scores.reduce(
+    (sum, r) => sum + (r.aiScore || 0),
+    0,
+  );
+  const pendingScore =
+    state.phase === "ROUND_RESULT" ? state.aiGuess?.score || 0 : 0;
+  return completedScore + pendingScore;
+}
+
+function MarkerPin({ type }) {
+  return (
+    <span
+      className={`geo-marker-pin ${PLAYER_MARKERS[type].className}`}
+      aria-hidden="true"
+    />
+  );
+}
+
+function ResultLabel({ type, children }) {
+  return (
+    <div className="geo-result-label geo-result-label--with-marker">
+      <MarkerPin type={type} />
+      {children}
+    </div>
+  );
+}
+
+function ResultMetric({ label, value, highlight = false, variant = "" }) {
+  return (
+    <div
+      className={`geo-result-metric ${
+        variant ? `geo-result-metric--${variant}` : ""
+      }`}
+    >
+      <span>{label}</span>
+      <strong className={highlight ? "geo-result-metric-value--highlight" : ""}>
+        {value}
+      </strong>
+    </div>
+  );
+}
+
+function ResultStats({ score, distance, zoomSteps, t }) {
+  return (
+    <div className="geo-result-stats">
+      <ResultMetric
+        label={t("geo.score")}
+        value={formatScore(t, score)}
+        highlight
+      />
+      <ResultMetric
+        label={t("geo.distance_error")}
+        value={formatResultDistance(distance, t, true)}
+        variant="distance"
+      />
+      {zoomSteps !== undefined && (
+        <ResultMetric
+          label={t("geo.zoom_out_count")}
+          value={t("geo.zoom_out_count_value", { count: zoomSteps })}
+        />
+      )}
+    </div>
+  );
+}
+
 // ─── Component ──────────────────────────────────────────────
 
 export default function GeoGamePage() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const [state, dispatch] = useReducer(reducer, initialState);
+  const activeGeoLanguage = getGeoLanguage(i18n);
 
   const guessMapElRef = useRef(null);
   const guessInstanceRef = useRef(null);
@@ -147,9 +377,9 @@ export default function GeoGamePage() {
   const [imgError, setImgError] = useState(false);
 
   // ─── Fetch location: database entry or random API ───
-  // i18n.language is read via ref to avoid re-triggering on language change.
-  const langRef = useRef(i18n.language);
-  langRef.current = i18n.language;
+  // Active language is read via ref to avoid re-triggering round selection.
+  const langRef = useRef(activeGeoLanguage);
+  langRef.current = activeGeoLanguage;
 
   useEffect(() => {
     if (state.phase !== "LOADING" || !state.roundPlan) return;
@@ -159,7 +389,7 @@ export default function GeoGamePage() {
     if (plan && plan.source === "database") {
       const e = plan.entry;
       const { lat, lng } = jitterCoord(e.lat, e.lng);
-      const isZh = langRef.current?.startsWith("zh");
+      const isZh = langRef.current === "zh";
       const name = isZh ? e.nameZh : e.name;
       const country = isZh ? e.countryZh : e.country;
       dispatch({
@@ -244,14 +474,8 @@ export default function GeoGamePage() {
         pendingMarkerRef.current = new maps.Marker({
           position: pos,
           map: guessInstanceRef.current,
-          icon: {
-            path: maps.SymbolPath.CIRCLE,
-            scale: 8,
-            fillColor: "#ef4444",
-            fillOpacity: 1,
-            strokeColor: "#fff",
-            strokeWeight: 2,
-          },
+          icon: createGuessPinIcon(maps, PLAYER_MARKERS.player.color),
+          zIndex: 40,
         });
       }
     });
@@ -287,21 +511,23 @@ export default function GeoGamePage() {
     resultMarkersRef.current = [];
     resultLinesRef.current.forEach((l) => l.setMap(null));
     resultLinesRef.current = [];
+    const pinOffsets = getResultPinOffsets(
+      state.target,
+      state.guessResult,
+      state.aiGuess,
+    );
 
     // Target (green)
     resultMarkersRef.current.push(
       new maps.Marker({
         position: tp,
         map: guessInstanceRef.current,
-        icon: {
-          path: maps.SymbolPath.CIRCLE,
-          scale: 10,
-          fillColor: "#10b981",
-          fillOpacity: 1,
-          strokeColor: "#fff",
-          strokeWeight: 2,
-        },
-        zIndex: 10,
+        icon: createGuessPinIcon(
+          maps,
+          PLAYER_MARKERS.target.color,
+          pinOffsets.target,
+        ),
+        zIndex: 20,
       }),
     );
 
@@ -312,23 +538,21 @@ export default function GeoGamePage() {
         new maps.Marker({
           position: gp,
           map: guessInstanceRef.current,
-          icon: {
-            path: maps.SymbolPath.CIRCLE,
-            scale: 8,
-            fillColor: "#ef4444",
-            fillOpacity: 1,
-            strokeColor: "#fff",
-            strokeWeight: 2,
-          },
+          icon: createGuessPinIcon(
+            maps,
+            PLAYER_MARKERS.player.color,
+            pinOffsets.player,
+          ),
+          zIndex: 40,
         }),
       );
       resultLinesRef.current.push(
         new maps.Polyline({
           path: [gp, tp],
-          strokeColor: "#ef4444",
+          strokeColor: PLAYER_MARKERS.player.color,
           strokeWeight: 2,
           strokeOpacity: 0.7,
-          geodesic: true,
+          geodesic: false,
           map: guessInstanceRef.current,
         }),
       );
@@ -341,23 +565,21 @@ export default function GeoGamePage() {
         new maps.Marker({
           position: ap,
           map: guessInstanceRef.current,
-          icon: {
-            path: maps.SymbolPath.CIRCLE,
-            scale: 8,
-            fillColor: "#8b5cf6",
-            fillOpacity: 1,
-            strokeColor: "#fff",
-            strokeWeight: 2,
-          },
+          icon: createGuessPinIcon(
+            maps,
+            PLAYER_MARKERS.atlas.color,
+            pinOffsets.atlas,
+          ),
+          zIndex: 30,
         }),
       );
       resultLinesRef.current.push(
         new maps.Polyline({
           path: [ap, tp],
-          strokeColor: "#8b5cf6",
+          strokeColor: PLAYER_MARKERS.atlas.color,
           strokeWeight: 1.5,
           strokeOpacity: 0.6,
-          geodesic: true,
+          geodesic: false,
           map: guessInstanceRef.current,
         }),
       );
@@ -369,13 +591,25 @@ export default function GeoGamePage() {
       bounds.extend({ lat: state.guessResult.lat, lng: state.guessResult.lng });
     if (state.aiGuess)
       bounds.extend({ lat: state.aiGuess.lat, lng: state.aiGuess.lng });
-    guessInstanceRef.current.fitBounds(bounds, 40);
+
+    const fitVisibleMap = () => {
+      if (!guessInstanceRef.current) return;
+      maps.event.trigger(guessInstanceRef.current, "resize");
+      guessInstanceRef.current.fitBounds(bounds, 32);
+    };
+    const frame = window.requestAnimationFrame(fitVisibleMap);
+    const timer = window.setTimeout(fitVisibleMap, 320);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(timer);
+    };
   }, [state.phase, state.aiGuess, mapsReady]);
 
   // ─── AI guess ───
   const aiControllerRef = useRef(null);
   useEffect(() => {
-    if (!state.target || !state.aiEnabled) return;
+    if (state.phase !== "ROUND_RESULT" || !state.target || !state.aiEnabled)
+      return;
     if (aiControllerRef.current) aiControllerRef.current.abort();
     const controller = new AbortController();
     aiControllerRef.current = controller;
@@ -387,7 +621,8 @@ export default function GeoGamePage() {
       body: JSON.stringify({
         lat: state.target.lat,
         lng: state.target.lng,
-        zoom: 12,
+        zoom: state.currentZoom,
+        lang: activeGeoLanguage,
       }),
       signal: controller.signal,
     })
@@ -407,7 +642,7 @@ export default function GeoGamePage() {
               lat,
               lng,
               distance: dist,
-              score: calculateScore(5, dist),
+              score: calculateScore(state.zoomSteps, dist),
               reasoning,
             },
           });
@@ -421,7 +656,14 @@ export default function GeoGamePage() {
       controller.abort();
       aiControllerRef.current = null;
     };
-  }, [state.target, state.aiEnabled]);
+  }, [
+    state.phase,
+    state.target,
+    state.aiEnabled,
+    state.currentZoom,
+    state.zoomSteps,
+    activeGeoLanguage,
+  ]);
 
   // ─── Cleanup ───
   function cleanupMarkers() {
@@ -448,13 +690,12 @@ export default function GeoGamePage() {
     dispatch({ type: "RESTART" });
   }, []);
 
-  // In result phase, zoom out to show wider context (zoom 5 = regional view)
-  const displayZoom =
-    state.phase === "ROUND_RESULT"
-      ? Math.min(state.currentZoom, 5)
-      : state.currentZoom;
-  const satelliteUrl = state.target ? satUrl(state.target, displayZoom) : null;
+  const satelliteUrl = state.target
+    ? satUrl(state.target, state.currentZoom)
+    : null;
   const canZoomOut = state.currentZoom > MIN_ZOOM && state.phase === "PLAYING";
+  const playerScore = getCurrentPlayerScore(state);
+  const atlasScore = state.aiEnabled ? getCurrentAtlasScore(state) : null;
 
   return (
     <div className="geo-game">
@@ -465,17 +706,25 @@ export default function GeoGamePage() {
               ← {t("geo.back")}
             </button>
             <span className="geo-topbar-title">{t("geo.title")}</span>
-            {state.round > 0 && (
-              <span className="geo-topbar-round">
-                {t("geo.round", { n: state.round })} / {TOTAL_ROUNDS}
-              </span>
-            )}
           </div>
-          {state.phase === "PLAYING" && (
+          {state.round > 0 && (
             <div className="geo-topbar-right">
-              <span className="geo-zoom-badge">
-                {t("geo.zoom_steps")}: {state.zoomSteps}
+              <span className="geo-score-badge geo-score-badge--round">
+                {t("geo.round_progress", {
+                  current: state.round,
+                  total: TOTAL_ROUNDS,
+                })}
               </span>
+              <span className="geo-score-badge geo-score-badge--player">
+                <MarkerPin type="player" />
+                {t("geo.you")}: {formatScoreboardScore(t, playerScore)}
+              </span>
+              {atlasScore !== null && (
+                <span className="geo-score-badge geo-score-badge--atlas">
+                  <MarkerPin type="atlas" />
+                  Atlas: {formatScoreboardScore(t, atlasScore)}
+                </span>
+              )}
             </div>
           )}
         </div>
@@ -509,6 +758,32 @@ export default function GeoGamePage() {
               <span>{t("geo.image_error")}</span>
             </div>
           )}
+          {state.target &&
+            (state.phase === "PLAYING" || state.phase === "ROUND_RESULT") && (
+              <div
+                className={`geo-satellite-center-pin ${
+                  state.phase === "ROUND_RESULT"
+                    ? "geo-satellite-center-pin--answer"
+                    : "geo-satellite-center-pin--neutral"
+                }`}
+                aria-label={t("geo.image_center")}
+              />
+            )}
+          {state.phase === "PLAYING" && (
+            <div className="geo-satellite-controls">
+              <button
+                className="geo-zoom-out-btn geo-zoom-out-btn--satellite"
+                disabled={!canZoomOut}
+                onClick={() => dispatch({ type: "ZOOM_OUT" })}
+              >
+                {t("geo.zoom_out")}
+              </button>
+              <span>
+                {t("geo.zoom_out_count")}:{" "}
+                {t("geo.zoom_out_count_value", { count: state.zoomSteps })}
+              </span>
+            </div>
+          )}
         </div>
 
         <div className="geo-guess-panel">
@@ -521,13 +796,6 @@ export default function GeoGamePage() {
           </div>
           {state.phase === "PLAYING" && (
             <div className="geo-guess-controls">
-              <button
-                className="geo-zoom-out-btn"
-                disabled={!canZoomOut}
-                onClick={() => dispatch({ type: "ZOOM_OUT" })}
-              >
-                {t("geo.zoom_out")}
-              </button>
               {!state.guessPin && (
                 <span className="geo-click-hint">{t("geo.click_map")}</span>
               )}
@@ -553,12 +821,7 @@ export default function GeoGamePage() {
       </div>
 
       {state.phase === "WELCOME" && (
-        <WelcomeModal
-          state={state}
-          dispatch={dispatch}
-          t={t}
-          navigate={navigate}
-        />
+        <WelcomeModal dispatch={dispatch} t={t} navigate={navigate} />
       )}
       {state.phase === "GAME_OVER" && (
         <GameOverModal
@@ -574,41 +837,24 @@ export default function GeoGamePage() {
 
 // ─── WelcomeModal ───
 
-function WelcomeModal({ state, dispatch, t, navigate }) {
+function WelcomeModal({ dispatch, t, navigate }) {
   return (
     <div className="geo-modal-overlay">
-      <div className="geo-modal">
+      <div className="geo-modal geo-welcome-modal">
         <div className="geo-modal-title">{t("geo.title")}</div>
         <div className="geo-modal-subtitle">{t("geo.subtitle")}</div>
-        <ul className="geo-modal-rules">
-          <li>{t("geo.welcome_rule_1")}</li>
-          <li>{t("geo.welcome_rule_2")}</li>
-          <li>{t("geo.welcome_rule_3")}</li>
-        </ul>
-        <label className="geo-ai-toggle">
-          <input
-            type="checkbox"
-            className="geo-ai-toggle-checkbox"
-            checked={state.aiEnabled}
-            onChange={() => dispatch({ type: "TOGGLE_AI" })}
-          />
-          <div>
-            <div className="geo-ai-toggle-label">{t("geo.enable_ai")}</div>
-            <div className="geo-ai-toggle-hint">{t("geo.ai_toggle_hint")}</div>
-          </div>
-        </label>
         <div className="geo-welcome-actions">
           <button
-            className="geo-start-btn"
-            onClick={() => dispatch({ type: "START_GAME" })}
+            className="geo-start-btn geo-start-btn--atlas"
+            onClick={() => dispatch({ type: "START_GAME", aiEnabled: true })}
           >
-            {t("geo.start")}
+            {t("geo.start_atlas")}
           </button>
           <button
-            className="geo-secondary-btn"
+            className="geo-secondary-btn geo-secondary-btn--friend"
             onClick={() => navigate("/geo/online")}
           >
-            {t("geo_online.enter_online")}
+            {t("geo.invite_friend_online")}
           </button>
         </div>
       </div>
@@ -623,65 +869,67 @@ function RoundResult({ state, t, onNext }) {
 
   return (
     <div className="geo-result-panel">
-      <div className="geo-result-title">
-        {t("geo.round", { n: state.round })} — {t("geo.result")}
-      </div>
-
-      {/* Actual location reveal */}
-      {state.target && (state.target.address || state.target.country) && (
-        <div className="geo-result-location">
-          {state.target.address || state.target.country}
+      <div className="geo-result-body">
+        <div className="geo-result-title">
+          {t("geo.round", { n: state.round })} — {t("geo.result")}
         </div>
-      )}
 
-      <div className="geo-result-section">
-        <div className="geo-result-label">{t("geo.your_guess")}</div>
-        {gaveUp ? (
-          <div className="geo-result-distance">{t("geo.gave_up")}</div>
-        ) : state.guessResult ? (
-          <>
-            <div className="geo-result-value">
-              +{state.guessResult.score.toLocaleString()}
+        {/* Actual location reveal */}
+        {state.target && (state.target.address || state.target.country) && (
+          <div className="geo-result-location">
+            <MarkerPin type="target" />
+            <div>
+              <span>{t("geo.actual_location")}</span>
+              <strong>{state.target.address || state.target.country}</strong>
             </div>
-            <div className="geo-result-distance">
-              {formatDistance(state.guessResult.distance)} · {state.zoomSteps}{" "}
-              {t("geo.steps_used")}
+          </div>
+        )}
+
+        <div className="geo-result-section">
+          <ResultLabel type="player">{t("geo.your_guess")}</ResultLabel>
+          {gaveUp ? (
+            <div className="geo-result-distance">{t("geo.gave_up")}</div>
+          ) : state.guessResult ? (
+            <ResultStats
+              score={state.guessResult.score}
+              distance={state.guessResult.distance}
+              zoomSteps={state.zoomSteps}
+              t={t}
+            />
+          ) : (
+            <div className="geo-result-distance">{t("geo.no_guess")}</div>
+          )}
+        </div>
+
+        {state.aiEnabled && (
+          <>
+            <div className="geo-result-divider" />
+            <div className="geo-result-ai-section">
+              <ResultLabel type="atlas">Atlas</ResultLabel>
+              {state.aiGuess ? (
+                <>
+                  <ResultStats
+                    score={state.aiGuess.score}
+                    distance={state.aiGuess.distance}
+                    t={t}
+                  />
+                  {state.aiGuess.reasoning && (
+                    <div className="geo-result-ai-reasoning">
+                      &ldquo;{state.aiGuess.reasoning}&rdquo;
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="geo-result-ai-distance">
+                  {state.aiLoading
+                    ? t("geo.ai_thinking")
+                    : t("geo.ai_unavailable")}
+                </div>
+              )}
             </div>
           </>
-        ) : (
-          <div className="geo-result-distance">{t("geo.no_guess")}</div>
         )}
       </div>
-
-      {state.aiEnabled && (
-        <>
-          <div className="geo-result-divider" />
-          <div className="geo-result-ai-section">
-            <div className="geo-result-ai-label">Atlas</div>
-            {state.aiGuess ? (
-              <>
-                <div className="geo-result-ai-score">
-                  +{state.aiGuess.score.toLocaleString()}
-                </div>
-                <div className="geo-result-ai-distance">
-                  {formatDistance(state.aiGuess.distance)}
-                </div>
-                {state.aiGuess.reasoning && (
-                  <div className="geo-result-ai-reasoning">
-                    &ldquo;{state.aiGuess.reasoning}&rdquo;
-                  </div>
-                )}
-              </>
-            ) : (
-              <div className="geo-result-ai-distance">
-                {state.aiLoading
-                  ? t("geo.ai_thinking")
-                  : t("geo.ai_unavailable")}
-              </div>
-            )}
-          </div>
-        </>
-      )}
 
       <button
         className="geo-result-btn"
@@ -708,41 +956,88 @@ function GameOverModal({ state, t, onRestart, onNext }) {
   const aiTotal = state.aiEnabled
     ? state.scores.reduce((s, r) => s + (r.aiScore || 0), 0)
     : null;
+  const playerWon = aiTotal === null || playerTotal >= aiTotal;
 
   return (
     <div className="geo-modal-overlay">
-      <div className="geo-modal">
-        <div className="geo-modal-title">{t("geo.game_over")}</div>
+      <div className="geo-modal geo-gameover-modal">
+        <div className="geo-gameover-header">
+          <div>
+            <div className="geo-gameover-kicker">
+              {state.aiEnabled
+                ? playerWon
+                  ? t("geo.gameover_win")
+                  : t("geo.gameover_lose")
+                : t("geo.total_score")}
+            </div>
+            <div className="geo-modal-title">{t("geo.game_over")}</div>
+          </div>
+        </div>
+
+        <div
+          className={`geo-gameover-scoreboard ${
+            state.aiEnabled ? "geo-gameover-scoreboard--duel" : ""
+          }`}
+        >
+          <div className="geo-gameover-player-card geo-gameover-player-card--you">
+            <div>
+              <MarkerPin type="player" />
+              <span>{t("geo.you")}</span>
+            </div>
+            <strong>{formatPlainScore(t, playerTotal)}</strong>
+          </div>
+          {aiTotal !== null && (
+            <div className="geo-gameover-player-card geo-gameover-player-card--atlas">
+              <div>
+                <MarkerPin type="atlas" />
+                <span>Atlas</span>
+              </div>
+              <strong>{formatPlainScore(t, aiTotal)}</strong>
+            </div>
+          )}
+        </div>
+
         <div className="geo-gameover-rounds">
           {state.scores.map((r, i) => (
             <div key={i} className="geo-gameover-round">
-              <span className="geo-gameover-round-label">
-                {t("geo.round", { n: i + 1 })}
-              </span>
-              <span className="geo-gameover-round-score">
-                {r.distance !== null
-                  ? `+${r.playerScore.toLocaleString()}`
-                  : "—"}
-              </span>
+              <div className="geo-gameover-round-main">
+                <span className="geo-gameover-round-label">
+                  {t("geo.round", { n: i + 1 })}
+                </span>
+                <strong>{r.locationLabel || t("geo.unknown_place")}</strong>
+              </div>
+              <div className="geo-gameover-round-meta">
+                <span>
+                  {t("geo.zoom_out_count")}:{" "}
+                  {t("geo.zoom_out_count_value", { count: r.zoomSteps })}
+                </span>
+                <span>
+                  {t("geo.distance_error")}:{" "}
+                  {r.distance !== null
+                    ? formatResultDistance(r.distance, t, true)
+                    : t("geo.gave_up")}
+                </span>
+              </div>
+              <div
+                className={`geo-gameover-round-scores ${
+                  state.aiEnabled ? "geo-gameover-round-scores--duel" : ""
+                }`}
+              >
+                <span>
+                  <MarkerPin type="player" />
+                  {formatPlainScore(t, r.playerScore)}
+                </span>
+                {state.aiEnabled && (
+                  <span>
+                    <MarkerPin type="atlas" />
+                    {r.aiScore != null ? formatPlainScore(t, r.aiScore) : "-"}
+                  </span>
+                )}
+              </div>
             </div>
           ))}
         </div>
-        <div className="geo-gameover-total">
-          <span className="geo-gameover-total-label">
-            {t("geo.total_score")}
-          </span>
-          <span className="geo-gameover-total-score">
-            {playerTotal.toLocaleString()}
-          </span>
-        </div>
-        {aiTotal !== null && (
-          <div className="geo-gameover-ai-total">
-            <span className="geo-gameover-ai-label">Atlas</span>
-            <span className="geo-gameover-ai-score">
-              {aiTotal.toLocaleString()}
-            </span>
-          </div>
-        )}
+
         <button className="geo-start-btn" onClick={onRestart}>
           {t("geo.play_again")}
         </button>

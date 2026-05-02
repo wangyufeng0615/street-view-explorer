@@ -43,7 +43,7 @@ export default function FootprintMap({ onClose }) {
   const { t } = useTranslation();
   const uniqueVisits = useMemo(() => getUniqueVisits(visits), [visits]);
 
-  // Fetch visit history
+  // Fetch the shared site-wide visit history.
   useEffect(() => {
     let cancelled = false;
 

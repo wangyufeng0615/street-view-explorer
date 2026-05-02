@@ -13,6 +13,11 @@ const RATE_LIMIT_MS = 1000; // 1秒限制
 const EXPLORATION_MODE_KEY = 'exploration_mode';
 const EXPLORATION_INTEREST_KEY = 'exploration_interest';
 
+function getActiveLanguage() {
+    const language = i18n.resolvedLanguage || i18n.language || 'en';
+    return language.startsWith('zh') ? 'zh' : 'en';
+}
+
 export const EXPLORATION_MODES = {
     RANDOM: 'random',
     CUSTOM: 'custom'
@@ -33,6 +38,7 @@ const useStore = create(
             descriptionError: null,
             isDescriptionLoading: false,
             descriptionRetries: 0,
+            descriptionRequestKey: null,
 
             // ===== Exploration Mode相关状态 =====
             explorationMode: EXPLORATION_MODES.RANDOM,
@@ -83,7 +89,7 @@ const useStore = create(
                 });
 
                 try {
-                    const currentLanguage = i18n.language || 'en';
+                    const currentLanguage = getActiveLanguage();
                     const resp = await getRandomLocation(currentLanguage);
 
                     // 检查是否仍在加载状态
@@ -138,7 +144,7 @@ const useStore = create(
                 });
 
                 try {
-                    const currentLanguage = i18n.language || 'en';
+                    const currentLanguage = getActiveLanguage();
                     const resp = await lookupLocation(lat, lng, currentLanguage, 'shared');
 
                     if (!get().isLoadingLocation) return;
@@ -181,16 +187,29 @@ const useStore = create(
             // Description Actions
             loadLocationDescription: async (panoId, retryCount = 0) => {
                 const MAX_RETRIES = 3;
+                const currentLanguage = getActiveLanguage();
+                const requestKey = `${panoId}:${currentLanguage}:${Date.now()}:${retryCount}`;
 
                 set({
                     isDescriptionLoading: true,
+                    description: null,
+                    descriptionCitations: null,
                     descriptionError: null,
-                    descriptionRetries: retryCount
+                    descriptionRetries: retryCount,
+                    descriptionRequestKey: requestKey
                 });
 
                 try {
-                    const currentLanguage = i18n.language || 'en';
                     const resp = await getLocationDescription(panoId, currentLanguage);
+                    const latestState = get();
+
+                    if (
+                        latestState.descriptionRequestKey !== requestKey ||
+                        latestState.currentLocationRef?.pano_id !== panoId ||
+                        getActiveLanguage() !== currentLanguage
+                    ) {
+                        return;
+                    }
 
                     if (resp.success && resp.data?.description) {
                         set({
@@ -203,6 +222,10 @@ const useStore = create(
                     }
                 } catch (error) {
                     console.error('加载描述失败:', error);
+
+                    if (get().descriptionRequestKey !== requestKey) {
+                        return;
+                    }
 
                     // 自动重试逻辑
                     if (retryCount < MAX_RETRIES && get().networkState) {
@@ -219,7 +242,9 @@ const useStore = create(
                         });
                     }
                 } finally {
-                    set({ isDescriptionLoading: false });
+                    if (get().descriptionRequestKey === requestKey) {
+                        set({ isDescriptionLoading: false });
+                    }
                 }
             },
 
@@ -235,7 +260,7 @@ const useStore = create(
                         isExplorationInitialized: true
                     });
                     // 确保后端也有这个偏好
-                    setExplorationPreference(savedInterest, true).catch(console.error);
+                    setExplorationPreference(savedInterest).catch(console.error);
                 } else {
                     set({
                         explorationMode: EXPLORATION_MODES.RANDOM,

@@ -15,7 +15,11 @@ import {
   zoomOutGeoBattle,
 } from "../services/api";
 import { loadGoogleMapsScript } from "../utils/googleMaps";
-import { formatDistance } from "../utils/geoGameUtils";
+import {
+  PERFECT_GUESS_DISTANCE_KM,
+  formatDistance,
+  isPerfectGuess,
+} from "../utils/geoGameUtils";
 import "../styles/GeoBattle.css";
 
 const NICKNAME_STORAGE_KEY = "geoBattleNickname";
@@ -52,6 +56,17 @@ function getOutcomeLabel(room, t) {
   if (room.me.total_score < room.opponent.total_score)
     return t("geo_online.lose");
   return t("geo_online.draw");
+}
+
+function formatBattleDistance(distanceKm, t) {
+  if (isPerfectGuess(distanceKm)) {
+    const distance =
+      PERFECT_GUESS_DISTANCE_KM === 1
+        ? t("geo.one_km")
+        : formatDistance(PERFECT_GUESS_DISTANCE_KM);
+    return t("geo.perfect_distance_short", { distance });
+  }
+  return formatDistance(distanceKm);
 }
 
 function getRoomMessage(room, t) {
@@ -1026,7 +1041,10 @@ function GeoBattleRoomPage({ roomId }) {
                       </div>
                       <div className="geo-battle-result-distance">
                         {room.round?.my_guess?.distance_km != null
-                          ? formatDistance(room.round.my_guess.distance_km)
+                          ? formatBattleDistance(
+                              room.round.my_guess.distance_km,
+                              t,
+                            )
                           : t("geo.gave_up")}
                       </div>
                     </div>
@@ -1041,8 +1059,9 @@ function GeoBattleRoomPage({ roomId }) {
                       </div>
                       <div className="geo-battle-result-distance">
                         {room.round?.opponent_guess?.distance_km != null
-                          ? formatDistance(
+                          ? formatBattleDistance(
                               room.round.opponent_guess.distance_km,
+                              t,
                             )
                           : t("geo.gave_up")}
                       </div>

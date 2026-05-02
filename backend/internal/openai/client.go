@@ -18,11 +18,12 @@ import (
 )
 
 const (
-	defaultAPIEndpoint = "https://openrouter.ai/api/v1/chat/completions"
-	defaultModel       = "openai/gpt-5.4-mini"
-	maxRetries         = 2
-	retryBaseDelay     = 500 * time.Millisecond
-	timeout            = 15 * time.Second
+	defaultAPIEndpoint     = "https://openrouter.ai/api/v1/chat/completions"
+	defaultModel           = "openai/gpt-5.4-mini"
+	maxRetries             = 2
+	retryBaseDelay         = 500 * time.Millisecond
+	timeout                = 15 * time.Second
+	geoAIReasoningMaxRunes = 600
 
 	geographerSystemPrompt = "You are Atlas, a witty and free-spirited world traveler in your 30s. You've spent 15 years roaming the globe, picking up History, Geography, and Anthropology degrees along the way — but you wear your knowledge lightly. You're the kind of friend who makes everyone at the table lean in when you start talking about a place you've been. You're warm, a bit irreverent, genuinely curious about people, and you find something fascinating in every corner of the world. You value freedom and spontaneity — the best experiences you've had were the ones you didn't plan.\n\n" +
 		"You are right here, right now, standing at this location. You're traveling and your friend (the user) is following along remotely. You're telling them what you see, what you know about this place, and why it's interesting. You speak from the scene — as someone who is actually there, taking it all in.\n\n" +
@@ -73,7 +74,7 @@ type Client interface {
 	GenerateLocationDescription(latitude, longitude float64, locationInfo map[string]string, language string) (string, []Citation, error)
 	GenerateDetailedLocationDescription(latitude, longitude float64, locationInfo map[string]string, language string) (string, []Citation, error)
 	GenerateRegionsForInterest(interest string) ([]models.Region, error)
-	GuessLocationFromImage(ctx context.Context, imageBase64 string, zoom int) (lat float64, lng float64, reasoning string, err error)
+	GuessLocationFromImage(ctx context.Context, imageBase64 string, zoom int, language string) (lat float64, lng float64, reasoning string, err error)
 }
 
 type client struct {
@@ -430,6 +431,14 @@ func truncateString(s string, maxLength int) string {
 		return s
 	}
 	return s[:maxLength] + "..."
+}
+
+func truncateRunes(s string, maxRunes int) string {
+	runes := []rune(strings.TrimSpace(s))
+	if len(runes) <= maxRunes {
+		return string(runes)
+	}
+	return string(runes[:maxRunes])
 }
 
 func (c *client) GenerateLocationDescription(latitude, longitude float64, locationInfo map[string]string, language string) (string, []Citation, error) {
@@ -883,18 +892,25 @@ type visionChatRequest struct {
 	Messages []visionMessage `json:"messages"`
 }
 
-func (c *client) GuessLocationFromImage(parentCtx context.Context, imageBase64 string, zoom int) (float64, float64, string, error) {
+func (c *client) GuessLocationFromImage(parentCtx context.Context, imageBase64 string, zoom int, language string) (float64, float64, string, error) {
 	startTime := time.Now()
 	ctx, cancel := context.WithTimeout(parentCtx, 30*time.Second)
 	defer cancel()
+
+	reasoningLanguage := "English"
+	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(language)), "zh") {
+		reasoningLanguage = "Simplified Chinese"
+	}
 
 	prompt := fmt.Sprintf(
 		"You are playing a geography guessing game. You are shown a satellite image at zoom level %d.\n\n"+
 			"Based ONLY on visual clues in this image (terrain, vegetation, road patterns, building layouts, coastlines, "+
 			"urban density, agricultural patterns, etc.), guess the latitude and longitude of the center of this image.\n\n"+
+			"Write the reasoning value in %s. Keep the JSON field names exactly as lat, lng, and reasoning.\n\n"+
 			"Respond with ONLY a JSON object, no other text:\n"+
 			"{\"lat\": <number>, \"lng\": <number>, \"reasoning\": \"<brief explanation of visual clues you used>\"}",
 		zoom,
+		reasoningLanguage,
 	)
 
 	dataURI := "data:image/png;base64," + imageBase64
@@ -945,29 +961,35 @@ func (c *client) GuessLocationFromImage(parentCtx context.Context, imageBase64 s
 	}
 
 	var result struct {
-		Lat       float64 `json:"lat"`
-		Lng       float64 `json:"lng"`
-		Reasoning string  `json:"reasoning"`
+		Lat       *float64 `json:"lat"`
+		Lng       *float64 `json:"lng"`
+		Reasoning string   `json:"reasoning"`
 	}
 	if err := json.Unmarshal([]byte(jsonStr), &result); err != nil {
 		log.Printf("[GEO_AI] failed to parse AI guess JSON: %v, raw=%s", err, truncateString(content, 200))
 		return 0, 0, "", fmt.Errorf("failed to parse AI guess")
 	}
+	if result.Lat == nil || result.Lng == nil {
+		log.Printf("[GEO_AI] missing coordinates in AI guess JSON: raw=%s", truncateString(content, 200))
+		return 0, 0, "", fmt.Errorf("missing coordinates in AI guess")
+	}
 
 	// Clamp coordinates to valid range
-	if result.Lat < -90 {
-		result.Lat = -90
-	} else if result.Lat > 90 {
-		result.Lat = 90
+	lat, lng := *result.Lat, *result.Lng
+	if lat < -90 {
+		lat = -90
+	} else if lat > 90 {
+		lat = 90
 	}
-	if result.Lng < -180 {
-		result.Lng = -180
-	} else if result.Lng > 180 {
-		result.Lng = 180
+	if lng < -180 {
+		lng = -180
+	} else if lng > 180 {
+		lng = 180
 	}
+	reasoning := truncateRunes(result.Reasoning, geoAIReasoningMaxRunes)
 
-	log.Printf("[GEO_AI] guess=(%.4f,%.4f) zoom=%d duration=%v", result.Lat, result.Lng, zoom, time.Since(startTime))
-	return result.Lat, result.Lng, result.Reasoning, nil
+	log.Printf("[GEO_AI] guess=(%.4f,%.4f) zoom=%d duration=%v", lat, lng, zoom, time.Since(startTime))
+	return lat, lng, reasoning, nil
 }
 
 // 验证坐标是否有效

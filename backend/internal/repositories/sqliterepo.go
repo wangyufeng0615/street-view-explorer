@@ -391,22 +391,65 @@ func (r *SQLiteRepository) GetVisitHistory(sessionID string, limit, offset int) 
 	}
 	defer rows.Close()
 
+	visits, err := scanVisitRows(rows)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+
+	return visits, totalVisits, uniquePlaces, nil
+}
+
+func (r *SQLiteRepository) GetGlobalVisitHistory(limit, offset int) ([]models.VisitRecord, int64, int64, error) {
+	// 获取全站总访问次数
+	var totalVisits int64
+	err := r.db.QueryRow("SELECT COUNT(*) FROM visit_history").Scan(&totalVisits)
+	if err != nil {
+		return nil, 0, 0, fmt.Errorf("获取全站访问记录总数失败: %w", err)
+	}
+
+	// 获取全站唯一地点数
+	var uniquePlaces int64
+	err = r.db.QueryRow("SELECT COUNT(DISTINCT pano_id) FROM visit_history").Scan(&uniquePlaces)
+	if err != nil {
+		return nil, 0, 0, fmt.Errorf("获取全站唯一地点数失败: %w", err)
+	}
+
+	rows, err := r.db.Query(`
+		SELECT id, session_id, pano_id, latitude, longitude, country, city, formatted_address, source, visited_at
+		FROM visit_history
+		ORDER BY visited_at DESC, id DESC
+		LIMIT ? OFFSET ?
+	`, limit, offset)
+	if err != nil {
+		return nil, 0, 0, fmt.Errorf("获取全站访问记录失败: %w", err)
+	}
+	defer rows.Close()
+
+	visits, err := scanVisitRows(rows)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+
+	return visits, totalVisits, uniquePlaces, nil
+}
+
+func scanVisitRows(rows *sql.Rows) ([]models.VisitRecord, error) {
 	var visits []models.VisitRecord
 	for rows.Next() {
 		var v models.VisitRecord
 		if err := rows.Scan(&v.ID, &v.SessionID, &v.PanoID, &v.Latitude, &v.Longitude,
 			&v.Country, &v.City, &v.FormattedAddress, &v.Source, &v.VisitedAt); err != nil {
-			return nil, 0, 0, fmt.Errorf("扫描访问记录失败: %w", err)
+			return nil, fmt.Errorf("扫描访问记录失败: %w", err)
 		}
 		v.SessionID = "" // 不返回 session_id 给前端
 		visits = append(visits, v)
 	}
 
 	if err := rows.Err(); err != nil {
-		return nil, 0, 0, fmt.Errorf("遍历访问记录失败: %w", err)
+		return nil, fmt.Errorf("遍历访问记录失败: %w", err)
 	}
 
-	return visits, totalVisits, uniquePlaces, nil
+	return visits, nil
 }
 
 // ==================== Agent Journey 相关方法 ====================

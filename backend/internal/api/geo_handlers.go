@@ -8,11 +8,19 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/my-streetview-project/backend/internal/openai"
 	"github.com/my-streetview-project/backend/internal/services"
+)
+
+const (
+	geoSatelliteImageSize  = "640x480"
+	geoSatelliteImageScale = 2
+	geoMinZoom             = 2
+	geoMaxZoom             = 14
 )
 
 // GeoHandlers handles the geo guessing game endpoints.
@@ -75,7 +83,7 @@ func (gh *GeoHandlers) SatelliteImage(c *gin.Context) {
 		return
 	}
 	zoom, err := strconv.Atoi(zoomStr)
-	if err != nil || zoom < 1 || zoom > 21 {
+	if err != nil || zoom < geoMinZoom || zoom > geoMaxZoom {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "invalid zoom"})
 		return
 	}
@@ -84,9 +92,41 @@ func (gh *GeoHandlers) SatelliteImage(c *gin.Context) {
 }
 
 type geoAIGuessRequest struct {
-	Lat  *float64 `json:"lat"`
-	Lng  *float64 `json:"lng"`
-	Zoom *int     `json:"zoom"`
+	Lat      *float64 `json:"lat"`
+	Lng      *float64 `json:"lng"`
+	Zoom     *int     `json:"zoom"`
+	Language string   `json:"lang"`
+}
+
+func normalizeGeoLanguage(language string) string {
+	language = strings.ToLower(strings.TrimSpace(language))
+	if strings.HasPrefix(language, "zh") {
+		return "zh"
+	}
+	return "en"
+}
+
+func geoSatelliteImageURL(apiKey string, lat, lng float64, zoom int) string {
+	return fmt.Sprintf(
+		"https://maps.googleapis.com/maps/api/staticmap?center=%.6f,%.6f&zoom=%d&size=%s&scale=%d&maptype=satellite&key=%s",
+		lat,
+		lng,
+		zoom,
+		geoSatelliteImageSize,
+		geoSatelliteImageScale,
+		apiKey,
+	)
+}
+
+func (gh *GeoHandlers) redactMapError(err error) string {
+	if err == nil {
+		return ""
+	}
+	message := err.Error()
+	if gh.googleAPIKey != "" {
+		message = strings.ReplaceAll(message, gh.googleAPIKey, "[redacted]")
+	}
+	return message
 }
 
 // AIGuess fetches a satellite image for the given coordinates and asks AI to guess the location.
@@ -103,24 +143,22 @@ func (gh *GeoHandlers) AIGuess(c *gin.Context) {
 	}
 
 	lat, lng, zoom := *req.Lat, *req.Lng, *req.Zoom
+	language := normalizeGeoLanguage(req.Language)
 
 	if lat < -90 || lat > 90 || lng < -180 || lng > 180 {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "Coordinates out of range"})
 		return
 	}
-	if zoom < 1 || zoom > 21 {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "Zoom must be 1-21"})
+	if zoom < geoMinZoom || zoom > geoMaxZoom {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "Zoom must be 2-14"})
 		return
 	}
 
-	imageURL := fmt.Sprintf(
-		"https://maps.googleapis.com/maps/api/staticmap?center=%.6f,%.6f&zoom=%d&size=600x400&maptype=satellite&key=%s",
-		lat, lng, zoom, gh.googleAPIKey,
-	)
+	imageURL := geoSatelliteImageURL(gh.googleAPIKey, lat, lng, zoom)
 
 	resp, err := gh.httpClient.Get(imageURL)
 	if err != nil {
-		log.Printf("[GEO] Failed to fetch satellite image: %v", err)
+		log.Printf("[GEO] Failed to fetch satellite image: %s", gh.redactMapError(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "Failed to fetch satellite image"})
 		return
 	}
@@ -141,7 +179,7 @@ func (gh *GeoHandlers) AIGuess(c *gin.Context) {
 
 	imageBase64 := base64.StdEncoding.EncodeToString(imageBytes)
 
-	guessLat, guessLng, reasoning, err := gh.aiClient.GuessLocationFromImage(c.Request.Context(), imageBase64, zoom)
+	guessLat, guessLng, reasoning, err := gh.aiClient.GuessLocationFromImage(c.Request.Context(), imageBase64, zoom, language)
 	if err != nil {
 		log.Printf("[GEO] AI guess failed: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "AI guess failed"})
@@ -159,14 +197,11 @@ func (gh *GeoHandlers) AIGuess(c *gin.Context) {
 }
 
 func (gh *GeoHandlers) proxySatelliteImage(c *gin.Context, lat, lng float64, zoom int, cacheControl string) {
-	imageURL := fmt.Sprintf(
-		"https://maps.googleapis.com/maps/api/staticmap?center=%.6f,%.6f&zoom=%d&size=800x600&maptype=satellite&key=%s",
-		lat, lng, zoom, gh.googleAPIKey,
-	)
+	imageURL := geoSatelliteImageURL(gh.googleAPIKey, lat, lng, zoom)
 
 	resp, err := gh.httpClient.Get(imageURL)
 	if err != nil {
-		log.Printf("[GEO] satellite image fetch failed: %v", err)
+		log.Printf("[GEO] satellite image fetch failed: %s", gh.redactMapError(err))
 		c.JSON(http.StatusBadGateway, gin.H{"success": false, "error": "image fetch failed"})
 		return
 	}

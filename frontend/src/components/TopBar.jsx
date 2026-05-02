@@ -66,8 +66,9 @@ const TopBar = memo(function TopBar({
   }, []);
 
   const changeLanguage = (lng) => {
-    if (i18n.language === lng) return;
+    if ((i18n.resolvedLanguage || i18n.language) === lng) return;
     hardResetGoogleMapsPromise();
+    window.localStorage?.setItem("i18nextLng", lng);
     i18n.changeLanguage(lng).then(() => {
       // 清理地图元素
       const mapElements = document.querySelectorAll(".gm-style");

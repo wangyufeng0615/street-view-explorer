@@ -276,6 +276,11 @@ func (ls *LocationService) GetVisitHistory(sessionID string, limit, offset int) 
 	return ls.repo.GetVisitHistory(sessionID, limit, offset)
 }
 
+// GetGlobalVisitHistory 获取所有用户共享的访问历史
+func (ls *LocationService) GetGlobalVisitHistory(limit, offset int) ([]models.VisitRecord, int64, int64, error) {
+	return ls.repo.GetGlobalVisitHistory(limit, offset)
+}
+
 // DeleteExplorationPreference 删除用户的探索偏好
 func (ls *LocationService) DeleteExplorationPreference(sessionID string) error {
 	return ls.repo.DeleteExplorationPreference(sessionID)

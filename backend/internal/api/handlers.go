@@ -480,13 +480,8 @@ func (h *Handlers) DeleteExplorationPreference(c *gin.Context) {
 	})
 }
 
-// GetVisitHistory 获取访问历史
+// GetVisitHistory 获取全站共享访问历史
 func (h *Handlers) GetVisitHistory(c *gin.Context) {
-	sessionID := h.getSessionID(c)
-	if sessionID == "" {
-		return
-	}
-
 	limit := parseIntParam(c, "limit", 1000)
 	offset := parseIntParam(c, "offset", 0)
 	if limit > maxVisitHistoryLimit {
@@ -495,7 +490,7 @@ func (h *Handlers) GetVisitHistory(c *gin.Context) {
 
 	svc := h.servicesForMode(c)
 
-	visits, totalVisits, uniquePlaces, err := svc.LocationService.GetVisitHistory(sessionID, limit, offset)
+	visits, totalVisits, uniquePlaces, err := svc.LocationService.GetGlobalVisitHistory(limit, offset)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,

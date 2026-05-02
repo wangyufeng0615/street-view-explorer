@@ -20,7 +20,7 @@ Go backend (Gin)
   +-- OpenRouter: AI descriptions and satellite-image guesses
 ```
 
-The frontend uses a persistent anonymous `X-Session-ID`. The backend validates that header and creates one when missing. Preference state, visit history, and online duel membership all depend on that session identity.
+The frontend uses a persistent anonymous `X-Session-ID`. The backend validates that header and creates one when missing. Preference state and online duel membership depend on that session identity. Visit writes keep the session for bookkeeping, but the Atlas footprint map reads a shared site-wide history.
 
 ## Frontend
 
@@ -72,7 +72,7 @@ Tables:
 - `locations` - cached or generated Street View location records.
 - `exploration_preferences` - custom user interests keyed by session.
 - `rate_limits` - backend rate-limit counters.
-- `visit_history` - per-session visit history.
+- `visit_history` - visit records with session bookkeeping; the footprint map reads this as a shared global history.
 - `agent_journeys` - Odyssey journeys keyed by token.
 - `agent_journey_stops` - Odyssey stop records and journal content.
 

@@ -148,7 +148,7 @@ All standard JSON endpoints return a `{ "success": boolean, "data": ..., "error"
 - `GET /api/v1/locations/lookup`
 - `GET /api/v1/locations/:panoId/description`
 - `GET /api/v1/locations/:panoId/detailed-description`
-- `GET /api/v1/visits`
+- `GET /api/v1/visits` - shared site-wide Atlas footprint history.
 - `POST /api/v1/preferences/exploration`
 - `POST /api/v1/preferences/exploration/remove`
 

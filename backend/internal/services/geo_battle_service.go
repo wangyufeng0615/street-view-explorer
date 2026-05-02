@@ -41,6 +41,7 @@ const (
 	geoBattleOnlineThreshold    = 25 * time.Second
 	geoBattleCleanupInterval    = 1 * time.Minute
 	geoBattleRevealZoom         = 5
+	geoBattlePerfectDistanceKM  = 1.0
 	geoBattleRoomCodeLength     = 6
 	geoBattleMaxNicknameRunes   = 20
 	geoBattleMaxRoundGenRetries = 8
@@ -1120,6 +1121,9 @@ func geoBattleHaversineDistance(lat1, lng1, lat2, lng2 float64) float64 {
 
 func geoBattleCalculateScore(zoomSteps int, distanceKM float64) int {
 	zoomFactor := math.Exp(-float64(zoomSteps) * 0.12)
+	if distanceKM <= geoBattlePerfectDistanceKM {
+		distanceKM = 0
+	}
 	distanceFactor := math.Exp(-distanceKM / 1500)
 	return int(math.Round(5000 * zoomFactor * distanceFactor))
 }

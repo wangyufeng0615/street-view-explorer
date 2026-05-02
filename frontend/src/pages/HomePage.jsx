@@ -8,6 +8,7 @@ import React, {
   lazy,
   Suspense,
 } from "react";
+import { useTranslation } from "react-i18next";
 import TopBar from "../components/TopBar";
 import Sidebar from "../components/Sidebar";
 import "../styles/animations.css";
@@ -84,8 +85,12 @@ function updateURL(lat, lng) {
 }
 
 export default function HomePage() {
+  const { i18n } = useTranslation();
   const loadLocationFromURL = useStore((state) => state.loadLocationFromURL);
   const urlLocationRef = useRef(getLocationFromURL());
+  const hasLoadedInitialLocationRef = useRef(false);
+  const activeLanguage = i18n.resolvedLanguage || i18n.language || "en";
+  const isLanguageReady = i18n.isInitialized && Boolean(activeLanguage);
 
   // 使用自定义钩子
   const {
@@ -150,7 +155,7 @@ export default function HomePage() {
     let mounted = true;
     let timeoutId = null;
 
-    if (location?.pano_id) {
+    if (isLanguageReady && location?.pano_id) {
       locationRef.current = location;
 
       // Debounce description loading
@@ -167,7 +172,7 @@ export default function HomePage() {
         clearTimeout(timeoutId);
       }
     };
-  }, [location?.pano_id, locationRef, loadLocationDescription]);
+  }, [activeLanguage, isLanguageReady, location?.pano_id, locationRef, loadLocationDescription]);
 
   // 监听网络状态变化，重新加载描述
   useEffect(() => {
@@ -189,9 +194,15 @@ export default function HomePage() {
   // 页面加载时根据当前模式加载位置 - 等待状态初始化完成
   useEffect(() => {
     // 等待状态完全初始化
-    if (!isInitialized) {
+    if (
+      hasLoadedInitialLocationRef.current ||
+      !isInitialized ||
+      !isLanguageReady
+    ) {
       return;
     }
+
+    hasLoadedInitialLocationRef.current = true;
 
     // 如果 URL 包含坐标参数，优先从 URL 加载
     const urlLocation = urlLocationRef.current;
@@ -208,7 +219,15 @@ export default function HomePage() {
       // 首次加载时跳过限流检查
       loadRandomLocation(true);
     }
-  }, [isInitialized]); // Reduced dependencies
+  }, [
+    handleModeChange,
+    isInitialized,
+    isLanguageReady,
+    loadLocationFromURL,
+    loadRandomLocation,
+    explorationMode,
+    explorationInterest,
+  ]);
 
   // 位置变化时更新 URL
   useEffect(() => {

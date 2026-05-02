@@ -1,10 +1,11 @@
 // Pure utility functions for the Geo guessing game
 
-import GEO_DATABASE from '../data/geoDatabase';
+import GEO_DATABASE from "../data/geoDatabase";
 
 export const TOTAL_ROUNDS = 5;
 export const START_ZOOM = 14;
 export const MIN_ZOOM = 2;
+export const PERFECT_GUESS_DISTANCE_KM = 1;
 
 /**
  * Haversine distance between two coordinates in kilometers.
@@ -26,12 +27,17 @@ export function haversineDistance(lat1, lng1, lat2, lng2) {
  *
  * zoomFactor: exponential decay — no hard limit on steps.
  *   0 steps → 1.0,  5 steps → 0.55,  10 steps → 0.30,  15 steps → 0.17
- * distanceFactor: exponential decay, 0 km → 1.0, 1500 km → 0.37
+ * distanceFactor: exponential decay, perfect range → 1.0, 1500 km → 0.37
  */
 export function calculateScore(zoomSteps, distanceKm) {
   const zoomFactor = Math.exp(-zoomSteps * 0.12);
-  const distanceFactor = Math.exp(-distanceKm / 1500);
+  const effectiveDistanceKm = isPerfectGuess(distanceKm) ? 0 : distanceKm;
+  const distanceFactor = Math.exp(-effectiveDistanceKm / 1500);
   return Math.round(5000 * zoomFactor * distanceFactor);
+}
+
+export function isPerfectGuess(distanceKm) {
+  return Number.isFinite(distanceKm) && distanceKm <= PERFECT_GUESS_DISTANCE_KM;
 }
 
 /**
@@ -60,15 +66,17 @@ export function generateRoundPlan(totalRounds = TOTAL_ROUNDS) {
 
   // Build plan: database entries + random slots
   const plan = [
-    ...cities.map((entry) => ({ source: 'database', entry })),
-    ...Array(totalRounds - cities.length).fill(null).map(() => ({ source: 'random' })),
+    ...cities.map((entry) => ({ source: "database", entry })),
+    ...Array(totalRounds - cities.length)
+      .fill(null)
+      .map(() => ({ source: "random" })),
   ];
 
   // Shuffle, then sort by intended difficulty: easier entries first
   shuffle(plan);
   plan.sort((a, b) => {
-    const da = a.source === 'database' ? a.entry.difficulty : 2.5;
-    const db = b.source === 'database' ? b.entry.difficulty : 2.5;
+    const da = a.source === "database" ? a.entry.difficulty : 2.5;
+    const db = b.source === "database" ? b.entry.difficulty : 2.5;
     return da - db;
   });
 
