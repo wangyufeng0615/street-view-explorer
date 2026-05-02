@@ -61,7 +61,7 @@ Key middleware:
 - request logging with special successful-agent request logging;
 - input validation for request size, `panoId`, and page query bounds;
 - session management through `X-Session-ID`;
-- SQLite-backed rate limiting when enabled.
+- SQLite-backed rate limiting when enabled, including tighter limits for random locations, geo AI guesses, and satellite image proxy calls.
 
 ## Persistent Data
 
@@ -98,12 +98,15 @@ Round selection:
 Image and scoring:
 
 - Satellite images are fetched through `GET /api/v1/geo/satellite` to keep the Google Static Maps key on the backend path.
-- Optional AI guessing calls `POST /api/v1/geo/ai-guess`.
+- Both the satellite image proxy and AI guess endpoint accept zoom levels 2-14. Static images use Google Static Maps `size=640x480`, `scale=2`, and `maptype=satellite`.
+- Optional AI guessing calls `POST /api/v1/geo/ai-guess`. The frontend sends the current locked zoom and UI language; the backend fetches exactly that one satellite image and the AI prompt asks for the center point of the image only.
 - Scoring uses exponential decay by zoom-outs and distance:
 
 ```text
-round(5000 * exp(-zoomSteps * 0.12) * exp(-distanceKm / 1500))
+round(5000 * exp(-zoomSteps * 0.12) * exp(-effectiveDistanceKm / 1500))
 ```
+
+`effectiveDistanceKm` is `0` when the guess is within 1 km of the target, so meter-level precision is not required for a perfect distance component.
 
 ## Online Duel
 
@@ -152,6 +155,8 @@ Snapshot behavior:
 - The target location is hidden until `reveal` or `finished`.
 - `GET /image` returns the current target at the player's current zoom, with `no-store`.
 - During `reveal` and `finished`, image zoom is capped at 5.
+- Each player has independent zoom state. A zoom-out before locking increments only that player's `zoom_steps`.
+- Guess scoring matches the solo formula and also treats guesses within 1 km as zero distance error. Skips and timeout-created guesses score 0.
 
 Leaving behavior:
 

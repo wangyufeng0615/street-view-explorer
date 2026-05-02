@@ -84,11 +84,15 @@ make deploy
 docker compose ps
 curl -s http://127.0.0.1:3000/nginx_status
 curl -s http://127.0.0.1:3000/health
+curl -s -o /dev/null -w '%{http_code}\n' \
+  'http://127.0.0.1:3000/api/v1/geo/satellite?lat=0&lng=0&zoom=21'
 ```
 
 `docker-compose.yml` maps only `127.0.0.1:3000:3000`. Put a public reverse proxy in front of it if exposing the service.
 
 Backend data lives in the `sqlite_data` Docker volume. `make clean` removes that volume.
+
+The invalid geo satellite request above should return `400`; it verifies that the backend serving production traffic enforces the 2-14 zoom range.
 
 ### Remote Deploy From Local
 
@@ -111,6 +115,16 @@ HEALTH_TIMEOUT=240
 ```
 
 `make deploy-remote` runs on the VPS: `git fetch`, `git checkout`, `git pull --ff-only`, `make deploy`, then waits for backend and nginx health checks. It also verifies backend `/health`, nginx `/nginx_status` from inside the nginx container, prints container/image IDs and start times, and checks that pano IDs containing `.` are no longer rejected by input validation. If the local remote name differs from the VPS remote name, set `LOCAL_GIT_REMOTE` and `REMOTE_GIT_REMOTE` separately.
+
+For the public site, also smoke the SPA and geo backend path from outside the VPS:
+
+```bash
+curl -I https://earth.wangyufeng.org/geo
+curl -s -o /dev/null -w '%{http_code}\n' \
+  'https://earth.wangyufeng.org/api/v1/geo/satellite?lat=0&lng=0&zoom=21'
+```
+
+The second command should return `400` after a release containing the geo zoom validation.
 
 ## Proxy Operation
 
@@ -147,8 +161,9 @@ Use `--skip-proxy-check` only when the proxy health check itself is unreliable b
 
 - Verify `VITE_GOOGLE_MAPS_API_KEY` for browser Maps JavaScript API.
 - Verify backend `GOOGLE_API_KEY` for Static Maps and server-side Maps calls.
-- For `GET /api/v1/geo/satellite`, inspect backend logs for Google Static Maps status codes.
+- For `GET /api/v1/geo/satellite`, inspect backend logs for Google Static Maps status codes. New backend logs redact `GOOGLE_API_KEY` from map fetch errors.
 - In proxy-restricted networks, set `MAPS_PROXY_URL` or shared `PROXY_URL`.
+- Do not share raw old backend logs without checking for Google Static Maps URLs. Logs generated before 2026-05-03 can contain full request URLs from older error paths.
 
 ### AI descriptions or AI guesses fail
 
@@ -179,5 +194,7 @@ Use `--skip-proxy-check` only when the proxy health check itself is unreliable b
 
 - SQLite-backed rate limiting is enabled by default.
 - `/api/v1/locations/random` has a per-IP limit of 120 requests per minute.
+- `/api/v1/geo/ai-guess` has a per-IP limit of 30 requests per minute.
+- `/api/v1/geo/satellite` and `/api/v1/geo/online/rooms/:roomId/image` have a per-IP limit of 180 requests per minute.
 - `/api/v1/preferences/exploration` has tighter per-IP and per-session limits.
 - Set `RATE_LIMIT_ENABLED=false` only for local debugging.

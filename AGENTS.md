@@ -1,4 +1,4 @@
-# CLAUDE.md
+# AGENTS.md
 
 Street View Explorer - 随机全球街景探索、AI 讲解、AI 旅程，以及卫星图猜地理游戏。
 
@@ -25,6 +25,7 @@ cd backend && go test ./...
 
 # 部署
 make deploy
+make deploy-remote
 make clean
 ```
 
@@ -89,7 +90,7 @@ backend/
 - `GET /api/v1/locations/lookup` - 根据坐标反查位置。
 - `GET /api/v1/locations/:panoId/description` - AI 简短描述。
 - `GET /api/v1/locations/:panoId/detailed-description` - AI 详细描述。
-- `GET /api/v1/visits` - 当前 session 访问历史。
+- `GET /api/v1/visits` - 全站共享的 Atlas 足迹历史；写入仍保留 session 作为账本字段，读取不按用户过滤。
 - `POST /api/v1/preferences/exploration` - 设置探索偏好。
 - `POST /api/v1/preferences/exploration/remove` - 删除探索偏好。
 
@@ -109,7 +110,7 @@ backend/
 ### Geo Game
 
 - `GET /api/v1/geo/satellite` - 代理 Google Static Maps 卫星图，参数 `lat,lng,zoom`。
-- `POST /api/v1/geo/ai-guess` - 拉取同一卫星图并让 AI 猜测坐标。
+- `POST /api/v1/geo/ai-guess` - 拉取同一卫星图并让 AI 猜测画面中心点坐标。
 
 ### Geo Online Duel
 
@@ -128,9 +129,12 @@ backend/
 ## Geo Game 实现要点
 
 - 单人局总轮数来自 `frontend/src/utils/geoGameUtils.js` 的 `TOTAL_ROUNDS = 5`。
+- 单人局起始 zoom 是 14，最小 zoom 是 2；后端 `GET /api/v1/geo/satellite` 和 `POST /api/v1/geo/ai-guess` 也校验 `zoom` 必须在 2-14。
 - `generateRoundPlan()` 会从 `geoDatabase.js` 选 2 或 3 个题库点，其余使用后端随机位置；题库点会经过 `jitterCoord()` 小偏移。
 - `GeoGamePage.jsx` 的 loading effect 使用 `langRef` 读取语言，避免语言切换重新抽题。
-- 计分公式在前后端一致：`5000 * exp(-zoomSteps * 0.12) * exp(-distanceKm / 1500)`。
+- 计分公式在前后端一致：`5000 * exp(-zoomSteps * 0.12) * exp(-effectiveDistanceKm / 1500)`；误差小于等于 1 km 时 `effectiveDistanceKm = 0`，视为完美猜中。
+- Atlas AI 猜测只看到用户锁定结果时当前 zoom 的一张卫星图，不会看到前面每次拉远的历史图；prompt 明确要求猜这张图的中心点，并按 UI 语言返回 reasoning。
+- 结果地图图钉颜色语义：绿色是正确位置，红色是玩家，紫色是 Atlas；结果文字区也按同一语义展示。
 - 以前审查中关注过近邻题库点、`roundPlan` 生命周期和小轮数边界；修改这些文件时要补充相应测试。
 
 ## Geo Online Duel 实现要点
@@ -143,7 +147,14 @@ backend/
 - 前端用 polling 同步状态：playing 约 1.5 秒，其余约 2.5 秒；服务端 `server_time` 用于修正倒计时。
 - 房间码 6 位，来自 `ABCDEFGHJKLMNPQRSTUVWXYZ23456789`；昵称最多 20 个 rune，会去掉控制字符。
 - `GET /image` 根据当前玩家 zoom 返回同一目标卫星图；reveal/finished 阶段最多展示 zoom 5。
+- 双人对战计分和单人局一致，误差小于等于 1 km 也视为零误差；跳过或超时本轮为 0 分。
 - finished 或 lobby 阶段离开会移除玩家；playing 等中途离开会直接结束房间。
+
+## 安全与日志注意
+
+- `RateLimitMiddleware()` 默认开启；`/api/v1/geo/ai-guess` 是每 IP 每分钟 30 次，`/api/v1/geo/satellite` 和 `/api/v1/geo/online/rooms/:roomId/image` 是每 IP 每分钟 180 次。
+- Google Static Maps 请求失败日志会隐藏 `GOOGLE_API_KEY`；不要把旧本地日志或生产日志原样外发，尤其是 2026-05-03 之前生成的地图错误日志。
+- 生产部署后至少确认 `docker compose ps`、后端 `/health`、nginx `/nginx_status`，再用一个非法 zoom 请求确认新后端已生效。
 
 ## 环境变量
 

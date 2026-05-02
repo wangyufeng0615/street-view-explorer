@@ -12,10 +12,10 @@ An interactive map application for exploring random Google Street View locations
 
 - Random global exploration with area-weighted location selection.
 - AI-generated short and detailed descriptions through OpenRouter.
-- Visit history, footprint map, and regional or custom exploration preferences.
+- Visit history, shared site-wide footprint map, and regional or custom exploration preferences.
 - Bilingual UI in English and Chinese.
 - Odyssey agent journey flow where an external AI can create journeys, save stops, and publish illustrated letters.
-- Solo "Guess Where" game using satellite imagery, curated city entries, random backend locations, optional AI opponent, and score decay by zoom-outs plus distance.
+- Solo "Guess Where" game using satellite imagery, curated city entries, random backend locations, optional AI opponent, score decay by zoom-outs plus distance, and a 1 km perfect-distance threshold.
 - Online 1v1 geography duel with private room codes, quick matchmaking, synchronized rounds, server-authoritative scoring, and reconnect-safe polling.
 - Docker Compose deployment with an Nginx frontend/API proxy and a Go backend using SQLite.
 
