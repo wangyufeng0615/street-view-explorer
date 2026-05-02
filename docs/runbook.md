@@ -90,6 +90,28 @@ curl -s http://127.0.0.1:3000/health
 
 Backend data lives in the `sqlite_data` Docker volume. `make clean` removes that volume.
 
+### Remote Deploy From Local
+
+Use this after pushing the target branch:
+
+```bash
+git push
+make deploy-remote
+```
+
+Defaults:
+
+```bash
+REMOTE_HOST=kr
+REMOTE_DIR=/root/street-view-explorer
+REMOTE_BRANCH=main
+LOCAL_GIT_REMOTE=origin
+REMOTE_GIT_REMOTE=origin
+HEALTH_TIMEOUT=240
+```
+
+`make deploy-remote` runs on the VPS: `git fetch`, `git checkout`, `git pull --ff-only`, `make deploy`, then waits for backend and nginx health checks. It also verifies backend `/health`, nginx `/nginx_status` from inside the nginx container, prints container/image IDs and start times, and checks that pano IDs containing `.` are no longer rejected by input validation. If the local remote name differs from the VPS remote name, set `LOCAL_GIT_REMOTE` and `REMOTE_GIT_REMOTE` separately.
+
 ## Proxy Operation
 
 The backend supports shared and service-specific outbound proxy settings.
@@ -131,8 +153,9 @@ Use `--skip-proxy-check` only when the proxy health check itself is unreliable b
 ### AI descriptions or AI guesses fail
 
 - Verify `AI_API_KEY`.
-- In proxy-restricted networks, set `AI_PROXY_URL` or shared `PROXY_URL`.
-- AI endpoints can take longer than normal JSON calls; frontend default timeout is 25 seconds, detailed descriptions use 30 seconds.
+- In proxy-restricted networks, set `AI_PROXY_URL` or shared `PROXY_URL`. A direct OpenRouter response like `This model is not available in your region` means the key and model can be valid while the current egress region is blocked.
+- If you need a model override, set `OPENROUTER_MODEL` or `AI_MODEL`. `CN_AI_MODEL` is used only when no AI/shared proxy is configured.
+- AI endpoints can take longer than normal JSON calls; frontend default timeout is 25 seconds, detailed descriptions use 30 seconds. The backend retries transient OpenRouter statuses (`408`, `429`, and `5xx`) within its request timeout.
 
 ### Online duel room disappears
 
@@ -146,6 +169,11 @@ Use `--skip-proxy-check` only when the proxy health check itself is unreliable b
 - `/image` returns a conflict before rounds are prepared.
 - Wait for the room phase to move out of `lobby` or `preparing`.
 - If preparation fails, the room returns to `lobby` with `prepare_failed` and both players must ready up again.
+
+### Backend startup waits on map data
+
+- Existing local Natural Earth map data is used by default; startup does not remote-check for updates.
+- To refresh map data during geo initialization, set `MAP_DATA_AUTO_UPDATE=true`.
 
 ### Rate limits
 

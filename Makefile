@@ -5,8 +5,14 @@ BACKEND_LOG := $(LOG_DIR)/backend.log
 FRONTEND_LOG := $(LOG_DIR)/frontend.log
 BACKEND_PID := $(LOG_DIR)/backend.pid
 FRONTEND_PID := $(LOG_DIR)/frontend.pid
+REMOTE_HOST ?= kr
+REMOTE_DIR ?= /root/street-view-explorer
+REMOTE_BRANCH ?= main
+LOCAL_GIT_REMOTE ?= origin
+REMOTE_GIT_REMOTE ?= origin
+HEALTH_TIMEOUT ?= 240
 
-.PHONY: deploy clean dev dev-start dev-stop backend-dev frontend-dev
+.PHONY: deploy deploy-remote clean dev dev-start dev-stop backend-dev frontend-dev
 
 # 前台启动开发环境（Ctrl+C 同时停止）
 dev:
@@ -24,6 +30,15 @@ deploy:
 	@echo "检查服务状态..."
 	docker compose ps
 	@echo "部署完成！"
+
+deploy-remote:
+	@REMOTE_HOST="$(REMOTE_HOST)" \
+	REMOTE_DIR="$(REMOTE_DIR)" \
+	REMOTE_BRANCH="$(REMOTE_BRANCH)" \
+	LOCAL_GIT_REMOTE="$(LOCAL_GIT_REMOTE)" \
+	REMOTE_GIT_REMOTE="$(REMOTE_GIT_REMOTE)" \
+	HEALTH_TIMEOUT="$(HEALTH_TIMEOUT)" \
+	scripts/remote_deploy.sh
 
 # 清理命令
 clean:

@@ -15,14 +15,14 @@ import (
 	"time"
 
 	"github.com/my-streetview-project/backend/internal/models"
-	"github.com/my-streetview-project/backend/internal/utils"
 )
 
 const (
-	apiEndpoint = "https://openrouter.ai/api/v1/chat/completions"
-	model       = "openai/gpt-5.4-mini"
-	maxRetries  = 2
-	timeout     = 15 * time.Second
+	defaultAPIEndpoint = "https://openrouter.ai/api/v1/chat/completions"
+	defaultModel       = "openai/gpt-5.4-mini"
+	maxRetries         = 2
+	retryBaseDelay     = 500 * time.Millisecond
+	timeout            = 15 * time.Second
 
 	geographerSystemPrompt = "You are Atlas, a witty and free-spirited world traveler in your 30s. You've spent 15 years roaming the globe, picking up History, Geography, and Anthropology degrees along the way — but you wear your knowledge lightly. You're the kind of friend who makes everyone at the table lean in when you start talking about a place you've been. You're warm, a bit irreverent, genuinely curious about people, and you find something fascinating in every corner of the world. You value freedom and spontaneity — the best experiences you've had were the ones you didn't plan.\n\n" +
 		"You are right here, right now, standing at this location. You're traveling and your friend (the user) is following along remotely. You're telling them what you see, what you know about this place, and why it's interesting. You speak from the scene — as someone who is actually there, taking it all in.\n\n" +
@@ -80,6 +80,7 @@ type client struct {
 	apiKey     string
 	modelName  string
 	httpClient *http.Client
+	endpoint   string
 }
 
 type webPlugin struct {
@@ -126,6 +127,7 @@ type chatResponse struct {
 	} `json:"choices"`
 	Error *struct {
 		Message string `json:"message"`
+		Code    any    `json:"code,omitempty"`
 	} `json:"error,omitempty"`
 }
 
@@ -280,15 +282,145 @@ func NewClient(apiKey string, modelName ...string) Client {
 		}
 	}
 
-	selectedModel := model
+	selectedModel := selectModel(proxyURLStr)
 	if len(modelName) > 0 && modelName[0] != "" {
 		selectedModel = modelName[0]
+	}
+	endpoint := strings.TrimSpace(os.Getenv("OPENROUTER_API_ENDPOINT"))
+	if endpoint == "" {
+		endpoint = defaultAPIEndpoint
 	}
 
 	return &client{
 		apiKey:     apiKey,
 		modelName:  selectedModel,
 		httpClient: httpClient,
+		endpoint:   endpoint,
+	}
+}
+
+func selectModel(proxyURLStr string) string {
+	if configured := strings.TrimSpace(os.Getenv("OPENROUTER_MODEL")); configured != "" {
+		return configured
+	}
+	if configured := strings.TrimSpace(os.Getenv("AI_MODEL")); configured != "" {
+		return configured
+	}
+	if proxyURLStr == "" {
+		if configured := strings.TrimSpace(os.Getenv("CN_AI_MODEL")); configured != "" {
+			return configured
+		}
+	}
+	return defaultModel
+}
+
+func (c *client) doChatCompletion(ctx context.Context, functionName string, reqJSON []byte, startTime time.Time) ([]byte, error) {
+	var lastErr error
+	var retryAfter time.Duration
+
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			delay := retryDelay(attempt, retryAfter)
+			log.Printf("[AI_RETRY] function=%s attempt=%d delay=%v previous_error=%v", functionName, attempt+1, delay, lastErr)
+			if err := sleepWithContext(ctx, delay); err != nil {
+				return nil, fmt.Errorf("OpenRouter 请求超时")
+			}
+		}
+		retryAfter = 0
+
+		req, err := http.NewRequestWithContext(ctx, "POST", c.endpoint, bytes.NewReader(reqJSON))
+		if err != nil {
+			return nil, fmt.Errorf("创建请求失败: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+c.apiKey)
+		req.Header.Set("HTTP-Referer", "https://earth.wangyufeng.org")
+		req.Header.Set("X-OpenRouter-Title", "Street View Explorer")
+
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			if ctx.Err() == context.DeadlineExceeded {
+				log.Printf("[AI_ERROR] action=timeout function=%s duration=%v error=request_timeout", functionName, time.Since(startTime))
+				return nil, fmt.Errorf("OpenRouter 请求超时")
+			}
+			lastErr = fmt.Errorf("发送请求失败: %w", err)
+			log.Printf("[AI_ERROR] action=request_failed function=%s attempt=%d duration=%v error=%v", functionName, attempt+1, time.Since(startTime), err)
+			if attempt < maxRetries {
+				continue
+			}
+			return nil, lastErr
+		}
+
+		body, readErr := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if readErr != nil {
+			lastErr = fmt.Errorf("读取响应失败: %w", readErr)
+			log.Printf("[AI_ERROR] action=read_response_failed function=%s attempt=%d duration=%v error=%v", functionName, attempt+1, time.Since(startTime), readErr)
+			if attempt < maxRetries {
+				continue
+			}
+			return nil, lastErr
+		}
+
+		if resp.StatusCode == http.StatusOK {
+			return body, nil
+		}
+
+		lastErr = fmt.Errorf("API 请求失败 (状态码: %d): %s", resp.StatusCode, string(body))
+		log.Printf("[AI_ERROR] action=api_error function=%s attempt=%d duration=%v status=%d response=%s", functionName, attempt+1, time.Since(startTime), resp.StatusCode, truncateString(string(body), 200))
+		if !isRetryableStatus(resp.StatusCode) || attempt >= maxRetries {
+			return nil, lastErr
+		}
+		retryAfter = parseRetryAfter(resp.Header.Get("Retry-After"))
+	}
+
+	return nil, lastErr
+}
+
+func retryDelay(attempt int, retryAfter time.Duration) time.Duration {
+	if retryAfter > 0 {
+		return retryAfter
+	}
+	return retryBaseDelay * time.Duration(1<<(attempt-1))
+}
+
+func sleepWithContext(ctx context.Context, delay time.Duration) error {
+	if delay <= 0 {
+		return nil
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
+func parseRetryAfter(value string) time.Duration {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0
+	}
+	if seconds, err := time.ParseDuration(value + "s"); err == nil {
+		return seconds
+	}
+	if retryAt, err := http.ParseTime(value); err == nil {
+		if delay := time.Until(retryAt); delay > 0 {
+			return delay
+		}
+	}
+	return 0
+}
+
+func isRetryableStatus(status int) bool {
+	switch status {
+	case http.StatusRequestTimeout, http.StatusTooManyRequests, http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -304,14 +436,7 @@ func (c *client) GenerateLocationDescription(latitude, longitude float64, locati
 	startTime := time.Now()
 	descTimeout := 20 * time.Second
 
-	logger := utils.AILogger()
-	logger.Info("ai_request_start", "Starting AI description generation", map[string]interface{}{
-		"function": "GenerateLocationDescription",
-		"coords":   fmt.Sprintf("(%.6f,%.6f)", latitude, longitude),
-		"language": language,
-		"model":    c.modelName,
-		"timeout":  descTimeout.String(),
-	})
+	log.Printf("[AI] action=request_start function=GenerateLocationDescription coords=(%.6f,%.6f) language=%s model=%s timeout=%s", latitude, longitude, language, c.modelName, descTimeout)
 
 	// 根据语言选择提示词格式
 	outputFormat := "Give it to me in Chinese"
@@ -435,34 +560,9 @@ func (c *client) GenerateLocationDescription(latitude, longitude float64, locati
 	ctx, cancel := context.WithTimeout(context.Background(), descTimeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, "POST", apiEndpoint, bytes.NewBuffer(reqJSON))
+	body, err := c.doChatCompletion(ctx, "GenerateLocationDescription", reqJSON, startTime)
 	if err != nil {
-		return "", nil, fmt.Errorf("创建请求失败: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+c.apiKey)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		if ctx.Err() == context.DeadlineExceeded {
-			log.Printf("[AI_ERROR] action=timeout function=GenerateLocationDescription duration=%v timeout=%v error=request_timeout", time.Since(startTime), descTimeout)
-			return "", nil, fmt.Errorf("位置描述生成超时")
-		}
-		log.Printf("[AI_ERROR] action=request_failed function=GenerateLocationDescription duration=%v error=%v", time.Since(startTime), err)
-		return "", nil, fmt.Errorf("发送请求失败: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		log.Printf("[AI_ERROR] action=read_response_failed function=GenerateLocationDescription duration=%v error=%v", time.Since(startTime), err)
-		return "", nil, fmt.Errorf("读取响应失败: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		log.Printf("[AI_ERROR] action=api_error function=GenerateLocationDescription duration=%v status=%d response=%s", time.Since(startTime), resp.StatusCode, truncateString(string(body), 200))
-		return "", nil, fmt.Errorf("API 请求失败 (状态码: %d): %s", resp.StatusCode, string(body))
+		return "", nil, err
 	}
 
 	var chatResp chatResponse
@@ -483,12 +583,7 @@ func (c *client) GenerateLocationDescription(latitude, longitude float64, locati
 
 	desc := stripInlineCitations(chatResp.Choices[0].Message.Content, chatResp.Choices[0].Message.Annotations)
 	citations := extractCitations(chatResp)
-	logger.Info("ai_request_completed", "AI description generation completed", map[string]interface{}{
-		"function":        "GenerateLocationDescription",
-		"duration":        time.Since(startTime).String(),
-		"response_length": len(desc),
-		"citations_count": len(citations),
-	})
+	log.Printf("[AI] action=request_completed function=GenerateLocationDescription duration=%v response_length=%d citations_count=%d", time.Since(startTime), len(desc), len(citations))
 
 	return desc, citations, nil
 }
@@ -497,25 +592,10 @@ func (c *client) GenerateDetailedLocationDescription(latitude, longitude float64
 	startTime := time.Now()
 	detailedTimeout := 30 * time.Second
 
-	logger := utils.AILogger()
-	logger.Info("ai_request_start", "Starting AI detailed description generation", map[string]interface{}{
-		"function": "GenerateDetailedLocationDescription",
-		"coords":   fmt.Sprintf("(%.6f,%.6f)", latitude, longitude),
-		"language": language,
-		"model":    c.modelName,
-		"timeout":  detailedTimeout.String(),
-	})
+	log.Printf("[AI] action=request_start function=GenerateDetailedLocationDescription coords=(%.6f,%.6f) language=%s model=%s timeout=%s", latitude, longitude, language, c.modelName, detailedTimeout)
 
 	ctx, cancel := context.WithTimeout(context.Background(), detailedTimeout)
 	defer cancel()
-
-	// 为详细描述创建一个临时的HTTP客户端
-	// 重要：不设置HTTP客户端超时，完全依赖context超时控制
-	// 这样避免了HTTP超时和context超时的冲突
-	detailedHTTPClient := &http.Client{
-		Transport: c.httpClient.Transport, // 复用原客户端的代理设置
-		// 不设置 Timeout，让 context 控制超时
-	}
 
 	// 构建位置信息字符串
 	var locationStrings []string
@@ -578,39 +658,9 @@ func (c *client) GenerateDetailedLocationDescription(latitude, longitude float64
 		return "", nil, fmt.Errorf("编码请求失败: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", apiEndpoint, bytes.NewBuffer(reqJSON))
+	body, err := c.doChatCompletion(ctx, "GenerateDetailedLocationDescription", reqJSON, startTime)
 	if err != nil {
-		return "", nil, fmt.Errorf("创建请求失败: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+c.apiKey)
-
-	resp, err := detailedHTTPClient.Do(req)
-	if err != nil {
-		if ctx.Err() == context.DeadlineExceeded {
-			log.Printf("[AI_ERROR] action=timeout function=GenerateDetailedLocationDescription duration=%v timeout=%v",
-				time.Since(startTime), detailedTimeout)
-			return "", nil, fmt.Errorf("详细描述生成超时")
-		}
-		log.Printf("[AI_ERROR] action=request_failed function=GenerateDetailedLocationDescription duration=%v error=%v",
-			time.Since(startTime), err)
-		return "", nil, fmt.Errorf("发送请求失败: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		log.Printf("[AI_ERROR] action=read_response_failed function=GenerateDetailedLocationDescription duration=%v error=%v",
-			time.Since(startTime), err)
-		return "", nil, fmt.Errorf("读取响应失败: %w", err)
-	}
-
-	// 检查HTTP状态码
-	if resp.StatusCode != http.StatusOK {
-		log.Printf("[AI_ERROR] action=api_error function=GenerateDetailedLocationDescription duration=%v status=%d",
-			time.Since(startTime), resp.StatusCode)
-		return "", nil, fmt.Errorf("API 请求失败 (状态码: %d): %s", resp.StatusCode, string(body))
+		return "", nil, err
 	}
 
 	var chatResp chatResponse
@@ -635,13 +685,7 @@ func (c *client) GenerateDetailedLocationDescription(latitude, longitude float64
 	result := stripInlineCitations(chatResp.Choices[0].Message.Content, chatResp.Choices[0].Message.Annotations)
 	citations := extractCitations(chatResp)
 
-	// 简化的成功日志
-	logger.Info("ai_request_completed", "AI detailed description generation completed", map[string]interface{}{
-		"function":        "GenerateDetailedLocationDescription",
-		"duration":        time.Since(startTime).String(),
-		"response_length": len(result),
-		"citations_count": len(citations),
-	})
+	log.Printf("[AI] action=request_completed function=GenerateDetailedLocationDescription duration=%v response_length=%d citations_count=%d", time.Since(startTime), len(result), len(citations))
 
 	return result, citations, nil
 }
@@ -729,31 +773,9 @@ func (c *client) tryGenerateRegions(interest string) ([]models.Region, error) {
 		return nil, fmt.Errorf("编码请求失败: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", apiEndpoint, bytes.NewBuffer(reqJSON))
+	body, err := c.doChatCompletion(ctx, "GenerateRegionsForInterest", reqJSON, time.Now())
 	if err != nil {
-		return nil, fmt.Errorf("创建请求失败: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+c.apiKey)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		if ctx.Err() == context.DeadlineExceeded {
-			return nil, fmt.Errorf("请求超时")
-		}
-		return nil, fmt.Errorf("发送请求失败: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("读取响应失败: %w", err)
-	}
-
-	// 检查响应状态码
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API 请求失败 (状态码: %d): %s", resp.StatusCode, string(body))
+		return nil, err
 	}
 
 	var chatResp chatResponse
@@ -881,7 +903,7 @@ func (c *client) GuessLocationFromImage(parentCtx context.Context, imageBase64 s
 		Model: c.modelName,
 		Messages: []visionMessage{
 			{
-				Role:    "user",
+				Role: "user",
 				Content: []visionContentPart{
 					{Type: "image_url", ImageURL: &visionImageURL{URL: dataURI}},
 					{Type: "text", Text: prompt},
@@ -895,30 +917,9 @@ func (c *client) GuessLocationFromImage(parentCtx context.Context, imageBase64 s
 		return 0, 0, "", fmt.Errorf("encode request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", apiEndpoint, bytes.NewBuffer(reqJSON))
+	body, err := c.doChatCompletion(ctx, "GuessLocationFromImage", reqJSON, startTime)
 	if err != nil {
-		return 0, 0, "", fmt.Errorf("create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+c.apiKey)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		if ctx.Err() == context.DeadlineExceeded {
-			return 0, 0, "", fmt.Errorf("AI guess timed out")
-		}
-		return 0, 0, "", fmt.Errorf("request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return 0, 0, "", fmt.Errorf("read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		log.Printf("[GEO_AI] status=%d response=%s duration=%v", resp.StatusCode, truncateString(string(body), 200), time.Since(startTime))
-		return 0, 0, "", fmt.Errorf("API error (status %d)", resp.StatusCode)
+		return 0, 0, "", err
 	}
 
 	var chatResp chatResponse

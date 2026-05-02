@@ -594,7 +594,7 @@ export default function AgentPage() {
     const stopImageMap = {};
     for (const stop of data.stops) {
       if (stop.pano_id) {
-        stopImageMap[stop.stop_number] = `/api/v1/agent/streetview?pano_id=${stop.pano_id}&heading=${stop.photo_heading || 0}&token=${tid}`;
+        stopImageMap[stop.stop_number] = `/api/v1/agent/streetview?pano_id=${encodeURIComponent(stop.pano_id)}&heading=${stop.photo_heading || 0}&token=${encodeURIComponent(tid)}`;
       }
     }
 

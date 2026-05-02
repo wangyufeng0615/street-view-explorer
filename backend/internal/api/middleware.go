@@ -16,7 +16,7 @@ import (
 
 // 预编译正则表达式（性能优化）
 var (
-	panoIDRegex    = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
+	panoIDRegex    = regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)
 	sessionIDRegex = regexp.MustCompile(`^[a-zA-Z0-9-_]{32,64}$`)
 )
 

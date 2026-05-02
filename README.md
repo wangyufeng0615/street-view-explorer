@@ -87,6 +87,7 @@ go run cmd/server/main.go --openai-proxy http://127.0.0.1:10086 --maps-proxy htt
 
 ```bash
 make deploy       # docker compose build + up -d
+make deploy-remote # ssh to REMOTE_HOST=kr, pull REMOTE_BRANCH=main, deploy, and verify
 make clean        # docker compose down -v and remove containers
 ```
 
@@ -101,6 +102,8 @@ Backend variables live in `backend/.env`.
 | `SERVER_ADDRESS` | No | Backend listen address, default `:8080`. |
 | `SQLITE_PATH` | No | SQLite database path, default `data/streetview.db`. |
 | `AI_API_KEY` | Yes | OpenRouter key used by AI services. |
+| `OPENROUTER_MODEL`, `AI_MODEL` | No | Optional OpenRouter model override. `OPENROUTER_MODEL` takes precedence. |
+| `CN_AI_MODEL` | No | Optional fallback model used only when no AI/shared proxy is configured. |
 | `GOOGLE_API_KEY` | Yes | Backend Google Maps, Street View, and Static Maps access. |
 | `GOOGLE_MAPS_MAP_ID` | No | Optional map ID, mainly useful to mirror frontend config. |
 | `SENTRY_DSN` | No | Backend Sentry DSN. |
@@ -109,6 +112,7 @@ Backend variables live in `backend/.env`.
 | `RATE_LIMIT_ENABLED` | No | Enables SQLite-backed rate limiting, default `true`. |
 | `RATE_LIMIT_MAX_REQUESTS` | No | Default rate-limit ceiling. Some handlers override per endpoint. |
 | `RATE_LIMIT_WINDOW_SECONDS` | No | Default rate-limit window. |
+| `MAP_DATA_AUTO_UPDATE` | No | Set to `true` to refresh local Natural Earth map data during geo initialization. Defaults to local-only startup. |
 | `CORS_ALLOWED_ORIGINS` | No | Loaded into backend config and reported by `/health`; production CORS headers are added by Nginx. |
 | `CORS_MAX_AGE` | No | Loaded into backend config, default `86400`. |
 | `PROXY_URL`, `PROXY_TYPE`, `PROXY_USER`, `PROXY_PASS` | No | Shared outbound proxy config. |

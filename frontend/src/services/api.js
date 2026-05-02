@@ -168,8 +168,9 @@ export async function getLocationDescription(
       fetchOptions.signal = signal;
     }
 
+    const encodedPanoId = encodeURIComponent(panoId);
     const resp = await fetchWithTimeout(
-      `${API_V1}/locations/${panoId}/description?lang=${lang}`,
+      `${API_V1}/locations/${encodedPanoId}/description?lang=${lang}`,
       fetchOptions,
     );
     const data = await resp.json();
@@ -358,8 +359,9 @@ export async function getLocationDetailedDescription(
       fetchOptions.signal = signal;
     }
 
+    const encodedPanoId = encodeURIComponent(panoId);
     const resp = await fetchWithTimeout(
-      `${API_V1}/locations/${panoId}/detailed-description?lang=${lang}`,
+      `${API_V1}/locations/${encodedPanoId}/detailed-description?lang=${lang}`,
       fetchOptions,
       30000, // 30秒超时，详细描述需要更长的AI处理时间
     );

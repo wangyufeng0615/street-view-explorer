@@ -99,7 +99,7 @@ export default function LetterPage() {
   for (const p of photos) {
     if (p.pano_id) {
       stopImageMap[p.stop_number] =
-        `/api/v1/agent/streetview?pano_id=${p.pano_id}&heading=${p.photo_heading || 0}&journey_id=${id}`;
+        `/api/v1/agent/streetview?pano_id=${encodeURIComponent(p.pano_id)}&heading=${p.photo_heading || 0}&journey_id=${encodeURIComponent(id)}`;
     }
   }
 

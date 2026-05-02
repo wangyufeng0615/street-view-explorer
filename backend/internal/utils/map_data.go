@@ -26,7 +26,10 @@ const (
 	MinorIslandsMD5File = "minor_islands.json.md5"
 	// 数据更新检查间隔（7天）
 	UpdateCheckInterval = 7 * 24 * time.Hour
+	MapDataHTTPTimeout  = 20 * time.Second
 )
+
+var mapDataHTTPClient = &http.Client{Timeout: MapDataHTTPTimeout}
 
 // MapDataManager 地图数据管理器
 type MapDataManager struct {
@@ -77,8 +80,9 @@ func (m *MapDataManager) EnsureWorldMapData() error {
 		return m.downloadWorldMapData()
 	}
 
-	// 检查文件是否需要更新
-	if m.shouldUpdate(worldMapPath) {
+	// 检查文件是否需要更新。默认启动优先使用已有本地数据，避免远程检查拖慢
+	// dev/test 启动；需要更新时显式设置 MAP_DATA_AUTO_UPDATE=true。
+	if shouldAutoUpdateMapData() && m.shouldUpdate(worldMapPath) {
 		// 获取远程文件的MD5
 		remoteMD5, err := m.getRemoteFileMD5()
 		if err != nil {
@@ -131,7 +135,7 @@ func (m *MapDataManager) downloadWorldMapData() error {
 	}
 
 	// 下载数据
-	resp, err := http.Get(WorldMapURL)
+	resp, err := mapDataHTTPClient.Get(WorldMapURL)
 	if err != nil {
 		return fmt.Errorf("下载世界地图数据失败: %w", err)
 	}
@@ -186,9 +190,13 @@ func (m *MapDataManager) shouldUpdate(path string) bool {
 	return time.Since(info.ModTime()) > UpdateCheckInterval
 }
 
+func shouldAutoUpdateMapData() bool {
+	return os.Getenv("MAP_DATA_AUTO_UPDATE") == "true"
+}
+
 // getRemoteFileMD5 获取远程文件的MD5（通过下载并计算）
 func (m *MapDataManager) getRemoteFileMD5() (string, error) {
-	resp, err := http.Get(WorldMapURL)
+	resp, err := mapDataHTTPClient.Get(WorldMapURL)
 	if err != nil {
 		return "", err
 	}
@@ -261,8 +269,9 @@ func (m *MapDataManager) EnsureMinorIslandsData() error {
 		return m.downloadMinorIslandsData()
 	}
 
-	// 检查文件是否需要更新
-	if m.shouldUpdate(minorIslandsPath) {
+	// 检查文件是否需要更新。默认启动优先使用已有本地数据，避免远程检查拖慢
+	// dev/test 启动；需要更新时显式设置 MAP_DATA_AUTO_UPDATE=true。
+	if shouldAutoUpdateMapData() && m.shouldUpdate(minorIslandsPath) {
 		// 获取远程文件的MD5
 		remoteMD5, err := m.getRemoteMinorIslandsMD5()
 		if err != nil {
@@ -315,7 +324,7 @@ func (m *MapDataManager) downloadMinorIslandsData() error {
 	}
 
 	// 下载数据
-	resp, err := http.Get(MinorIslandsURL)
+	resp, err := mapDataHTTPClient.Get(MinorIslandsURL)
 	if err != nil {
 		return fmt.Errorf("下载小型岛屿数据失败: %w", err)
 	}
@@ -355,7 +364,7 @@ func (m *MapDataManager) downloadMinorIslandsData() error {
 
 // getRemoteMinorIslandsMD5 获取远程小型岛屿数据的MD5（通过下载并计算）
 func (m *MapDataManager) getRemoteMinorIslandsMD5() (string, error) {
-	resp, err := http.Get(MinorIslandsURL)
+	resp, err := mapDataHTTPClient.Get(MinorIslandsURL)
 	if err != nil {
 		return "", err
 	}

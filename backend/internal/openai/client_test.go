@@ -1,8 +1,12 @@
 package openai
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func ann(url string, start, end int) annotation {
@@ -87,4 +91,81 @@ func TestGeographerSystemPromptKeepsCitationsOutOfBody(t *testing.T) {
 			t.Fatalf("geographerSystemPrompt missing phrase %q", phrase)
 		}
 	}
+}
+
+func TestDoChatCompletionRetriesTransientStatus(t *testing.T) {
+	attempts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		if attempts == 1 {
+			w.Header().Set("Retry-After", "0")
+			http.Error(w, `{"error":{"message":"temporary upstream failure","code":503}}`, http.StatusServiceUnavailable)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ok"}}]}`))
+	}))
+	defer server.Close()
+
+	c := &client{
+		apiKey:     "test-key",
+		modelName:  "test-model",
+		httpClient: server.Client(),
+		endpoint:   server.URL,
+	}
+
+	body, err := c.doChatCompletion(context.Background(), "test", []byte(`{"messages":[]}`), testStartTime())
+	if err != nil {
+		t.Fatalf("doChatCompletion returned error: %v", err)
+	}
+	if !strings.Contains(string(body), `"content":"ok"`) {
+		t.Fatalf("unexpected response body: %s", string(body))
+	}
+	if attempts != 2 {
+		t.Fatalf("attempts = %d, want 2", attempts)
+	}
+}
+
+func TestDoChatCompletionDoesNotRetryNonTransientStatus(t *testing.T) {
+	attempts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		http.Error(w, `{"error":{"message":"region blocked","code":403}}`, http.StatusForbidden)
+	}))
+	defer server.Close()
+
+	c := &client{
+		apiKey:     "test-key",
+		modelName:  "test-model",
+		httpClient: server.Client(),
+		endpoint:   server.URL,
+	}
+
+	_, err := c.doChatCompletion(context.Background(), "test", []byte(`{"messages":[]}`), testStartTime())
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "状态码: 403") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if attempts != 1 {
+		t.Fatalf("attempts = %d, want 1", attempts)
+	}
+}
+
+func TestSelectModelUsesCNModelOnlyWithoutProxy(t *testing.T) {
+	t.Setenv("OPENROUTER_MODEL", "")
+	t.Setenv("AI_MODEL", "")
+	t.Setenv("CN_AI_MODEL", "minimax/minimax-m2.7")
+
+	if got := selectModel(""); got != "minimax/minimax-m2.7" {
+		t.Fatalf("selectModel without proxy = %q", got)
+	}
+	if got := selectModel("http://127.0.0.1:10086"); got != defaultModel {
+		t.Fatalf("selectModel with proxy = %q, want %q", got, defaultModel)
+	}
+}
+
+func testStartTime() time.Time {
+	return time.Now()
 }

@@ -74,3 +74,27 @@ func TestSanitizeDescription(t *testing.T) {
 		})
 	}
 }
+
+func TestPanoIDRegexAllowsGooglePanoCharacters(t *testing.T) {
+	valid := []string{
+		"pano-a_b",
+		"CAoSFkNJSE0wb2dLRUlDQWdJQ09nX0N0RGc.",
+		"CAoSHENJQUJJaEQ2MkllUzNQWGEtMDV2OEIyY3Vsd24.",
+	}
+	for _, panoID := range valid {
+		if !panoIDRegex.MatchString(panoID) {
+			t.Fatalf("panoIDRegex rejected valid pano id %q", panoID)
+		}
+	}
+
+	invalid := []string{
+		"bad/pano",
+		"bad pano",
+		"bad?pano",
+	}
+	for _, panoID := range invalid {
+		if panoIDRegex.MatchString(panoID) {
+			t.Fatalf("panoIDRegex accepted invalid pano id %q", panoID)
+		}
+	}
+}

@@ -44,6 +44,13 @@ func InitializeGeoData() error {
 		return fmt.Errorf("地图管理器未初始化")
 	}
 
+	if err := mapManager.EnsureWorldMapData(); err != nil {
+		return fmt.Errorf("确保世界地图数据失败: %w", err)
+	}
+	if err := mapManager.EnsureMinorIslandsData(); err != nil {
+		log.Printf("警告：确保小型岛屿数据失败: %v", err)
+	}
+
 	// 加载世界地图数据
 	worldData, err := mapManager.LoadWorldMapData()
 	if err != nil {
@@ -369,8 +376,8 @@ func selectRegionSource(userRegions []models.Region) []Region {
 				South:         userRegion.Coordinates.South,
 				East:          userRegion.Coordinates.East,
 				West:          userRegion.Coordinates.West,
-				Polygons:      []orb.Polygon{rectPolygon}, // 添加矩形多边形
-				IsMinorIsland: false,                      // 用户定义的区域默认不是小型岛屿
+				Polygons:      []orb.Polygon{rectPolygon},        // 添加矩形多边形
+				IsMinorIsland: false,                             // 用户定义的区域默认不是小型岛屿
 				Area:          calculatePolygonArea(rectPolygon), // 计算矩形面积
 			}
 		}
