@@ -65,6 +65,16 @@ func TestGetVisitHistoryReturnsVisitAndUniqueCounts(t *testing.T) {
 			t.Fatalf("RecordVisit() error = %v", err)
 		}
 	}
+	if err := repo.RecordVisit("another-session", models.Location{
+		PanoID:           "pano-other",
+		Latitude:         50.5,
+		Longitude:        60.6,
+		Country:          "C",
+		City:             "Gamma",
+		FormattedAddress: "Gamma Avenue",
+	}, models.VisitSourceRandom); err != nil {
+		t.Fatalf("RecordVisit(other session) error = %v", err)
+	}
 
 	visits, totalVisits, uniquePlaces, err := repo.GetVisitHistory(sessionID, 10, 0)
 	if err != nil {
@@ -94,6 +104,9 @@ func TestGetVisitHistoryReturnsVisitAndUniqueCounts(t *testing.T) {
 	for _, visit := range visits {
 		if visit.SessionID != "" {
 			t.Fatalf("visit.SessionID = %q, want empty string", visit.SessionID)
+		}
+		if visit.PanoID == "pano-other" {
+			t.Fatalf("GetVisitHistory leaked another session's visit")
 		}
 	}
 }
