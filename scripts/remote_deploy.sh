@@ -9,8 +9,12 @@ REMOTE_GIT_REMOTE="${REMOTE_GIT_REMOTE:-origin}"
 HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-240}"
 PANO_SMOKE_ID="${PANO_SMOKE_ID:-does.not.exist.}"
 
+timestamp() {
+  date -Is 2>/dev/null || date '+%Y-%m-%dT%H:%M:%S%z'
+}
+
 log() {
-  printf '[%s] %s\n' "$(date -Is)" "$*"
+  printf '[%s] %s\n' "$(timestamp)" "$*"
 }
 
 quote() {
@@ -52,8 +56,12 @@ ssh "$REMOTE_HOST" \
   "REMOTE_DIR=$(quote "$REMOTE_DIR") REMOTE_BRANCH=$(quote "$REMOTE_BRANCH") REMOTE_GIT_REMOTE=$(quote "$REMOTE_GIT_REMOTE") EXPECTED_COMMIT=$(quote "$expected_commit") HEALTH_TIMEOUT=$(quote "$HEALTH_TIMEOUT") PANO_SMOKE_ID=$(quote "$PANO_SMOKE_ID") bash -s" <<'REMOTE_SCRIPT'
 set -Eeuo pipefail
 
+timestamp() {
+  date -Is 2>/dev/null || date '+%Y-%m-%dT%H:%M:%S%z'
+}
+
 log() {
-  printf '[%s] %s\n' "$(date -Is)" "$*"
+  printf '[%s] %s\n' "$(timestamp)" "$*"
 }
 
 run() {
@@ -105,7 +113,7 @@ if [[ "$after_commit" != "$EXPECTED_COMMIT" ]]; then
   exit 2
 fi
 
-deploy_started_at="$(date -Is)"
+deploy_started_at="$(timestamp)"
 log "starting make deploy; this can take a while on the VPS"
 run make deploy
 log "make deploy finished"
@@ -146,12 +154,13 @@ nginx_started="$(docker inspect -f '{{.State.StartedAt}}' "$nginx_after")"
 log "compose status"
 docker compose ps
 
+# docker compose exec inherits stdin; redirect it so it cannot consume the SSH here-doc.
 log "checking backend /health from inside backend container"
-docker compose exec -T backend sh -lc 'wget -qO- http://127.0.0.1:8080/health'
+docker compose exec -T backend sh -lc 'wget -qO- http://127.0.0.1:8080/health' </dev/null
 printf '\n'
 
 log "checking nginx status from inside nginx container"
-docker compose exec -T nginx sh -lc 'wget -qO- http://127.0.0.1:3000/nginx_status' >/tmp/streetview-nginx-status.txt
+docker compose exec -T nginx sh -lc 'wget -qO- http://127.0.0.1:3000/nginx_status' </dev/null >/tmp/streetview-nginx-status.txt
 head -20 /tmp/streetview-nginx-status.txt
 
 log "checking pano id validation smoke through nginx"
