@@ -32,7 +32,7 @@ var (
 )
 
 const (
-	geoBattleRoundDuration      = 90 * time.Second
+	geoBattleRoundDuration      = 30 * time.Second
 	geoBattleRevealDuration     = 8 * time.Second
 	geoBattleCountdownDuration  = 5 * time.Second
 	geoBattleQueueTTL           = 10 * time.Minute
@@ -46,7 +46,8 @@ const (
 	geoBattleToleranceGrowth    = 1.45
 	geoBattleRoomCodeLength     = 6
 	geoBattleMaxNicknameRunes   = 20
-	geoBattleMaxRoundGenRetries = 8
+	geoBattleMaxRoundGenRetries = 32
+	geoBattleMinRoundDistanceKM = 75.0
 )
 
 type GeoBattleService struct {
@@ -720,11 +721,19 @@ func (s *GeoBattleService) generateRounds() ([]geoBattleRound, error) {
 			if err != nil {
 				continue
 			}
-			if _, exists := seenPanoIDs[loc.PanoID]; exists {
-				err = fmt.Errorf("duplicate pano")
+			if loc.PanoID != "" {
+				if _, exists := seenPanoIDs[loc.PanoID]; exists {
+					err = fmt.Errorf("duplicate pano")
+					continue
+				}
+			}
+			if geoBattleLocationTooClose(loc, rounds) {
+				err = fmt.Errorf("nearby round location")
 				continue
 			}
-			seenPanoIDs[loc.PanoID] = struct{}{}
+			if loc.PanoID != "" {
+				seenPanoIDs[loc.PanoID] = struct{}{}
+			}
 			break
 		}
 		if err != nil {
@@ -738,6 +747,21 @@ func (s *GeoBattleService) generateRounds() ([]geoBattleRound, error) {
 	}
 
 	return rounds, nil
+}
+
+func geoBattleLocationTooClose(loc models.Location, rounds []geoBattleRound) bool {
+	for _, round := range rounds {
+		distance := geoBattleHaversineDistance(
+			loc.Latitude,
+			loc.Longitude,
+			round.Location.Latitude,
+			round.Location.Longitude,
+		)
+		if distance < geoBattleMinRoundDistanceKM {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *GeoBattleService) enterCountdownLocked(room *geoBattleRoom, message string) {
@@ -894,35 +918,28 @@ func (s *GeoBattleService) snapshotLocked(room *geoBattleRoom, sessionID string)
 	}
 
 	if len(room.Rounds) > 0 && room.CurrentRound < len(room.Rounds) {
-		currentRound := room.Rounds[room.CurrentRound]
-		roundSnapshot := &models.GeoBattleRoundSnapshot{
-			Index:          room.CurrentRound + 1,
-			Total:          len(room.Rounds),
-			CurrentZoom:    models.GeoBattleStartZoom,
-			MinZoom:        models.GeoBattleMinZoom,
-			OpponentLocked: opponent != nil && s.currentGuessLocked(room, opponent.SessionID) != nil,
-		}
-		if player != nil {
-			roundSnapshot.CurrentZoom = player.CurrentZoom
-			roundSnapshot.ZoomSteps = player.CurrentSteps
-			if guess := currentRound.Guesses[player.SessionID]; guess != nil {
-				roundSnapshot.MyGuess = geoBattleGuessSnapshotFromInternal(guess)
-			}
-		}
-		if opponent != nil {
-			if guess := currentRound.Guesses[opponent.SessionID]; guess != nil && (room.Phase == models.GeoBattlePhaseReveal || room.Phase == models.GeoBattlePhaseFinished) {
-				roundSnapshot.OpponentGuess = geoBattleGuessSnapshotFromInternal(guess)
-			}
-		}
-		if room.Phase == models.GeoBattlePhaseReveal || room.Phase == models.GeoBattlePhaseFinished {
-			roundSnapshot.Target = &models.GeoBattleTargetSnapshot{
-				Lat:              currentRound.Location.Latitude,
-				Lng:              currentRound.Location.Longitude,
-				FormattedAddress: currentRound.Location.FormattedAddress,
-				Country:          currentRound.Location.Country,
-			}
-		}
+		includeResults := room.Phase == models.GeoBattlePhaseReveal || room.Phase == models.GeoBattlePhaseFinished
+		roundSnapshot := s.roundSnapshotLocked(room, room.CurrentRound, player, opponent, includeResults)
 		snapshot.Round = roundSnapshot
+
+		if includeResults {
+			lastRound := room.CurrentRound
+			if room.Phase == models.GeoBattlePhaseFinished {
+				lastRound = len(room.Rounds) - 1
+			}
+			snapshot.Rounds = make([]models.GeoBattleRoundSnapshot, 0, lastRound+1)
+			for index := 0; index <= lastRound; index++ {
+				if index >= len(room.Rounds) {
+					break
+				}
+				if room.roundFinishedLocked(index) {
+					snapshot.Rounds = append(
+						snapshot.Rounds,
+						*s.roundSnapshotLocked(room, index, player, opponent, true),
+					)
+				}
+			}
+		}
 	}
 
 	if room.Phase == models.GeoBattlePhaseLobby && s.activePlayerCountLocked(room) < 2 {
@@ -930,6 +947,59 @@ func (s *GeoBattleService) snapshotLocked(room *geoBattleRoom, sessionID string)
 	}
 
 	return snapshot
+}
+
+func (room *geoBattleRoom) roundFinishedLocked(index int) bool {
+	if index < 0 || index >= len(room.Rounds) {
+		return false
+	}
+	if room.Phase == models.GeoBattlePhaseFinished {
+		return true
+	}
+	return index < room.CurrentRound || room.Phase == models.GeoBattlePhaseReveal
+}
+
+func (s *GeoBattleService) roundSnapshotLocked(room *geoBattleRoom, index int, player, opponent *geoBattlePlayer, includeResults bool) *models.GeoBattleRoundSnapshot {
+	round := room.Rounds[index]
+	roundSnapshot := &models.GeoBattleRoundSnapshot{
+		Index:       index + 1,
+		Total:       len(room.Rounds),
+		CurrentZoom: models.GeoBattleStartZoom,
+		MinZoom:     models.GeoBattleMinZoom,
+	}
+
+	if opponent != nil {
+		roundSnapshot.OpponentLocked = round.Guesses[opponent.SessionID] != nil
+	}
+
+	if player != nil {
+		if index == room.CurrentRound && room.Phase == models.GeoBattlePhasePlaying {
+			roundSnapshot.CurrentZoom = player.CurrentZoom
+			roundSnapshot.ZoomSteps = player.CurrentSteps
+		}
+		if guess := round.Guesses[player.SessionID]; guess != nil {
+			roundSnapshot.MyGuess = geoBattleGuessSnapshotFromInternal(guess)
+			roundSnapshot.ZoomSteps = guess.ZoomSteps
+			roundSnapshot.CurrentZoom = max(models.GeoBattleMinZoom, models.GeoBattleStartZoom-guess.ZoomSteps)
+		}
+	}
+
+	if includeResults && opponent != nil {
+		if guess := round.Guesses[opponent.SessionID]; guess != nil {
+			roundSnapshot.OpponentGuess = geoBattleGuessSnapshotFromInternal(guess)
+		}
+	}
+
+	if includeResults {
+		roundSnapshot.Target = &models.GeoBattleTargetSnapshot{
+			Lat:              round.Location.Latitude,
+			Lng:              round.Location.Longitude,
+			FormattedAddress: round.Location.FormattedAddress,
+			Country:          round.Location.Country,
+		}
+	}
+
+	return roundSnapshot
 }
 
 func (s *GeoBattleService) activeRoomForSessionLocked(sessionID string) *geoBattleRoom {

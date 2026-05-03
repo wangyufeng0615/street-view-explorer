@@ -3,6 +3,9 @@ package services
 import (
 	"math"
 	"testing"
+	"time"
+
+	"github.com/my-streetview-project/backend/internal/models"
 )
 
 func TestGeoBattleCalculateScoreMatchesSinglePlayerFormula(t *testing.T) {
@@ -41,5 +44,27 @@ func TestGeoBattleCalculateScoreStillDecaysOutsidePerfectRange(t *testing.T) {
 	far := geoBattleCalculateScore(0, 1000)
 	if close <= far {
 		t.Fatalf("score should decay with distance outside perfect range: close=%d far=%d", close, far)
+	}
+}
+
+func TestGeoBattleRoundDurationIsThirtySeconds(t *testing.T) {
+	if geoBattleRoundDuration != 30*time.Second {
+		t.Fatalf("geoBattleRoundDuration = %v, want 30s", geoBattleRoundDuration)
+	}
+}
+
+func TestGeoBattleLocationTooCloseUsesMinimumRoundDistance(t *testing.T) {
+	rounds := []geoBattleRound{
+		{Location: models.Location{Latitude: 51.5074, Longitude: -0.1278}},
+	}
+
+	nearLondon := models.Location{Latitude: 51.53, Longitude: -0.1}
+	if !geoBattleLocationTooClose(nearLondon, rounds) {
+		t.Fatalf("nearby location should be rejected")
+	}
+
+	paris := models.Location{Latitude: 48.8566, Longitude: 2.3522}
+	if geoBattleLocationTooClose(paris, rounds) {
+		t.Fatalf("distant location should be accepted")
 	}
 }

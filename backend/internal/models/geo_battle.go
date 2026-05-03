@@ -72,6 +72,7 @@ type GeoBattleRoomSnapshot struct {
 	Me              GeoBattlePlayerSnapshot  `json:"me"`
 	Opponent        *GeoBattlePlayerSnapshot `json:"opponent,omitempty"`
 	Round           *GeoBattleRoundSnapshot  `json:"round,omitempty"`
+	Rounds          []GeoBattleRoundSnapshot `json:"rounds,omitempty"`
 	CanReady        bool                     `json:"can_ready"`
 	CanZoomOut      bool                     `json:"can_zoom_out"`
 	CanSubmitGuess  bool                     `json:"can_submit_guess"`

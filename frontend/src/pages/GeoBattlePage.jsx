@@ -26,6 +26,11 @@ const NICKNAME_STORAGE_KEY = "geoBattleNickname";
 const WORLD_CENTER = { lat: 20, lng: 0 };
 const SYNC_INTERVAL_PLAYING = 1500;
 const SYNC_INTERVAL_IDLE = 2500;
+const BATTLE_MARKERS = {
+  target: { color: "#10b981", zIndex: 30, scale: 17 },
+  player: { color: "#ef4444", zIndex: 50, scale: 16 },
+  opponent: { color: "#2563eb", zIndex: 40, scale: 16 },
+};
 const NICKNAMES = {
   zh: [
     "星图旅人",
@@ -85,6 +90,203 @@ function formatBattleDistance(distanceKm, t, zoomSteps = 0) {
     return t("geo.perfect_distance_short");
   }
   return formatDistance(distanceKm);
+}
+
+function getBattleMarkerLabel(type, t) {
+  if (type === "target") return t("geo_online.pin_target_short");
+  if (type === "opponent") return t("geo_online.pin_opponent_short");
+  return t("geo_online.pin_you_short");
+}
+
+function createBattleMarker(maps, map, position, type, t) {
+  const marker = BATTLE_MARKERS[type] || BATTLE_MARKERS.player;
+  return new maps.Marker({
+    position,
+    map,
+    clickable: false,
+    zIndex: marker.zIndex,
+    icon: {
+      path: maps.SymbolPath.CIRCLE,
+      scale: marker.scale,
+      fillColor: marker.color,
+      fillOpacity: 1,
+      strokeColor: "#fff",
+      strokeWeight: 2.5,
+    },
+    label: {
+      text: getBattleMarkerLabel(type, t),
+      color: "#fff",
+      fontSize: "11px",
+      fontWeight: "800",
+    },
+  });
+}
+
+function getRoundPlace(round, t) {
+  return (
+    round?.target?.formatted_address ||
+    round?.target?.country ||
+    t("geo.unknown_place")
+  );
+}
+
+function getRoundWinner(round) {
+  const myScore = round?.my_guess?.score || 0;
+  const opponentScore = round?.opponent_guess?.score || 0;
+  if (myScore > opponentScore) return "you";
+  if (opponentScore > myScore) return "opponent";
+  return "draw";
+}
+
+function getRoundWinnerLabel(round, t) {
+  const winner = getRoundWinner(round);
+  if (winner === "you") return t("geo_online.round_winner_you");
+  if (winner === "opponent") return t("geo_online.round_winner_opponent");
+  return t("geo_online.round_winner_draw");
+}
+
+function BattleGuessStat({ label, guess, t }) {
+  const score = guess?.score || 0;
+  return (
+    <div className="geo-battle-guess-stat">
+      <span>{label}</span>
+      <strong>+{score.toLocaleString()}</strong>
+      <em>
+        {guess?.distance_km != null
+          ? formatBattleDistance(guess.distance_km, t, guess.zoom_steps)
+          : t("geo.gave_up")}
+      </em>
+    </div>
+  );
+}
+
+function RoundResultOverlay({ room, t }) {
+  const round = room.round;
+  if (!round) return null;
+
+  return (
+    <div className="geo-battle-controls geo-battle-controls--result">
+      <div className="geo-battle-result-card">
+        <div className="geo-battle-result-header">
+          <div>
+            <div className="geo-battle-result-title">
+              {t("geo_online.round_result")}
+            </div>
+            <div className="geo-battle-result-location">
+              {getRoundPlace(round, t)}
+            </div>
+          </div>
+          <div className="geo-battle-round-outcome">
+            {getRoundWinnerLabel(round, t)}
+          </div>
+        </div>
+        <div className="geo-battle-result-grid">
+          <BattleGuessStat
+            label={t("geo_online.you")}
+            guess={round.my_guess}
+            t={t}
+          />
+          <BattleGuessStat
+            label={t("geo_online.opponent")}
+            guess={round.opponent_guess}
+            t={t}
+          />
+        </div>
+        <div className="geo-battle-result-total">
+          <span>{t("geo_online.total_score")}</span>
+          <span>
+            {room.me.total_score.toLocaleString()} :{" "}
+            {room.opponent?.total_score?.toLocaleString() || 0}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FinalResultOverlay({
+  room,
+  outcomeLabel,
+  actionBusy,
+  onReady,
+  onLeave,
+  t,
+}) {
+  const rounds = room.rounds?.length
+    ? room.rounds
+    : room.round
+      ? [room.round]
+      : [];
+  const outcomeKey =
+    room.me.total_score > (room.opponent?.total_score || 0)
+      ? "win"
+      : room.me.total_score < (room.opponent?.total_score || 0)
+        ? "lose"
+        : "draw";
+
+  return (
+    <div className="geo-battle-controls geo-battle-controls--final">
+      <div className={`geo-battle-final-card geo-battle-final-card--${outcomeKey}`}>
+        <div className="geo-battle-final-hero">
+          <span>{t("geo_online.finished")}</span>
+          <strong>{outcomeLabel}</strong>
+          <em>
+            {t(`geo_online.final_subtitle_${outcomeKey}`, {
+              yourScore: room.me.total_score.toLocaleString(),
+              opponentScore: (room.opponent?.total_score || 0).toLocaleString(),
+            })}
+          </em>
+        </div>
+        <div className="geo-battle-final-scoreboard">
+          <div>
+            <span>{t("geo_online.you")}</span>
+            <strong>{room.me.total_score.toLocaleString()}</strong>
+          </div>
+          <div>
+            <span>{t("geo_online.opponent")}</span>
+            <strong>{(room.opponent?.total_score || 0).toLocaleString()}</strong>
+          </div>
+        </div>
+        <div className="geo-battle-rounds-title">
+          {t("geo_online.final_rounds_title")}
+        </div>
+        <div className="geo-battle-round-list">
+          {rounds.map((round) => (
+            <div className="geo-battle-round-row" key={round.index}>
+              <div className="geo-battle-round-row-main">
+                <strong>{t("geo.round", { n: round.index })}</strong>
+                <span>{getRoundPlace(round, t)}</span>
+              </div>
+              <div className="geo-battle-round-row-scores">
+                <span>{round.my_guess?.score?.toLocaleString() || 0}</span>
+                <em>{getRoundWinnerLabel(round, t)}</em>
+                <span>{round.opponent_guess?.score?.toLocaleString() || 0}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="geo-battle-final-actions">
+          <button
+            type="button"
+            className="geo-battle-primary-btn"
+            disabled={!room.can_ready || actionBusy !== ""}
+            onClick={onReady}
+          >
+            {actionBusy === "ready"
+              ? t("geo_online.loading")
+              : t("geo_online.play_again")}
+          </button>
+          <button
+            type="button"
+            className="geo-battle-secondary-btn"
+            onClick={onLeave}
+          >
+            {t("geo_online.leave_room")}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function getRoomMessage(room, t) {
@@ -636,20 +838,14 @@ function GeoBattleRoomPage({ roomId }) {
       return;
     }
 
-    pendingMarkerRef.current = new maps.Marker({
-      position: guessPin,
-      map: guessMapRef.current,
-      clickable: false,
-      icon: {
-        path: maps.SymbolPath.CIRCLE,
-        scale: 8,
-        fillColor: "#ef4444",
-        fillOpacity: 1,
-        strokeColor: "#fff",
-        strokeWeight: 2,
-      },
-    });
-  }, [clearPendingMarker, guessPin, mapsReady, room?.phase]);
+    pendingMarkerRef.current = createBattleMarker(
+      maps,
+      guessMapRef.current,
+      guessPin,
+      "player",
+      t,
+    );
+  }, [clearPendingMarker, guessPin, mapsReady, room?.phase, t]);
 
   useEffect(() => {
     if (!room) return;
@@ -658,7 +854,7 @@ function GeoBattleRoomPage({ roomId }) {
     clearResultOverlays();
 
     if (room.phase !== "reveal" && room.phase !== "finished") {
-      if (room.phase !== "playing" && room.phase !== "countdown") {
+      if (room.phase !== "playing") {
         resetMapViewport();
       }
       return;
@@ -672,18 +868,7 @@ function GeoBattleRoomPage({ roomId }) {
     bounds.extend(target);
 
     resultMarkersRef.current.push(
-      new maps.Marker({
-        position: target,
-        map: guessMapRef.current,
-        icon: {
-          path: maps.SymbolPath.CIRCLE,
-          scale: 10,
-          fillColor: "#10b981",
-          fillOpacity: 1,
-          strokeColor: "#fff",
-          strokeWeight: 2,
-        },
-      }),
+      createBattleMarker(maps, guessMapRef.current, target, "target", t),
     );
 
     if (room.round.my_guess?.lat != null && room.round.my_guess?.lng != null) {
@@ -693,23 +878,12 @@ function GeoBattleRoomPage({ roomId }) {
       };
       bounds.extend(myGuess);
       resultMarkersRef.current.push(
-        new maps.Marker({
-          position: myGuess,
-          map: guessMapRef.current,
-          icon: {
-            path: maps.SymbolPath.CIRCLE,
-            scale: 8,
-            fillColor: "#ef4444",
-            fillOpacity: 1,
-            strokeColor: "#fff",
-            strokeWeight: 2,
-          },
-        }),
+        createBattleMarker(maps, guessMapRef.current, myGuess, "player", t),
       );
       resultLinesRef.current.push(
         new maps.Polyline({
           path: [myGuess, target],
-          strokeColor: "#ef4444",
+          strokeColor: BATTLE_MARKERS.player.color,
           strokeWeight: 2,
           strokeOpacity: 0.75,
           geodesic: true,
@@ -728,23 +902,18 @@ function GeoBattleRoomPage({ roomId }) {
       };
       bounds.extend(opponentGuess);
       resultMarkersRef.current.push(
-        new maps.Marker({
-          position: opponentGuess,
-          map: guessMapRef.current,
-          icon: {
-            path: maps.SymbolPath.CIRCLE,
-            scale: 8,
-            fillColor: "#2563eb",
-            fillOpacity: 1,
-            strokeColor: "#fff",
-            strokeWeight: 2,
-          },
-        }),
+        createBattleMarker(
+          maps,
+          guessMapRef.current,
+          opponentGuess,
+          "opponent",
+          t,
+        ),
       );
       resultLinesRef.current.push(
         new maps.Polyline({
           path: [opponentGuess, target],
-          strokeColor: "#2563eb",
+          strokeColor: BATTLE_MARKERS.opponent.color,
           strokeWeight: 1.5,
           strokeOpacity: 0.6,
           geodesic: true,
@@ -771,13 +940,14 @@ function GeoBattleRoomPage({ roomId }) {
     refreshMapViewport,
     resetMapViewport,
     room,
+    t,
   ]);
 
   useEffect(() => {
     setGuessPin(null);
     clearPendingMarker();
     clearResultOverlays();
-    if (room?.phase !== "playing" && room?.phase !== "countdown") {
+    if (room?.phase !== "playing") {
       resetMapViewport();
     }
   }, [
@@ -887,7 +1057,7 @@ function GeoBattleRoomPage({ roomId }) {
     setImgLoaded(false);
     setImgError(false);
 
-    fetchGeoBattleImage(room.room_id, controller.signal)
+    fetchGeoBattleImage(room.room_id, imageVersion, controller.signal)
       .then((url) => {
         if (cancelled) {
           URL.revokeObjectURL(url);
@@ -1093,151 +1263,99 @@ function GeoBattleRoomPage({ roomId }) {
                     <span>{t("geo_online.map_loading")}</span>
                   </div>
                 )}
+
+                {room.phase === "lobby" && (
+                  <div className="geo-battle-controls geo-battle-controls--lobby">
+                    <button
+                      type="button"
+                      className="geo-battle-primary-btn"
+                      disabled={!room.can_ready || actionBusy !== ""}
+                      onClick={handleReadyToggle}
+                    >
+                      {actionBusy === "ready"
+                        ? t("geo_online.loading")
+                        : room.me.is_ready
+                          ? t("geo_online.unready")
+                          : t("geo_online.ready")}
+                    </button>
+                    <button
+                      type="button"
+                      className="geo-battle-secondary-btn"
+                      onClick={handleLeaveRoom}
+                    >
+                      {t("geo_online.leave_room")}
+                    </button>
+                  </div>
+                )}
+
+                {room.phase === "playing" && (
+                  <div className="geo-battle-controls geo-battle-controls--playing">
+                    {!guessPin && !room.me.has_submitted_this_round && (
+                      <div className="geo-battle-click-hint">
+                        {t("geo_online.place_guess")}
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      className="geo-battle-primary-btn"
+                      disabled={
+                        !guessPin ||
+                        !room.can_submit_guess ||
+                        actionBusy !== ""
+                      }
+                      onClick={handleSubmitGuess}
+                    >
+                      {actionBusy === "guess"
+                        ? t("geo_online.loading")
+                        : t("geo_online.submit_guess")}
+                    </button>
+                    <button
+                      type="button"
+                      className="geo-battle-secondary-btn"
+                      disabled={!room.can_submit_guess || actionBusy !== ""}
+                      onClick={handleGiveUp}
+                    >
+                      {actionBusy === "give-up"
+                        ? t("geo_online.loading")
+                        : t("geo_online.skip_round")}
+                    </button>
+                    <div className="geo-battle-side-copy">
+                      {room.me.has_submitted_this_round
+                        ? t("geo_online.locked_waiting")
+                        : room.round?.opponent_locked
+                          ? t("geo_online.opponent_locked")
+                          : t("geo_online.place_guess")}
+                    </div>
+                  </div>
+                )}
+
+                {(room.phase === "preparing" ||
+                  room.phase === "countdown") && (
+                  <div className="geo-battle-controls geo-battle-controls--status">
+                    <div className="geo-battle-side-copy">
+                      {room.phase === "preparing"
+                        ? t("geo_online.preparing")
+                        : t("geo_online.round_starts_soon")}
+                    </div>
+                  </div>
+                )}
+
+                {room.phase === "reveal" && (
+                  <RoundResultOverlay room={room} t={t} />
+                )}
+
+                {room.phase === "finished" && (
+                  <FinalResultOverlay
+                    room={room}
+                    outcomeLabel={outcomeLabel}
+                    actionBusy={actionBusy}
+                    onReady={handleReadyToggle}
+                    onLeave={handleLeaveRoom}
+                    t={t}
+                  />
+                )}
               </div>
             )}
-
-            <div className="geo-battle-controls">
-              {(room.phase === "lobby" || room.phase === "finished") && (
-                <>
-                  <button
-                    type="button"
-                    className="geo-battle-primary-btn"
-                    disabled={!room.can_ready || actionBusy !== ""}
-                    onClick={handleReadyToggle}
-                  >
-                    {actionBusy === "ready"
-                      ? t("geo_online.loading")
-                      : room.me.is_ready
-                        ? t("geo_online.unready")
-                        : room.phase === "finished"
-                          ? t("geo_online.play_again")
-                          : t("geo_online.ready")}
-                  </button>
-                  <button
-                    type="button"
-                    className="geo-battle-secondary-btn"
-                    onClick={handleLeaveRoom}
-                  >
-                    {t("geo_online.leave_room")}
-                  </button>
-                </>
-              )}
-
-              {room.phase === "playing" && (
-                <>
-                  {!guessPin && !room.me.has_submitted_this_round && (
-                    <div className="geo-battle-click-hint">
-                      {t("geo_online.place_guess")}
-                    </div>
-                  )}
-                  <button
-                    type="button"
-                    className="geo-battle-primary-btn"
-                    disabled={
-                      !guessPin || !room.can_submit_guess || actionBusy !== ""
-                    }
-                    onClick={handleSubmitGuess}
-                  >
-                    {actionBusy === "guess"
-                      ? t("geo_online.loading")
-                      : t("geo_online.submit_guess")}
-                  </button>
-                  <button
-                    type="button"
-                    className="geo-battle-secondary-btn"
-                    disabled={!room.can_submit_guess || actionBusy !== ""}
-                    onClick={handleGiveUp}
-                  >
-                    {actionBusy === "give-up"
-                      ? t("geo_online.loading")
-                      : t("geo_online.skip_round")}
-                  </button>
-                  <div className="geo-battle-side-copy">
-                    {room.me.has_submitted_this_round
-                      ? t("geo_online.locked_waiting")
-                      : room.round?.opponent_locked
-                        ? t("geo_online.opponent_locked")
-                        : t("geo_online.place_guess")}
-                  </div>
-                </>
-              )}
-
-              {(room.phase === "preparing" || room.phase === "countdown") && (
-                <div className="geo-battle-side-copy">
-                  {room.phase === "preparing"
-                    ? t("geo_online.preparing")
-                    : t("geo_online.round_starts_soon")}
-                </div>
-              )}
-
-              {(room.phase === "reveal" || room.phase === "finished") && (
-                <div className="geo-battle-result-card">
-                  <div className="geo-battle-result-title">
-                    {room.phase === "finished"
-                      ? t("geo_online.finished")
-                      : t("geo_online.round_result")}
-                  </div>
-
-                  {room.round?.target && (
-                    <div className="geo-battle-result-location">
-                      {room.round.target.formatted_address ||
-                        room.round.target.country}
-                    </div>
-                  )}
-
-                  <div className="geo-battle-result-grid">
-                    <div>
-                      <div className="geo-battle-result-label">
-                        {t("geo_online.you")}
-                      </div>
-                      <div className="geo-battle-result-score">
-                        +{room.round?.my_guess?.score?.toLocaleString() || 0}
-                      </div>
-                      <div className="geo-battle-result-distance">
-                        {room.round?.my_guess?.distance_km != null
-                          ? formatBattleDistance(
-                              room.round.my_guess.distance_km,
-                              t,
-                              room.round.my_guess.zoom_steps,
-                            )
-                          : t("geo.gave_up")}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="geo-battle-result-label">
-                        {t("geo_online.opponent")}
-                      </div>
-                      <div className="geo-battle-result-score">
-                        +
-                        {room.round?.opponent_guess?.score?.toLocaleString() ||
-                          0}
-                      </div>
-                      <div className="geo-battle-result-distance">
-                        {room.round?.opponent_guess?.distance_km != null
-                          ? formatBattleDistance(
-                              room.round.opponent_guess.distance_km,
-                              t,
-                              room.round.opponent_guess.zoom_steps,
-                            )
-                          : t("geo.gave_up")}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="geo-battle-result-total">
-                    <span>{t("geo_online.total_score")}</span>
-                    <span>
-                      {room.me.total_score.toLocaleString()} :{" "}
-                      {room.opponent?.total_score?.toLocaleString() || 0}
-                    </span>
-                  </div>
-
-                  {room.phase === "finished" && outcomeLabel && (
-                    <div className="geo-battle-outcome">{outcomeLabel}</div>
-                  )}
-                </div>
-              )}
-            </div>
           </div>
         </div>
       </div>

@@ -1,16 +1,19 @@
 .geo-battle-page {
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
   background:
     linear-gradient(180deg, rgba(21, 94, 117, 0.08), transparent 240px), #f5f7f4;
   color: #172033;
 }
 
 .geo-battle-shell {
-  min-height: 100vh;
-  padding: 24px;
+  box-sizing: border-box;
+  height: 100%;
+  padding: 20px 24px;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 14px;
+  overflow: hidden;
 }
 
 .geo-battle-shell--hub,
@@ -53,9 +56,9 @@
 }
 
 .geo-battle-title {
-  font-size: 34px;
+  font-size: 30px;
   font-weight: 700;
-  letter-spacing: -0.03em;
+  letter-spacing: 0;
   font-family: "Noto Serif SC", "LXGW WenKai", Georgia, serif;
 }
 
@@ -206,7 +209,7 @@
 .geo-battle-phase-label {
   font-size: 13px;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0;
   color: #728097;
 }
 
@@ -357,17 +360,17 @@
 .geo-battle-phase-card {
   background: rgba(255, 255, 255, 0.78);
   border: 1px solid rgba(23, 32, 51, 0.08);
-  border-radius: 20px;
-  padding: 18px;
+  border-radius: 16px;
+  padding: 14px 16px;
   display: grid;
-  gap: 8px;
+  gap: 6px;
 }
 
 .geo-battle-player-name,
 .geo-battle-phase-main,
 .geo-battle-result-score,
 .geo-battle-outcome {
-  font-size: 24px;
+  font-size: 22px;
   font-weight: 700;
 }
 
@@ -385,7 +388,7 @@
 }
 
 .geo-battle-phase-timer {
-  font-size: 30px;
+  font-size: 28px;
   font-weight: 700;
   color: #0f766e;
 }
@@ -396,6 +399,7 @@
   display: grid;
   grid-template-columns: minmax(0, 0.95fr) minmax(420px, 1.05fr);
   gap: 18px;
+  align-items: stretch;
 }
 
 .geo-battle-satellite,
@@ -410,7 +414,8 @@
 
 .geo-battle-satellite {
   display: flex;
-  min-height: 420px;
+  height: 100%;
+  min-height: 0;
 }
 
 .geo-battle-satellite-img {
@@ -509,19 +514,20 @@
 }
 
 .geo-battle-map-panel {
-  display: grid;
-  grid-template-rows: minmax(280px, 1fr) auto;
+  height: 100%;
+  min-height: 0;
 }
 
 .geo-battle-map-stage {
   position: relative;
-  min-height: 320px;
+  height: 100%;
+  min-height: 0;
 }
 
 .geo-battle-map {
   width: 100%;
   height: 100%;
-  min-height: 320px;
+  min-height: 0;
 }
 
 .geo-battle-map-loading {
@@ -549,11 +555,32 @@
 }
 
 .geo-battle-controls {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 16px;
+  z-index: 3;
   display: grid;
   gap: 8px;
   padding: 12px 16px;
-  border-top: 1px solid #e8e4de;
-  background: white;
+  border: 1px solid #e8e4de;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 16px 36px rgba(23, 32, 51, 0.12);
+  backdrop-filter: blur(10px);
+  max-height: calc(100% - 32px);
+  overflow: auto;
+}
+
+.geo-battle-controls--result {
+  left: 18px;
+  right: 18px;
+  bottom: 18px;
+}
+
+.geo-battle-controls--final {
+  top: 18px;
+  bottom: 18px;
 }
 
 .geo-battle-click-hint {
@@ -572,11 +599,18 @@
 
 .geo-battle-result-card {
   display: grid;
+  gap: 10px;
+}
+
+.geo-battle-result-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
   gap: 12px;
 }
 
 .geo-battle-result-title {
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 700;
 }
 
@@ -584,6 +618,7 @@
   color: #172033;
   font-size: 14px;
   line-height: 1.5;
+  max-width: 520px;
 }
 
 .geo-battle-result-grid {
@@ -592,16 +627,207 @@
   gap: 12px;
 }
 
+.geo-battle-guess-stat {
+  display: grid;
+  gap: 2px;
+  padding: 10px;
+  border: 1px solid rgba(23, 32, 51, 0.08);
+  border-radius: 10px;
+  background: rgba(247, 245, 240, 0.82);
+}
+
+.geo-battle-guess-stat span,
+.geo-battle-rounds-title {
+  color: #728097;
+  font-size: 12px;
+  font-weight: 750;
+  text-transform: uppercase;
+  letter-spacing: 0;
+}
+
+.geo-battle-guess-stat strong {
+  color: #172033;
+  font-size: 20px;
+}
+
+.geo-battle-guess-stat em {
+  color: #637087;
+  font-size: 13px;
+  font-style: normal;
+}
+
+.geo-battle-round-outcome {
+  flex-shrink: 0;
+  border-radius: 999px;
+  padding: 6px 10px;
+  background: rgba(15, 118, 110, 0.1);
+  color: #0f766e;
+  font-size: 13px;
+  font-weight: 800;
+}
+
 .geo-battle-outcome {
   color: #0f766e;
 }
 
+.geo-battle-final-card {
+  display: grid;
+  gap: 12px;
+}
+
+.geo-battle-final-hero {
+  display: grid;
+  gap: 4px;
+  padding: 14px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(15, 118, 110, 0.13), rgba(14, 116, 144, 0.07));
+}
+
+.geo-battle-final-hero span {
+  color: #637087;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.geo-battle-final-hero strong {
+  color: #0f766e;
+  font-size: 30px;
+}
+
+.geo-battle-final-hero em {
+  color: #4c5a70;
+  font-size: 14px;
+  font-style: normal;
+  line-height: 1.45;
+}
+
+.geo-battle-final-card--lose .geo-battle-final-hero {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.12), rgba(245, 158, 11, 0.08));
+}
+
+.geo-battle-final-card--lose .geo-battle-final-hero strong {
+  color: #b91c1c;
+}
+
+.geo-battle-final-scoreboard {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.geo-battle-final-scoreboard div {
+  display: grid;
+  gap: 2px;
+  padding: 12px;
+  border: 1px solid rgba(23, 32, 51, 0.08);
+  border-radius: 10px;
+  background: rgba(247, 245, 240, 0.86);
+}
+
+.geo-battle-final-scoreboard span {
+  color: #728097;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.geo-battle-final-scoreboard strong {
+  color: #172033;
+  font-size: 24px;
+}
+
+.geo-battle-round-list {
+  display: grid;
+  gap: 6px;
+}
+
+.geo-battle-round-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 9px 10px;
+  border: 1px solid rgba(23, 32, 51, 0.07);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.62);
+}
+
+.geo-battle-round-row-main {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.geo-battle-round-row-main strong {
+  color: #172033;
+  font-size: 13px;
+}
+
+.geo-battle-round-row-main span {
+  overflow: hidden;
+  color: #637087;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.geo-battle-round-row-scores {
+  display: grid;
+  grid-template-columns: 48px auto 48px;
+  gap: 8px;
+  align-items: center;
+  color: #172033;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.geo-battle-round-row-scores span {
+  text-align: right;
+}
+
+.geo-battle-round-row-scores span:last-child {
+  text-align: left;
+}
+
+.geo-battle-round-row-scores em {
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: rgba(15, 118, 110, 0.08);
+  color: #0f766e;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.geo-battle-final-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+}
+
 @media (max-width: 980px) {
+  .geo-battle-page {
+    height: auto;
+    min-height: 100vh;
+    overflow: visible;
+  }
+
+  .geo-battle-shell {
+    height: auto;
+    min-height: 100vh;
+    overflow: visible;
+  }
+
   .geo-battle-hub-grid,
   .geo-battle-choice-grid,
   .geo-battle-status-bar,
   .geo-battle-board {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .geo-battle-satellite,
+  .geo-battle-map-panel {
+    min-height: 360px;
   }
 
   .geo-battle-shell--hub .geo-battle-topbar {
@@ -650,8 +876,19 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .geo-battle-map-panel {
-    grid-template-rows: minmax(260px, 1fr) auto;
+  .geo-battle-final-scoreboard,
+  .geo-battle-final-actions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .geo-battle-round-row,
+  .geo-battle-round-row-scores {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .geo-battle-round-row-scores span,
+  .geo-battle-round-row-scores span:last-child {
+    text-align: left;
   }
 }
 

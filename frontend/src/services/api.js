@@ -443,12 +443,15 @@ async function requestJson(path, options = {}, timeout = DEFAULT_TIMEOUT) {
   }
 }
 
-export async function fetchGeoBattleImage(roomId, signal = null) {
+export async function fetchGeoBattleImage(roomId, cacheKey = "", signal = null) {
   const fetchOptions = { method: "GET", headers: getHeaders() };
   if (signal instanceof AbortSignal) fetchOptions.signal = signal;
 
+  const query = cacheKey
+    ? `?v=${encodeURIComponent(cacheKey)}`
+    : "";
   const resp = await fetch(
-    `${API_V1}/geo/online/rooms/${encodeURIComponent(roomId)}/image`,
+    `${API_V1}/geo/online/rooms/${encodeURIComponent(roomId)}/image${query}`,
     fetchOptions,
   );
   if (!resp.ok) {
