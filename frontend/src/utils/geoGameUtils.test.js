@@ -12,6 +12,7 @@ import {
   getEntryCountryCode,
   isPerfectGuess,
 } from "./geoGameUtils";
+import GEO_DATABASE from "../data/geoDatabase";
 
 describe("haversineDistance", () => {
   it("returns 0 for the same point", () => {
@@ -99,6 +100,39 @@ describe("constants", () => {
     expect(TOTAL_ROUNDS).toBe(5);
     expect(START_ZOOM).toBe(14);
     expect(MIN_ZOOM).toBe(2);
+  });
+});
+
+describe("geo database", () => {
+  it("contains exactly 1000 curated and supplemental entries", () => {
+    expect(GEO_DATABASE).toHaveLength(1000);
+    expect(new Set(GEO_DATABASE.map((entry) => entry.country)).size).toBeGreaterThan(
+      150,
+    );
+    expect(
+      GEO_DATABASE.every(
+        (entry) =>
+          entry.name &&
+          entry.nameZh &&
+          entry.country &&
+          entry.countryZh &&
+          Number.isFinite(entry.lat) &&
+          Number.isFinite(entry.lng) &&
+          [1, 2, 3].includes(entry.difficulty),
+      ),
+    ).toBe(true);
+  });
+
+  it("supports country filtering through supplemental country codes", () => {
+    const plan = generateRoundPlan(5, "AF");
+    const databaseRounds = plan.filter((round) => round.source === "database");
+
+    expect(databaseRounds.length).toBeGreaterThan(0);
+    expect(
+      databaseRounds.every(
+        (round) => getEntryCountryCode(round.entry) === "AF",
+      ),
+    ).toBe(true);
   });
 });
 

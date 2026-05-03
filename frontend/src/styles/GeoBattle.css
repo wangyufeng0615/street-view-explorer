@@ -401,9 +401,9 @@
 .geo-battle-satellite,
 .geo-battle-map-panel {
   min-height: 0;
-  background: rgba(255, 255, 255, 0.7);
-  border: 1px solid rgba(23, 32, 51, 0.08);
-  border-radius: 24px;
+  background: #f7f5f0;
+  border: 1px solid #e8e4de;
+  border-radius: 12px;
   overflow: hidden;
   position: relative;
 }
@@ -439,6 +439,58 @@
 
 .geo-battle-overlay--placeholder {
   min-height: 0;
+}
+
+.geo-battle-satellite-controls {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px;
+  border: 1px solid rgba(255, 112, 67, 0.35);
+  border-radius: 14px;
+  background: rgba(255, 247, 237, 0.94);
+  color: #7c2d12;
+  box-shadow: 0 14px 34px rgba(154, 52, 18, 0.24);
+  backdrop-filter: blur(10px);
+  z-index: 3;
+}
+
+.geo-battle-satellite-controls span {
+  min-width: max-content;
+  padding: 0 6px;
+  font-size: 14px;
+  font-weight: 750;
+}
+
+.geo-battle-zoom-btn {
+  min-width: 136px;
+  padding: 12px 20px;
+  background: linear-gradient(135deg, #ff7043, #ff5722);
+  color: white;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 800;
+  box-shadow: 0 7px 18px rgba(255, 87, 34, 0.3);
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease,
+    opacity 0.18s ease;
+}
+
+.geo-battle-zoom-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 24px rgba(255, 87, 34, 0.36);
+}
+
+.geo-battle-zoom-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .geo-battle-spinner {
@@ -498,9 +550,24 @@
 
 .geo-battle-controls {
   display: grid;
-  gap: 12px;
-  padding: 18px;
-  border-top: 1px solid rgba(23, 32, 51, 0.08);
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid #e8e4de;
+  background: white;
+}
+
+.geo-battle-click-hint {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid rgba(14, 116, 144, 0.28);
+  border-radius: 8px;
+  background: rgba(14, 116, 144, 0.08);
+  color: #164e63;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.35;
+  text-align: left;
 }
 
 .geo-battle-result-card {

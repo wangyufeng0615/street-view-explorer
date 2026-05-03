@@ -5,7 +5,9 @@
  * at zoom 14 (~2 km view). Difficulty: 1 = easy, 2 = medium, 3 = hard.
  */
 
-const GEO_DATABASE = [
+import GEO_SUPPLEMENTAL_DATABASE from "./geoSupplementalDatabase";
+
+const GEO_CURATED_DATABASE = [
 
   // ═══════════════════════════════════════════════════════════
   // EUROPE
@@ -466,5 +468,7 @@ const GEO_DATABASE = [
   { name: 'Shark Bay',          nameZh: '鲨鱼湾',       country: 'Australia',      countryZh: '澳大利亚', lat: -25.929, lng: 113.534,  difficulty: 2 },
   { name: 'Mount Cook',         nameZh: '库克山',       country: 'New Zealand',    countryZh: '新西兰',   lat: -43.595, lng: 170.141,  difficulty: 1 },
 ];
+
+const GEO_DATABASE = [...GEO_CURATED_DATABASE, ...GEO_SUPPLEMENTAL_DATABASE];
 
 export default GEO_DATABASE;

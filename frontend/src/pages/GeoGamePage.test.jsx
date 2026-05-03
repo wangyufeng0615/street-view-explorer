@@ -36,9 +36,29 @@ global.fetch = vi.fn().mockResolvedValue({
   json: () => Promise.resolve({ success: false }),
 });
 
-import GeoGamePage from "./GeoGamePage";
+import GeoGamePage, { getGameOverAtlasMessage } from "./GeoGamePage";
 import { loadGoogleMapsScript } from "../utils/googleMaps";
 import { getRandomLocation } from "../services/api";
+
+function makeSummaryT() {
+  return (key, params = {}) => {
+    const templates = {
+      "geo.place_list_pair": `${params.first} and ${params.second}`,
+      "geo.place_list_trio": `${params.first}, ${params.second}, and ${params.third}`,
+      "geo.gameover_atlas_outcome_win": "win",
+      "geo.gameover_atlas_outcome_lose": "lose",
+      "geo.gameover_atlas_note_multi_hit": `multi:${params.perfectPlaceList}|best:${params.bestPlace}|score:${params.score}|${params.outcome}`,
+      "geo.gameover_atlas_note_mixed_hit": `mixed:${params.perfectPlaceList}|second:${params.secondPlace}|rough:${params.roughPlace}|score:${params.score}|${params.outcome}`,
+      "geo.gameover_atlas_note_good": `good:${params.placeList}|best:${params.bestPlace}|${params.outcome}`,
+      "geo.gameover_atlas_note_rough": `rough:${params.placeList}|best:${params.bestPlace}|${params.outcome}`,
+      "geo.gameover_atlas_note_giveup": `giveup:${params.score}|${params.outcome}`,
+      "geo.plain_score_value": `${params.score} pts`,
+      "geo.perfect_distance_short": "right area",
+      "geo.unknown_place": "Unknown",
+    };
+    return templates[key] || key;
+  };
+}
 
 function createMapsMock(onMapClickHandler) {
   return {
@@ -103,6 +123,68 @@ describe("GeoGamePage", () => {
     expect(screen.getByText("geo.subtitle")).toBeInTheDocument();
     expect(screen.queryByText("geo.welcome_rule_1")).not.toBeInTheDocument();
     expect(screen.queryByText("geo.welcome_rule_2")).not.toBeInTheDocument();
+  });
+
+  it("summarizes multiple strong rounds in Atlas's game-over note", () => {
+    const t = makeSummaryT();
+    const state = {
+      aiEnabled: true,
+      scores: [
+        {
+          playerScore: 4800,
+          distance: 5,
+          zoomSteps: 10,
+          locationLabel: "London",
+        },
+        {
+          playerScore: 4700,
+          distance: 4,
+          zoomSteps: 9,
+          locationLabel: "Paris",
+        },
+        {
+          playerScore: 1900,
+          distance: 900,
+          zoomSteps: 1,
+          locationLabel: "Sahara",
+        },
+      ],
+    };
+
+    expect(getGameOverAtlasMessage(state, t, 11400, 9000)).toBe(
+      "multi:Paris and London|best:Paris|score:11,400 pts|win",
+    );
+  });
+
+  it("uses a mixed Atlas note when only one round hits the right area", () => {
+    const t = makeSummaryT();
+    const state = {
+      aiEnabled: true,
+      scores: [
+        {
+          playerScore: 4500,
+          distance: 8,
+          zoomSteps: 8,
+          locationLabel: "London",
+        },
+        {
+          playerScore: 3100,
+          distance: 160,
+          zoomSteps: 3,
+          locationLabel: "Reykjavik",
+        },
+        {
+          playerScore: 900,
+          distance: 1600,
+          zoomSteps: 0,
+          locationLabel: "Patagonia",
+        },
+      ],
+    };
+
+    expect(getGameOverAtlasMessage(state, t, 8500, 9200)).toBe(
+      "mixed:London|second:Reykjavik|rough:Patagonia|score:8,500 pts|lose",
+    );
   });
 
   it("invites friends online", () => {

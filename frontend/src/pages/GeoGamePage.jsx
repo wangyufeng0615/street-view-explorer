@@ -423,7 +423,42 @@ function getCurrentAtlasScore(state) {
   return completedScore + pendingScore;
 }
 
-function getGameOverAtlasMessage(state, t, playerTotal, aiTotal) {
+function getRoundPlace(round, t) {
+  return round.locationLabel || t("geo.unknown_place");
+}
+
+function getUniquePlaces(rounds, t, limit = 3) {
+  const seen = new Set();
+  const places = [];
+
+  for (const round of rounds) {
+    const place = getRoundPlace(round, t);
+    if (!seen.has(place)) {
+      seen.add(place);
+      places.push(place);
+    }
+    if (places.length >= limit) break;
+  }
+
+  return places;
+}
+
+function formatPlaceList(places, t) {
+  if (places.length <= 1) return places[0] || t("geo.unknown_place");
+  if (places.length === 2) {
+    return t("geo.place_list_pair", {
+      first: places[0],
+      second: places[1],
+    });
+  }
+  return t("geo.place_list_trio", {
+    first: places[0],
+    second: places[1],
+    third: places[2],
+  });
+}
+
+export function getGameOverAtlasMessage(state, t, playerTotal, aiTotal) {
   const guessedRounds = state.scores.filter((r) => Number.isFinite(r.distance));
   const outcome =
     state.aiEnabled && aiTotal != null
@@ -439,21 +474,36 @@ function getGameOverAtlasMessage(state, t, playerTotal, aiTotal) {
     }).trim();
   }
 
-  const bestRound = guessedRounds.reduce((best, round) =>
-    round.distance < best.distance ? round : best,
+  const sortedRounds = [...guessedRounds].sort((a, b) => a.distance - b.distance);
+  const bestRound = sortedRounds[0];
+  const secondRound = sortedRounds[1] || bestRound;
+  const roughRound = sortedRounds[sortedRounds.length - 1] || bestRound;
+  const perfectRounds = sortedRounds.filter((round) =>
+    isPerfectGuess(round.distance, round.zoomSteps),
   );
+  const perfectPlaces = getUniquePlaces(perfectRounds, t, 3);
+  const highlightPlaces = getUniquePlaces(sortedRounds, t, 3);
   const averageDistance =
     guessedRounds.reduce((sum, round) => sum + round.distance, 0) /
     guessedRounds.length;
   const params = {
-    place: bestRound.locationLabel || t("geo.unknown_place"),
+    place: getRoundPlace(bestRound, t),
+    bestPlace: getRoundPlace(bestRound, t),
+    secondPlace: getRoundPlace(secondRound, t),
+    roughPlace: getRoundPlace(roughRound, t),
+    placeList: formatPlaceList(highlightPlaces, t),
+    perfectPlaceList: formatPlaceList(perfectPlaces, t),
+    perfectCount: perfectRounds.length,
     distance: formatResultDistance(bestRound.distance, t, true, bestRound.zoomSteps),
     score: formatPlainScore(t, playerTotal),
     outcome,
   };
 
-  if (isPerfectGuess(bestRound.distance, bestRound.zoomSteps)) {
-    return t("geo.gameover_atlas_note_perfect", params).trim();
+  if (perfectRounds.length >= 2) {
+    return t("geo.gameover_atlas_note_multi_hit", params).trim();
+  }
+  if (perfectRounds.length === 1 && guessedRounds.length >= 3) {
+    return t("geo.gameover_atlas_note_mixed_hit", params).trim();
   }
   if (averageDistance <= 250 || playerTotal >= 12000) {
     return t("geo.gameover_atlas_note_good", params).trim();
@@ -1384,7 +1434,7 @@ function GameOverModal({ state, t, onRestart, onNext }) {
         <div className="geo-gameover-atlas-note">
           <div>
             <MarkerPin type="atlas" />
-            <span>Atlas</span>
+            <span>{t("geo.gameover_atlas_note_title")}</span>
           </div>
           <p>{atlasMessage}</p>
         </div>

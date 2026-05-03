@@ -411,6 +411,7 @@ function GeoBattleRoomPage({ roomId }) {
   const [actionBusy, setActionBusy] = useState("");
   const [syncFailures, setSyncFailures] = useState(0);
   const [mapsReady, setMapsReady] = useState(false);
+  const [mapReady, setMapReady] = useState(false);
   const [mapsError, setMapsError] = useState(false);
   const [guessPin, setGuessPin] = useState(null);
   const [imgLoaded, setImgLoaded] = useState(false);
@@ -456,12 +457,20 @@ function GeoBattleRoomPage({ roomId }) {
     resultLinesRef.current = [];
   }, []);
 
+  const refreshMapViewport = useCallback(() => {
+    const maps = mapsAPIRef.current;
+    if (maps?.event && guessMapRef.current) {
+      maps.event.trigger(guessMapRef.current, "resize");
+    }
+  }, []);
+
   const resetMapViewport = useCallback(() => {
     if (guessMapRef.current) {
+      refreshMapViewport();
       guessMapRef.current.setCenter(WORLD_CENTER);
       guessMapRef.current.setZoom(2);
     }
-  }, []);
+  }, [refreshMapViewport]);
 
   const applyRoomResponse = useCallback(
     (response) => {
@@ -477,7 +486,12 @@ function GeoBattleRoomPage({ roomId }) {
   );
 
   const loadRoomSnapshot = useCallback(async () => {
-    const res = await getGeoBattleRoom(roomId);
+    let res;
+    try {
+      res = await getGeoBattleRoom(roomId);
+    } catch (error) {
+      res = { success: false, error: error.message };
+    }
     if (res.success && res.data?.room) {
       setRoom(res.data.room);
       setFatalError("");
@@ -524,11 +538,13 @@ function GeoBattleRoomPage({ roomId }) {
   }, []);
 
   useEffect(() => {
-    if (!mapsReady || !guessMapElRef.current || guessMapRef.current) {
+    if (!room || !mapsReady || !guessMapElRef.current || guessMapRef.current) {
       return;
     }
 
+    let cancelled = false;
     const maps = mapsAPIRef.current;
+    if (!maps) return;
     const map = new maps.Map(guessMapElRef.current, {
       center: WORLD_CENTER,
       zoom: 2,
@@ -552,7 +568,59 @@ function GeoBattleRoomPage({ roomId }) {
     });
 
     guessMapRef.current = map;
-  }, [mapsReady]);
+    setMapReady(false);
+
+    const fallbackId = window.setTimeout(() => {
+      if (!cancelled) setMapReady(true);
+    }, 1800);
+
+    if (maps.event?.addListenerOnce) {
+      maps.event.addListenerOnce(map, "idle", () => {
+        if (!cancelled) {
+          window.clearTimeout(fallbackId);
+          setMapReady(true);
+        }
+      });
+    } else {
+      window.setTimeout(() => {
+        if (!cancelled) setMapReady(true);
+      }, 0);
+    }
+
+    window.requestAnimationFrame(() => {
+      if (cancelled) return;
+      refreshMapViewport();
+      map.setCenter(WORLD_CENTER);
+    });
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(fallbackId);
+      if (guessMapRef.current === map) {
+        maps.event?.clearInstanceListeners?.(map);
+        guessMapRef.current = null;
+      }
+    };
+  }, [mapsReady, refreshMapViewport, room?.room_id]);
+
+  useEffect(() => {
+    if (!room || !guessMapRef.current) return undefined;
+
+    const refresh = () => {
+      refreshMapViewport();
+    };
+
+    refresh();
+
+    if (typeof ResizeObserver === "undefined" || !guessMapElRef.current) {
+      window.addEventListener("resize", refresh);
+      return () => window.removeEventListener("resize", refresh);
+    }
+
+    const observer = new ResizeObserver(refresh);
+    observer.observe(guessMapElRef.current);
+    return () => observer.disconnect();
+  }, [refreshMapViewport, room?.room_id]);
 
   useEffect(() => {
     if (!mapsReady || !guessMapRef.current) return;
@@ -685,11 +753,22 @@ function GeoBattleRoomPage({ roomId }) {
       );
     }
 
-    guessMapRef.current.fitBounds(bounds, 40);
+    const fitVisibleMap = () => {
+      if (!guessMapRef.current) return;
+      refreshMapViewport();
+      guessMapRef.current.fitBounds(bounds, 40);
+    };
+    const frameId = window.requestAnimationFrame(fitVisibleMap);
+    const timerId = window.setTimeout(fitVisibleMap, 280);
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      window.clearTimeout(timerId);
+    };
   }, [
     clearPendingMarker,
     clearResultOverlays,
     mapsReady,
+    refreshMapViewport,
     resetMapViewport,
     room,
   ]);
@@ -711,9 +790,13 @@ function GeoBattleRoomPage({ roomId }) {
   const runAction = useCallback(async (actionName, runner) => {
     setActionBusy(actionName);
     setActionError("");
-    const res = await runner();
-    setActionBusy("");
-    return res;
+    try {
+      return await runner();
+    } catch (error) {
+      return { success: false, error: error.message };
+    } finally {
+      setActionBusy("");
+    }
   }, []);
 
   const handleReadyToggle = async () => {
@@ -967,6 +1050,27 @@ function GeoBattleRoomPage({ roomId }) {
                     <span>{t("geo_online.image_error")}</span>
                   </div>
                 )}
+                {room.phase === "playing" && (
+                  <div className="geo-battle-satellite-controls">
+                    <button
+                      type="button"
+                      className="geo-battle-zoom-btn"
+                      disabled={!room.can_zoom_out || actionBusy !== ""}
+                      onClick={handleZoomOut}
+                      aria-busy={actionBusy === "zoom"}
+                    >
+                      {actionBusy === "zoom"
+                        ? t("geo_online.loading")
+                        : t("geo_online.zoom_out")}
+                    </button>
+                    <span>
+                      {t("geo.zoom_out_count")}:{" "}
+                      {t("geo.zoom_out_count_value", {
+                        count: room.round?.zoom_steps || 0,
+                      })}
+                    </span>
+                  </div>
+                )}
               </>
             ) : (
               <div className="geo-battle-overlay geo-battle-overlay--placeholder">
@@ -983,7 +1087,7 @@ function GeoBattleRoomPage({ roomId }) {
             ) : (
               <div className="geo-battle-map-stage">
                 <div ref={guessMapElRef} className="geo-battle-map" />
-                {!mapsReady && (
+                {(!mapsReady || !mapReady) && (
                   <div className="geo-battle-map-loading">
                     <div className="geo-battle-spinner" />
                     <span>{t("geo_online.map_loading")}</span>
@@ -1021,16 +1125,11 @@ function GeoBattleRoomPage({ roomId }) {
 
               {room.phase === "playing" && (
                 <>
-                  <button
-                    type="button"
-                    className="geo-battle-secondary-btn"
-                    disabled={!room.can_zoom_out || actionBusy !== ""}
-                    onClick={handleZoomOut}
-                  >
-                    {actionBusy === "zoom"
-                      ? t("geo_online.loading")
-                      : `${t("geo_online.zoom_out")} (${room.round?.zoom_steps || 0})`}
-                  </button>
+                  {!guessPin && !room.me.has_submitted_this_round && (
+                    <div className="geo-battle-click-hint">
+                      {t("geo_online.place_guess")}
+                    </div>
+                  )}
                   <button
                     type="button"
                     className="geo-battle-primary-btn"
