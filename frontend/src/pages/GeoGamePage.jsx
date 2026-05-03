@@ -15,7 +15,6 @@ import {
   TOTAL_ROUNDS,
   START_ZOOM,
   MIN_ZOOM,
-  PERFECT_GUESS_DISTANCE_KM,
   haversineDistance,
   calculateScore,
   formatDistance,
@@ -43,6 +42,7 @@ const RESULT_PIN_SPREAD_DISTANCE_KM = 50;
 const RESULT_PIN_OFFSET_PX = 16;
 const STATIC_MAP_MAX_SIDE = 640;
 const STATIC_MAP_MIN_SIDE = 120;
+const SATELLITE_ZOOM_TRANSITION_MS = 760;
 
 // ─── State ──────────────────────────────────────────────────
 
@@ -59,7 +59,6 @@ const initialState = {
   aiGuess: null,
   aiLoading: false,
   roundPlan: null, // Array<{ source: 'database'|'random', entry? }>
-  preloadedTargets: {}, // round number -> target
   countryCode: "",
 };
 
@@ -67,9 +66,7 @@ function reducer(state, action) {
   switch (action.type) {
     case "START_GAME": {
       const countryCode = normalizeCountryCode(action.countryCode);
-      const roundPlan = countryCode
-        ? Array.from({ length: TOTAL_ROUNDS }, () => ({ source: "random" }))
-        : generateRoundPlan(TOTAL_ROUNDS);
+      const roundPlan = generateRoundPlan(TOTAL_ROUNDS, countryCode);
       return {
         ...initialState,
         phase: "LOADING",
@@ -80,25 +77,28 @@ function reducer(state, action) {
       };
     }
     case "SET_TARGET":
+      if (state.phase !== "LOADING") return state;
       return {
         ...state,
         phase: "PLAYING",
         target: action.payload,
-        preloadedTargets: omitPreloadedTarget(
-          state.preloadedTargets,
-          state.round,
-        ),
       };
     case "ZOOM_OUT":
-      if (state.currentZoom <= MIN_ZOOM) return state;
+      if (state.phase !== "PLAYING" || state.currentZoom <= MIN_ZOOM) {
+        return state;
+      }
       return {
         ...state,
         zoomSteps: state.zoomSteps + 1,
         currentZoom: state.currentZoom - 1,
       };
     case "PLACE_PIN":
+      if (state.phase !== "PLAYING") return state;
       return { ...state, guessPin: action.payload };
     case "LOCK_IN": {
+      if (state.phase !== "PLAYING" || !state.guessPin || !state.target) {
+        return state;
+      }
       const { lat, lng } = state.guessPin;
       const dist = haversineDistance(
         lat,
@@ -117,6 +117,7 @@ function reducer(state, action) {
       };
     }
     case "GIVE_UP":
+      if (state.phase !== "PLAYING" || !state.target) return state;
       return {
         ...state,
         phase: "ROUND_RESULT",
@@ -126,10 +127,19 @@ function reducer(state, action) {
         aiLoading: state.aiEnabled,
       };
     case "SET_AI_GUESS":
+      if (state.phase !== "ROUND_RESULT") return state;
       return { ...state, aiGuess: action.payload, aiLoading: false };
     case "SET_AI_LOADING":
+      if (state.phase !== "ROUND_RESULT") return state;
       return { ...state, aiLoading: true };
     case "NEXT_ROUND": {
+      if (
+        state.phase !== "ROUND_RESULT" ||
+        !state.target ||
+        !state.guessResult
+      ) {
+        return state;
+      }
       const roundResult = {
         playerScore: state.guessResult?.score || 0,
         distance: state.guessResult?.distance ?? null,
@@ -153,31 +163,14 @@ function reducer(state, action) {
         aiGuess: null,
         aiLoading: false,
         roundPlan: state.roundPlan, // preserve across rounds
-        preloadedTargets: state.preloadedTargets,
         countryCode: state.countryCode,
       };
     }
-    case "SET_PRELOADED_TARGET":
-      if (!action.round || state.preloadedTargets[action.round]) return state;
-      return {
-        ...state,
-        preloadedTargets: {
-          ...state.preloadedTargets,
-          [action.round]: action.payload,
-        },
-      };
     case "RESTART":
       return { ...initialState };
     default:
       return state;
   }
-}
-
-function omitPreloadedTarget(preloadedTargets, round) {
-  if (!preloadedTargets?.[round]) return preloadedTargets || {};
-  const nextTargets = { ...preloadedTargets };
-  delete nextTargets[round];
-  return nextTargets;
 }
 
 function normalizeCountryCode(countryCode) {
@@ -310,28 +303,11 @@ function getResultPinOffsets(target, guessResult, aiGuess) {
   return { target: 0, player: 0, atlas: 0 };
 }
 
-function formatPerfectDistanceLabel() {
-  return PERFECT_GUESS_DISTANCE_KM === 1
-    ? "1 km"
-    : formatDistance(PERFECT_GUESS_DISTANCE_KM);
-}
-
-function formatPerfectDistanceShortLabel(t) {
-  return PERFECT_GUESS_DISTANCE_KM === 1
-    ? t("geo.one_km")
-    : formatDistance(PERFECT_GUESS_DISTANCE_KM);
-}
-
-function formatResultDistance(distance, t, compact = false) {
-  if (isPerfectGuess(distance)) {
-    if (compact) {
-      return t("geo.perfect_distance_short", {
-        distance: formatPerfectDistanceShortLabel(t),
-      });
-    }
-    return t("geo.perfect_guess_distance", {
-      distance: formatPerfectDistanceLabel(),
-    });
+function formatResultDistance(distance, t, compact = false, zoomSteps = 0) {
+  if (isPerfectGuess(distance, zoomSteps)) {
+    return compact
+      ? t("geo.perfect_distance_short")
+      : t("geo.perfect_guess_distance");
   }
   return formatDistance(distance);
 }
@@ -421,7 +397,7 @@ async function getRandomRoundTarget(language, countryCode) {
 }
 
 async function resolveRoundTarget(plan, language, countryCode) {
-  if (plan?.source === "database" && !countryCode) {
+  if (plan?.source === "database") {
     return getDatabaseRoundTarget(plan.entry, language);
   }
   return getRandomRoundTarget(language, countryCode);
@@ -471,12 +447,12 @@ function getGameOverAtlasMessage(state, t, playerTotal, aiTotal) {
     guessedRounds.length;
   const params = {
     place: bestRound.locationLabel || t("geo.unknown_place"),
-    distance: formatResultDistance(bestRound.distance, t, true),
+    distance: formatResultDistance(bestRound.distance, t, true, bestRound.zoomSteps),
     score: formatPlainScore(t, playerTotal),
     outcome,
   };
 
-  if (isPerfectGuess(bestRound.distance)) {
+  if (isPerfectGuess(bestRound.distance, bestRound.zoomSteps)) {
     return t("geo.gameover_atlas_note_perfect", params).trim();
   }
   if (averageDistance <= 250 || playerTotal >= 12000) {
@@ -528,7 +504,7 @@ function ResultStats({ score, distance, zoomSteps, t }) {
       />
       <ResultMetric
         label={t("geo.distance_error")}
-        value={formatResultDistance(distance, t, true)}
+        value={formatResultDistance(distance, t, true, zoomSteps)}
         variant="distance"
       />
       {zoomSteps !== undefined && (
@@ -564,15 +540,20 @@ export default function GeoGamePage() {
   const resultMarkersRef = useRef([]);
   const resultLinesRef = useRef([]);
   const stateRef = useRef(state);
+  const preloadedTargetsRef = useRef({});
   stateRef.current = state;
 
   const [mapsReady, setMapsReady] = useState(false);
   const [mapsError, setMapsError] = useState(false);
   const [imgLoaded, setImgLoaded] = useState(false);
   const [imgError, setImgError] = useState(false);
+  const [zoomTransition, setZoomTransition] = useState(null);
+  const [zoomTransitionLoading, setZoomTransitionLoading] = useState(false);
   const [satelliteImageSize, setSatelliteImageSize] = useState(
     getInitialSatelliteRequestSize,
   );
+  const zoomTransitionRequestRef = useRef(0);
+  const zoomTransitionTimerRef = useRef(null);
 
   // ─── Fetch location: database entry or random API ───
   // Active language is read via ref to avoid re-triggering round selection.
@@ -582,8 +563,9 @@ export default function GeoGamePage() {
   useEffect(() => {
     if (state.phase !== "LOADING" || !state.roundPlan) return;
     const plan = state.roundPlan[state.round - 1];
-    const preloadedTarget = state.preloadedTargets[state.round];
+    const preloadedTarget = preloadedTargetsRef.current[state.round];
     if (preloadedTarget) {
+      delete preloadedTargetsRef.current[state.round];
       dispatch({ type: "SET_TARGET", payload: preloadedTarget });
       return;
     }
@@ -607,7 +589,6 @@ export default function GeoGamePage() {
     state.phase,
     state.round,
     state.roundPlan,
-    state.preloadedTargets,
     state.countryCode,
   ]);
 
@@ -702,7 +683,7 @@ export default function GeoGamePage() {
       return;
     }
     const nextRound = state.round + 1;
-    if (state.preloadedTargets[nextRound]) return;
+    if (preloadedTargetsRef.current[nextRound]) return;
 
     let cancelled = false;
     const plan = state.roundPlan[nextRound - 1];
@@ -713,11 +694,7 @@ export default function GeoGamePage() {
         state.countryCode,
       );
       if (cancelled || !target) return;
-      dispatch({
-        type: "SET_PRELOADED_TARGET",
-        round: nextRound,
-        payload: target,
-      });
+      preloadedTargetsRef.current[nextRound] = target;
       const img = new Image();
       img.src = satUrl(target, START_ZOOM, satelliteImageSize);
     })();
@@ -729,7 +706,6 @@ export default function GeoGamePage() {
     state.phase,
     state.round,
     state.roundPlan,
-    state.preloadedTargets,
     state.countryCode,
     satelliteImageSize,
   ]);
@@ -738,7 +714,28 @@ export default function GeoGamePage() {
   useEffect(() => {
     setImgLoaded(false);
     setImgError(false);
+    setZoomTransitionLoading(false);
   }, [state.currentZoom, state.target]);
+
+  useEffect(() => {
+    setZoomTransition(null);
+    setZoomTransitionLoading(false);
+    zoomTransitionRequestRef.current += 1;
+    if (zoomTransitionTimerRef.current) {
+      window.clearTimeout(zoomTransitionTimerRef.current);
+      zoomTransitionTimerRef.current = null;
+    }
+  }, [state.target]);
+
+  useEffect(
+    () => () => {
+      zoomTransitionRequestRef.current += 1;
+      if (zoomTransitionTimerRef.current) {
+        window.clearTimeout(zoomTransitionTimerRef.current);
+      }
+    },
+    [],
+  );
 
   // ─── Show result markers (re-runs when AI guess arrives late) ───
   useEffect(() => {
@@ -927,6 +924,22 @@ export default function GeoGamePage() {
       guessInstanceRef.current.setZoom(2);
     }
   }
+
+  const cancelSatelliteZoomTransition = useCallback(() => {
+    zoomTransitionRequestRef.current += 1;
+    if (zoomTransitionTimerRef.current) {
+      window.clearTimeout(zoomTransitionTimerRef.current);
+      zoomTransitionTimerRef.current = null;
+    }
+    setZoomTransition(null);
+    setZoomTransitionLoading(false);
+  }, []);
+
+  useEffect(() => {
+    if (state.phase === "PLAYING") return;
+    cancelSatelliteZoomTransition();
+  }, [state.phase, cancelSatelliteZoomTransition]);
+
   useEffect(() => {
     if (state.phase !== "WELCOME") return;
     cleanupMarkers();
@@ -934,19 +947,106 @@ export default function GeoGamePage() {
   }, [state.phase]);
 
   const handleNextRound = useCallback(() => {
-    if (stateRef.current.aiEnabled && stateRef.current.aiLoading) return;
     cleanupMarkers();
+    cancelSatelliteZoomTransition();
     dispatch({ type: "NEXT_ROUND" });
-  }, []);
+  }, [cancelSatelliteZoomTransition]);
   const handleRestart = useCallback(() => {
     cleanupMarkers();
+    preloadedTargetsRef.current = {};
+    cancelSatelliteZoomTransition();
     dispatch({ type: "RESTART" });
-  }, []);
+  }, [cancelSatelliteZoomTransition]);
+  const handleLockIn = useCallback(() => {
+    cancelSatelliteZoomTransition();
+    dispatch({ type: "LOCK_IN" });
+  }, [cancelSatelliteZoomTransition]);
+  const handleGiveUp = useCallback(() => {
+    cancelSatelliteZoomTransition();
+    dispatch({ type: "GIVE_UP" });
+  }, [cancelSatelliteZoomTransition]);
+  const handleStartGame = useCallback(
+    (options) => {
+      preloadedTargetsRef.current = {};
+      cancelSatelliteZoomTransition();
+      dispatch({ type: "START_GAME", ...options });
+    },
+    [cancelSatelliteZoomTransition, dispatch],
+  );
 
   const satelliteUrl = state.target
     ? satUrl(state.target, state.currentZoom, satelliteImageSize)
     : null;
-  const canZoomOut = state.currentZoom > MIN_ZOOM && state.phase === "PLAYING";
+  const canZoomOut =
+    state.currentZoom > MIN_ZOOM &&
+    state.phase === "PLAYING" &&
+    imgLoaded &&
+    !zoomTransition &&
+    !zoomTransitionLoading;
+  const handleZoomOut = useCallback(() => {
+    const currentState = stateRef.current;
+    if (
+      currentState.phase !== "PLAYING" ||
+      !currentState.target ||
+      currentState.currentZoom <= MIN_ZOOM ||
+      zoomTransition ||
+      zoomTransitionLoading
+    ) {
+      return;
+    }
+
+    const nextZoom = currentState.currentZoom - 1;
+    const toUrl = satUrl(currentState.target, nextZoom, satelliteImageSize);
+    const requestId = zoomTransitionRequestRef.current + 1;
+    zoomTransitionRequestRef.current = requestId;
+    setZoomTransitionLoading(true);
+    setImgError(false);
+
+    const img = new Image();
+    img.onload = () => {
+      if (zoomTransitionRequestRef.current !== requestId) return;
+
+      const prefersReducedMotion =
+        typeof window !== "undefined" &&
+        window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+
+      setZoomTransitionLoading(false);
+      if (!prefersReducedMotion) {
+        setZoomTransition({
+          toUrl,
+          requestId,
+          animationDone: false,
+        });
+      }
+      dispatch({ type: "ZOOM_OUT" });
+
+      if (!prefersReducedMotion) {
+        if (zoomTransitionTimerRef.current) {
+          window.clearTimeout(zoomTransitionTimerRef.current);
+        }
+        zoomTransitionTimerRef.current = window.setTimeout(() => {
+          setZoomTransition((current) =>
+            current?.requestId === requestId
+              ? { ...current, animationDone: true }
+              : current,
+          );
+          zoomTransitionTimerRef.current = null;
+        }, SATELLITE_ZOOM_TRANSITION_MS);
+      }
+    };
+    img.onerror = () => {
+      if (zoomTransitionRequestRef.current !== requestId) return;
+      setZoomTransitionLoading(false);
+      setImgError(true);
+    };
+    img.src = toUrl;
+  }, [satelliteImageSize, zoomTransition, zoomTransitionLoading]);
+
+  useEffect(() => {
+    if (!zoomTransition?.animationDone || !imgLoaded) return;
+    setZoomTransition(null);
+  }, [zoomTransition, imgLoaded]);
+
   const playerScore = getCurrentPlayerScore(state);
   const atlasScore = state.aiEnabled ? getCurrentAtlasScore(state) : null;
 
@@ -958,7 +1058,7 @@ export default function GeoGamePage() {
     >
       {state.phase === "WELCOME" ? (
         <WelcomeModal
-          dispatch={dispatch}
+          onStart={handleStartGame}
           t={t}
           navigate={navigate}
           countryCode={countryCodeFromUrl}
@@ -1003,7 +1103,9 @@ export default function GeoGamePage() {
                 <img
                   key={satelliteUrl}
                   src={satelliteUrl}
-                  className={`geo-satellite-img ${imgLoaded ? "loaded" : ""}`}
+                  className={`geo-satellite-img ${
+                    imgLoaded ? "loaded" : ""
+                  } ${zoomTransition ? "geo-satellite-img--handoff" : ""}`}
                   alt=""
                   draggable={false}
                   onLoad={() => setImgLoaded(true)}
@@ -1013,8 +1115,28 @@ export default function GeoGamePage() {
                   }}
                 />
               )}
+              {zoomTransition && (
+                <div className="geo-satellite-transition" aria-hidden="true">
+                  <img
+                    src={zoomTransition.toUrl}
+                    className="geo-satellite-transition-img"
+                    alt=""
+                    draggable={false}
+                    onAnimationEnd={() =>
+                      setZoomTransition((current) =>
+                        current?.requestId === zoomTransition.requestId
+                          ? { ...current, animationDone: true }
+                          : current,
+                      )
+                    }
+                  />
+                </div>
+              )}
               {(state.phase === "LOADING" ||
-                (state.phase === "PLAYING" && !imgLoaded)) && (
+                ((state.phase === "PLAYING" ||
+                  state.phase === "ROUND_RESULT") &&
+                  !imgLoaded &&
+                  !zoomTransition)) && (
                 <div className="geo-loading-overlay">
                   <div className="geo-loading-spinner" />
                   {state.phase === "LOADING" ? t("geo.loading") : ""}
@@ -1042,7 +1164,8 @@ export default function GeoGamePage() {
                   <button
                     className="geo-zoom-out-btn geo-zoom-out-btn--satellite"
                     disabled={!canZoomOut}
-                    onClick={() => dispatch({ type: "ZOOM_OUT" })}
+                    onClick={handleZoomOut}
+                    aria-busy={zoomTransitionLoading}
                   >
                     {t("geo.zoom_out")}
                   </button>
@@ -1078,14 +1201,11 @@ export default function GeoGamePage() {
                   <button
                     className="geo-lock-in"
                     disabled={!state.guessPin}
-                    onClick={() => dispatch({ type: "LOCK_IN" })}
+                    onClick={handleLockIn}
                   >
                     {t("geo.lock_in")}
                   </button>
-                  <button
-                    className="geo-give-up"
-                    onClick={() => dispatch({ type: "GIVE_UP" })}
-                  >
+                  <button className="geo-give-up" onClick={handleGiveUp}>
                     {t("geo.give_up")}
                   </button>
                 </div>
@@ -1111,7 +1231,7 @@ export default function GeoGamePage() {
 
 // ─── WelcomeModal ───
 
-function WelcomeModal({ dispatch, t, navigate, countryCode }) {
+function WelcomeModal({ onStart, t, navigate, countryCode }) {
   return (
     <div className="geo-welcome-page">
       <div className="geo-welcome-card">
@@ -1123,15 +1243,13 @@ function WelcomeModal({ dispatch, t, navigate, countryCode }) {
         <div className="geo-welcome-actions">
           <button
             className="geo-start-btn geo-start-btn--atlas"
-            onClick={() =>
-              dispatch({ type: "START_GAME", aiEnabled: true, countryCode })
-            }
+            onClick={() => onStart({ aiEnabled: true, countryCode })}
           >
             {t("geo.start_atlas")}
           </button>
           <button
             className="geo-secondary-btn geo-secondary-btn--friend"
-            onClick={() => navigate("/geo/online")}
+            onClick={() => navigate("/guess/online")}
           >
             {t("geo.invite_friend_online")}
           </button>
@@ -1155,26 +1273,28 @@ function RoundResult({ state, t, onNext }) {
   return (
     <div className="geo-result-panel">
       <div className="geo-result-body">
-        <div className="geo-result-title">
-          {t("geo.round", { n: state.round })} — {t("geo.result")}
-        </div>
+        <div className="geo-result-summary">
+          <div className="geo-result-title">
+            {t("geo.round", { n: state.round })}
+          </div>
 
-        {/* Actual location reveal */}
-        {state.target && (state.target.address || state.target.country) && (
-          <div className="geo-result-location">
-            <MarkerPin type="target" />
-            <div>
-              <span>{t("geo.actual_location")}</span>
+          {/* Actual location reveal */}
+          {state.target && (state.target.address || state.target.country) && (
+            <div className="geo-result-location">
+              <MarkerPin type="target" />
+              <span className="geo-result-location-label">
+                {t("geo.actual_location")}
+              </span>
               <strong>{state.target.address || state.target.country}</strong>
-              <div className="geo-result-coordinates">
+              <span className="geo-result-coordinates">
                 {targetCoordinates}
                 <a href={targetMapsUrl} target="_blank" rel="noreferrer">
                   {t("geo.open_google_maps")}
                 </a>
-              </div>
+              </span>
             </div>
-          </div>
-        )}
+          )}
+        </div>
 
         <div className="geo-result-section">
           <ResultLabel type="player">{t("geo.your_guess")}</ResultLabel>
@@ -1202,6 +1322,7 @@ function RoundResult({ state, t, onNext }) {
                   <ResultStats
                     score={state.aiGuess.score}
                     distance={state.aiGuess.distance}
+                    zoomSteps={state.zoomSteps}
                     t={t}
                   />
                   {state.aiGuess.reasoning && (
@@ -1224,14 +1345,11 @@ function RoundResult({ state, t, onNext }) {
 
       <button
         className="geo-result-btn"
-        disabled={state.aiEnabled && state.aiLoading}
         onClick={onNext}
       >
-        {state.aiEnabled && state.aiLoading
-          ? t("geo.ai_thinking")
-          : state.round >= TOTAL_ROUNDS
-            ? t("geo.see_results")
-            : t("geo.next_round")}
+        {state.round >= TOTAL_ROUNDS
+          ? t("geo.see_results")
+          : t("geo.next_round")}
       </button>
     </div>
   );
@@ -1311,7 +1429,7 @@ function GameOverModal({ state, t, onRestart, onNext }) {
                 <span>
                   {t("geo.distance_error")}:{" "}
                   {r.distance !== null
-                    ? formatResultDistance(r.distance, t, true)
+                    ? formatResultDistance(r.distance, t, true, r.zoomSteps)
                     : t("geo.gave_up")}
                 </span>
               </div>

@@ -37,8 +37,9 @@ Routes:
 - `/` uses `HomePage` for random Street View exploration.
 - `/agent` uses `AgentPage` for Odyssey journey setup.
 - `/agent/letter/:id` uses `LetterPage` for public letters.
-- `/geo` uses `GeoGamePage` for solo satellite guessing.
-- `/geo/online` and `/geo/online/:roomId` use `GeoBattlePage` for online duel lobby and room play.
+- `/guess` uses `GeoGamePage` for solo satellite guessing.
+- `/guess/online` and `/guess/online/:roomId` use `GeoBattlePage` for online duel lobby and room play.
+- `/geo`, `/geo/online`, and `/geo/online/:roomId` are legacy redirects to the matching `/guess` routes.
 
 `AgentPage`, `LetterPage`, `GeoGamePage`, and `GeoBattlePage` are lazy loaded from `App.tsx`.
 
@@ -106,7 +107,7 @@ Image and scoring:
 round(5000 * exp(-zoomSteps * 0.12) * exp(-effectiveDistanceKm / 1500))
 ```
 
-`effectiveDistanceKm` is `0` when the guess is within 1 km of the target, so meter-level precision is not required for a perfect distance component.
+`effectiveDistanceKm` subtracts a zoom-aware tolerance before distance decay: `max(0, distanceKm - min(100, 1 * 1.45^zoomSteps))`. This keeps close zooms precise, while allowing broader "roughly there" guesses after many zoom-outs.
 
 ## Online Duel
 
@@ -156,7 +157,7 @@ Snapshot behavior:
 - `GET /image` returns the current target at the player's current zoom, with `no-store`.
 - During `reveal` and `finished`, image zoom is capped at 5.
 - Each player has independent zoom state. A zoom-out before locking increments only that player's `zoom_steps`.
-- Guess scoring matches the solo formula and also treats guesses within 1 km as zero distance error. Skips and timeout-created guesses score 0.
+- Guess scoring matches the solo formula and uses the same zoom-aware distance tolerance. Skips and timeout-created guesses score 0.
 
 Leaving behavior:
 

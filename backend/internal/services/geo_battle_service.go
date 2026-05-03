@@ -42,6 +42,8 @@ const (
 	geoBattleCleanupInterval    = 1 * time.Minute
 	geoBattleRevealZoom         = 5
 	geoBattlePerfectDistanceKM  = 1.0
+	geoBattleMaxToleranceKM     = 100.0
+	geoBattleToleranceGrowth    = 1.45
 	geoBattleRoomCodeLength     = 6
 	geoBattleMaxNicknameRunes   = 20
 	geoBattleMaxRoundGenRetries = 8
@@ -1120,12 +1122,17 @@ func geoBattleHaversineDistance(lat1, lng1, lat2, lng2 float64) float64 {
 }
 
 func geoBattleCalculateScore(zoomSteps int, distanceKM float64) int {
-	zoomFactor := math.Exp(-float64(zoomSteps) * 0.12)
-	if distanceKM <= geoBattlePerfectDistanceKM {
-		distanceKM = 0
-	}
-	distanceFactor := math.Exp(-distanceKM / 1500)
+	steps := max(0, zoomSteps)
+	zoomFactor := math.Exp(-float64(steps) * 0.12)
+	effectiveDistanceKM := math.Max(0, distanceKM-geoBattleGuessToleranceKM(steps))
+	distanceFactor := math.Exp(-effectiveDistanceKM / 1500)
 	return int(math.Round(5000 * zoomFactor * distanceFactor))
+}
+
+func geoBattleGuessToleranceKM(zoomSteps int) float64 {
+	zoomSteps = max(0, zoomSteps)
+	tolerance := geoBattlePerfectDistanceKM * math.Pow(geoBattleToleranceGrowth, float64(zoomSteps))
+	return math.Min(geoBattleMaxToleranceKM, tolerance)
 }
 
 func geoBattleGuessSnapshotFromInternal(guess *geoBattleGuess) *models.GeoBattleGuessSnapshot {

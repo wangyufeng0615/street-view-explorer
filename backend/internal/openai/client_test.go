@@ -93,6 +93,40 @@ func TestGeographerSystemPromptKeepsCitationsOutOfBody(t *testing.T) {
 	}
 }
 
+func TestGeoGuessPromptTargetsExactImageCenter(t *testing.T) {
+	requiredSystemPhrases := []string{
+		"exact center pixel",
+		"hidden map center",
+		"AI-only red center reticle",
+		"exact target pixel",
+		"Do not return the coordinates of the most recognizable landmark",
+		"unless that feature is actually at the exact center pixel",
+	}
+
+	for _, phrase := range requiredSystemPhrases {
+		if !strings.Contains(geoGuessSystemPrompt, phrase) {
+			t.Fatalf("geoGuessSystemPrompt missing phrase %q", phrase)
+		}
+	}
+
+	prompt := geoGuessUserPrompt(12, "zh")
+	requiredUserPhrases := []string{
+		"zoom level 12",
+		"red crosshair/reticle",
+		"exact center pixel of the raster image",
+		"point under the red reticle center",
+		"do not shift your final lat/lng to the most distinctive visible object",
+		"not the center of a city",
+		"Simplified Chinese",
+	}
+
+	for _, phrase := range requiredUserPhrases {
+		if !strings.Contains(prompt, phrase) {
+			t.Fatalf("geoGuessUserPrompt missing phrase %q", phrase)
+		}
+	}
+}
+
 func TestDoChatCompletionRetriesTransientStatus(t *testing.T) {
 	attempts := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

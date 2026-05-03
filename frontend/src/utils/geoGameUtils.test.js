@@ -3,10 +3,13 @@ import {
   haversineDistance,
   calculateScore,
   formatDistance,
+  getGuessToleranceKm,
   PERFECT_GUESS_DISTANCE_KM,
   TOTAL_ROUNDS,
   START_ZOOM,
   MIN_ZOOM,
+  generateRoundPlan,
+  getEntryCountryCode,
   isPerfectGuess,
 } from "./geoGameUtils";
 
@@ -42,6 +45,14 @@ describe("calculateScore", () => {
     expect(calculateScore(3, 0.8)).toBe(calculateScore(3, 0));
   });
 
+  it("expands the perfect range as the satellite image zooms out", () => {
+    expect(getGuessToleranceKm(0)).toBe(1);
+    expect(getGuessToleranceKm(10)).toBeGreaterThan(40);
+    expect(getGuessToleranceKm(10)).toBeLessThan(42);
+    expect(isPerfectGuess(35, 10)).toBe(true);
+    expect(calculateScore(10, 35)).toBe(calculateScore(10, 0));
+  });
+
   it("does not treat missing distance as a perfect guess", () => {
     expect(isPerfectGuess(null)).toBe(false);
     expect(isPerfectGuess(Number.NaN)).toBe(false);
@@ -65,8 +76,9 @@ describe("calculateScore", () => {
   });
 
   it("combined: 3 steps, 200km", () => {
+    const effectiveDistance = 200 - getGuessToleranceKm(3);
     const expected = Math.round(
-      5000 * Math.exp(-3 * 0.12) * Math.exp(-200 / 1500),
+      5000 * Math.exp(-3 * 0.12) * Math.exp(-effectiveDistance / 1500),
     );
     expect(calculateScore(3, 200)).toBe(expected);
   });
@@ -87,5 +99,27 @@ describe("constants", () => {
     expect(TOTAL_ROUNDS).toBe(5);
     expect(START_ZOOM).toBe(14);
     expect(MIN_ZOOM).toBe(2);
+  });
+});
+
+describe("generateRoundPlan", () => {
+  it("mixes curated entries for a requested country when available", () => {
+    const plan = generateRoundPlan(5, "JP");
+    const databaseRounds = plan.filter((round) => round.source === "database");
+
+    expect(plan).toHaveLength(5);
+    expect(databaseRounds.length).toBeGreaterThan(0);
+    expect(
+      databaseRounds.every(
+        (round) => getEntryCountryCode(round.entry) === "JP",
+      ),
+    ).toBe(true);
+  });
+
+  it("falls back to random rounds when a country has no curated entries", () => {
+    const plan = generateRoundPlan(5, "AQ");
+
+    expect(plan).toHaveLength(5);
+    expect(plan.every((round) => round.source === "random")).toBe(true);
   });
 });

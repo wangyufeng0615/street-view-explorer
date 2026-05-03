@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import {
+  render,
+  screen,
+  fireEvent,
+  waitFor,
+  act,
+} from "@testing-library/react";
 import React from "react";
 
 const neverSettles = () => new Promise(() => {});
@@ -31,9 +37,56 @@ global.fetch = vi.fn().mockResolvedValue({
 });
 
 import GeoGamePage from "./GeoGamePage";
+import { loadGoogleMapsScript } from "../utils/googleMaps";
+import { getRandomLocation } from "../services/api";
+
+function createMapsMock(onMapClickHandler) {
+  return {
+    Map: class {
+      addListener(event, handler) {
+        if (event === "click") onMapClickHandler(handler);
+      }
+      setCenter() {}
+      setZoom() {}
+      fitBounds() {}
+    },
+    Marker: class {
+      setMap() {}
+      setPosition() {}
+    },
+    Polyline: class {
+      setMap() {}
+    },
+    LatLngBounds: class {
+      extend() {}
+      isEmpty() {
+        return false;
+      }
+    },
+    Point: class {
+      constructor(x, y) {
+        this.x = x;
+        this.y = y;
+      }
+    },
+    Size: class {
+      constructor(width, height) {
+        this.width = width;
+        this.height = height;
+      }
+    },
+    event: { trigger: vi.fn() },
+  };
+}
 
 describe("GeoGamePage", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.history.pushState({}, "", "/");
+    global.fetch = vi.fn().mockResolvedValue({
+      json: () => Promise.resolve({ success: false }),
+    });
+  });
 
   it("renders welcome modal", () => {
     render(<GeoGamePage />);
@@ -55,7 +108,7 @@ describe("GeoGamePage", () => {
   it("invites friends online", () => {
     render(<GeoGamePage />);
     fireEvent.click(screen.getByText("geo.invite_friend_online"));
-    expect(navigate).toHaveBeenCalledWith("/geo/online");
+    expect(navigate).toHaveBeenCalledWith("/guess/online");
   });
 
   it("starts an Atlas game", () => {
@@ -64,5 +117,302 @@ describe("GeoGamePage", () => {
     expect(screen.queryByText("geo.start_atlas")).not.toBeInTheDocument();
     expect(document.querySelector(".geo-main")).toBeInTheDocument();
     expect(screen.getByText("geo.map_loading")).toBeInTheDocument();
+  });
+
+  it("keeps the current satellite image visible while preloading the next round", async () => {
+    window.history.pushState({}, "", "/guess?country=ZZ");
+    let mapClickHandler;
+    const maps = createMapsMock((handler) => {
+      mapClickHandler = handler;
+    });
+    const preloadedUrls = [];
+    const OriginalImage = global.Image;
+    global.Image = class {
+      set src(value) {
+        preloadedUrls.push(value);
+      }
+    };
+
+    loadGoogleMapsScript.mockResolvedValueOnce(maps);
+    getRandomLocation
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          latitude: 10,
+          longitude: 20,
+          formatted_address: "Round One",
+          country: "One",
+        },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          latitude: 30,
+          longitude: 40,
+          formatted_address: "Round Two",
+          country: "Two",
+        },
+      });
+
+    try {
+      render(<GeoGamePage />);
+      fireEvent.click(screen.getByText("geo.start_atlas"));
+
+      await waitFor(() => {
+        expect(document.querySelector(".geo-satellite-img")?.src).toContain(
+          "lat=10",
+        );
+      });
+      const currentRoundSrc = document.querySelector(".geo-satellite-img").src;
+      fireEvent.load(document.querySelector(".geo-satellite-img"));
+      const zoomButton = screen.getByText("geo.zoom_out");
+      fireEvent.click(zoomButton);
+      expect(screen.queryByText("geo.zoom_preparing")).not.toBeInTheDocument();
+      expect(zoomButton).toBeDisabled();
+
+      await waitFor(() => expect(mapClickHandler).toBeTruthy());
+      await act(async () => {
+        mapClickHandler({
+          latLng: {
+            lat: () => 11,
+            lng: () => 21,
+          },
+        });
+      });
+      fireEvent.click(screen.getByText("geo.lock_in"));
+
+      await waitFor(() =>
+        expect(document.querySelector(".geo-result-panel")).toBeTruthy(),
+      );
+      await waitFor(() => {
+        expect(preloadedUrls.some((url) => url.includes("lat=30"))).toBe(true);
+      });
+      expect(document.querySelector(".geo-satellite-img").src).toBe(
+        currentRoundSrc,
+      );
+
+      await waitFor(() =>
+        expect(screen.getByText("geo.next_round")).not.toBeDisabled(),
+      );
+      fireEvent.click(screen.getByText("geo.next_round"));
+
+      await waitFor(() => {
+        expect(document.querySelector(".geo-satellite-img")?.src).toContain(
+          "lat=30",
+        );
+      });
+    } finally {
+      global.Image = OriginalImage;
+    }
+  });
+
+  it("cancels a pending zoom-out image load after locking in", async () => {
+    window.history.pushState({}, "", "/guess?country=ZZ");
+    let mapClickHandler;
+    const maps = createMapsMock((handler) => {
+      mapClickHandler = handler;
+    });
+    const imageInstances = [];
+    const OriginalImage = global.Image;
+    global.Image = class {
+      constructor() {
+        imageInstances.push(this);
+      }
+      set src(value) {
+        this.srcValue = value;
+      }
+    };
+
+    loadGoogleMapsScript.mockResolvedValueOnce(maps);
+    getRandomLocation.mockResolvedValueOnce({
+      success: true,
+      data: {
+        latitude: 10,
+        longitude: 20,
+        formatted_address: "Round One",
+        country: "One",
+      },
+    });
+
+    try {
+      render(<GeoGamePage />);
+      fireEvent.click(screen.getByText("geo.start_atlas"));
+
+      await waitFor(() => {
+        expect(document.querySelector(".geo-satellite-img")?.src).toContain(
+          "lat=10",
+        );
+      });
+      const currentRoundSrc = document.querySelector(".geo-satellite-img").src;
+      fireEvent.load(document.querySelector(".geo-satellite-img"));
+
+      fireEvent.click(screen.getByText("geo.zoom_out"));
+      const pendingZoomImage = imageInstances.find(
+        (image) => typeof image.onload === "function",
+      );
+      expect(pendingZoomImage).toBeTruthy();
+
+      await waitFor(() => expect(mapClickHandler).toBeTruthy());
+      await act(async () => {
+        mapClickHandler({
+          latLng: {
+            lat: () => 11,
+            lng: () => 21,
+          },
+        });
+      });
+      fireEvent.click(screen.getByText("geo.lock_in"));
+
+      await waitFor(() =>
+        expect(document.querySelector(".geo-result-panel")).toBeTruthy(),
+      );
+      act(() => {
+        pendingZoomImage.onload();
+      });
+
+      expect(document.querySelector(".geo-satellite-img").src).toBe(
+        currentRoundSrc,
+      );
+      expect(document.querySelector(".geo-satellite-img")).toHaveClass(
+        "loaded",
+      );
+    } finally {
+      global.Image = OriginalImage;
+    }
+  });
+
+  it("lets the next-round button proceed before AI or next image preloading finishes", async () => {
+    window.history.pushState({}, "", "/guess?country=ZZ");
+    let mapClickHandler;
+    const maps = createMapsMock((handler) => {
+      mapClickHandler = handler;
+    });
+    const OriginalImage = global.Image;
+    global.Image = class {
+      set src(value) {
+        this.srcValue = value;
+      }
+    };
+    global.fetch = vi.fn(() => neverSettles());
+
+    loadGoogleMapsScript.mockResolvedValueOnce(maps);
+    getRandomLocation
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          latitude: 10,
+          longitude: 20,
+          formatted_address: "Round One",
+          country: "One",
+        },
+      })
+      .mockImplementation(() => neverSettles());
+
+    try {
+      render(<GeoGamePage />);
+      fireEvent.click(screen.getByText("geo.start_atlas"));
+
+      await waitFor(() => {
+        expect(document.querySelector(".geo-satellite-img")?.src).toContain(
+          "lat=10",
+        );
+      });
+      fireEvent.load(document.querySelector(".geo-satellite-img"));
+
+      await waitFor(() => expect(mapClickHandler).toBeTruthy());
+      await act(async () => {
+        mapClickHandler({
+          latLng: {
+            lat: () => 11,
+            lng: () => 21,
+          },
+        });
+      });
+      fireEvent.click(screen.getByText("geo.lock_in"));
+
+      await waitFor(() =>
+        expect(document.querySelector(".geo-result-panel")).toBeTruthy(),
+      );
+      const nextButton = screen.getByText("geo.next_round");
+      expect(nextButton).not.toBeDisabled();
+      fireEvent.click(nextButton);
+
+      await waitFor(() => {
+        expect(screen.getByText("geo.loading")).toBeInTheDocument();
+      });
+      expect(document.querySelector(".geo-result-panel")).not.toBeInTheDocument();
+    } finally {
+      global.Image = OriginalImage;
+    }
+  });
+
+  it("keeps the round stable on repeated lock-in and next-round clicks", async () => {
+    window.history.pushState({}, "", "/guess?country=ZZ");
+    let mapClickHandler;
+    const maps = createMapsMock((handler) => {
+      mapClickHandler = handler;
+    });
+    const OriginalImage = global.Image;
+    global.Image = class {
+      set src(value) {
+        this.srcValue = value;
+      }
+    };
+
+    loadGoogleMapsScript.mockResolvedValueOnce(maps);
+    getRandomLocation
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          latitude: 10,
+          longitude: 20,
+          formatted_address: "Round One",
+          country: "One",
+        },
+      })
+      .mockImplementation(() => neverSettles());
+
+    try {
+      render(<GeoGamePage />);
+      fireEvent.click(screen.getByText("geo.start_atlas"));
+
+      await waitFor(() => {
+        expect(document.querySelector(".geo-satellite-img")?.src).toContain(
+          "lat=10",
+        );
+      });
+      fireEvent.load(document.querySelector(".geo-satellite-img"));
+
+      await waitFor(() => expect(mapClickHandler).toBeTruthy());
+      await act(async () => {
+        mapClickHandler({
+          latLng: {
+            lat: () => 11,
+            lng: () => 21,
+          },
+        });
+      });
+
+      const lockButton = screen.getByText("geo.lock_in");
+      fireEvent.click(lockButton);
+      fireEvent.click(lockButton);
+
+      await waitFor(() =>
+        expect(document.querySelector(".geo-result-panel")).toBeTruthy(),
+      );
+      expect(screen.getByText("geo.round")).toBeInTheDocument();
+      expect(screen.getByText("geo.next_round")).toBeInTheDocument();
+
+      const nextButton = screen.getByText("geo.next_round");
+      fireEvent.click(nextButton);
+      fireEvent.click(nextButton);
+
+      await waitFor(() => {
+        expect(screen.getByText("geo.loading")).toBeInTheDocument();
+      });
+      expect(screen.getByText("geo.round_progress")).toBeInTheDocument();
+    } finally {
+      global.Image = OriginalImage;
+    }
   });
 });

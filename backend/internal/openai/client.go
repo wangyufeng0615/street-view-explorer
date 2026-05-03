@@ -68,6 +68,12 @@ const (
 		"You receive real-time web search results alongside the location data. Lean on them for verified, current facts — local news, recent developments, specific businesses or landmarks, historical events with dates. Your research strategy: start at the finest geographic grain available (this street, this block, this establishment), and only widen to neighborhood, city, or region when specific results are thin. Concrete details from search results are gold — use them to replace vague generalizations.\n\n" +
 		"If a specific detail is uncertain and unsupported by search results, keep the statement modest instead of inventing specifics.\n\n" +
 		"Keep it to 2-3 short paragraphs, around 150 words. Pack them with substance, but keep Atlas's voice — warm, witty, real."
+
+	geoGuessSystemPrompt = "You are Atlas in a geography guessing game, but for this task you must act as a strict satellite-image geolocation estimator.\n\n" +
+		"Your task is to estimate the geographic coordinates of the exact center pixel of the provided Google Static Maps satellite image. The correct answer is the hidden map center used to render the image.\n\n" +
+		"The image includes an AI-only red center reticle. The reticle was drawn by the server after the map image was fetched; it is not part of the satellite imagery. Its center marks the exact target pixel.\n\n" +
+		"Critical target rule: return the latitude and longitude of the image center itself. Do not return the coordinates of the most recognizable landmark, city center, road junction, coastline feature, large building, label, or nearby place unless that feature is actually at the exact center pixel.\n\n" +
+		"If the center reticle falls on water, farmland, forest, desert, a road segment, or an unremarkable patch beside a landmark, estimate the coordinate under the reticle center. Use surrounding visual clues only to infer where the marked center point is located."
 )
 
 type Client interface {
@@ -878,7 +884,8 @@ type visionContentPart struct {
 }
 
 type visionImageURL struct {
-	URL string `json:"url"`
+	URL    string `json:"url"`
+	Detail string `json:"detail,omitempty"`
 }
 
 // visionMessage is a chat message with multimodal content.
@@ -892,26 +899,31 @@ type visionChatRequest struct {
 	Messages []visionMessage `json:"messages"`
 }
 
-func (c *client) GuessLocationFromImage(parentCtx context.Context, imageBase64 string, zoom int, language string) (float64, float64, string, error) {
-	startTime := time.Now()
-	ctx, cancel := context.WithTimeout(parentCtx, 30*time.Second)
-	defer cancel()
-
+func geoGuessUserPrompt(zoom int, language string) string {
 	reasoningLanguage := "English"
 	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(language)), "zh") {
 		reasoningLanguage = "Simplified Chinese"
 	}
 
-	prompt := fmt.Sprintf(
-		"You are playing a geography guessing game. You are shown a satellite image at zoom level %d.\n\n"+
-			"Based ONLY on visual clues in this image (terrain, vegetation, road patterns, building layouts, coastlines, "+
-			"urban density, agricultural patterns, etc.), guess the latitude and longitude of the center of this image.\n\n"+
+	return fmt.Sprintf(
+		"This is a Google Static Maps satellite image rendered at zoom level %d. A red crosshair/reticle has been added only for this AI request. The true target is the exact center of that red reticle, which corresponds to the exact center pixel of the raster image and the hidden map center.\n\n"+
+			"Estimate the latitude and longitude of the ground/water point directly under the center of the red reticle using only visual clues in the image: terrain, vegetation, road patterns, building layouts, coastlines, urban density, agricultural patterns, water bodies, shadows, and landforms.\n\n"+
+			"Important: many clues may be off-center. Use them as context, but do not shift your final lat/lng to the most distinctive visible object. If a recognizable feature is near the edge and the center is plain farmland, water, forest, or suburbia, answer for the plain center point.\n\n"+
+			"The returned lat/lng must describe the point under the red reticle center, not the center of a city, the nearest town, a landmark, or a visually prominent feature.\n\n"+
 			"Write the reasoning value in %s. Keep the JSON field names exactly as lat, lng, and reasoning.\n\n"+
-			"Respond with ONLY a JSON object, no other text:\n"+
-			"{\"lat\": <number>, \"lng\": <number>, \"reasoning\": \"<brief explanation of visual clues you used>\"}",
+			"Respond with ONLY a JSON object, no markdown, no code fence, no extra text:\n"+
+			"{\"lat\": <number>, \"lng\": <number>, \"reasoning\": \"<brief explanation of the visual clues and why they locate the red reticle center>\"}",
 		zoom,
 		reasoningLanguage,
 	)
+}
+
+func (c *client) GuessLocationFromImage(parentCtx context.Context, imageBase64 string, zoom int, language string) (float64, float64, string, error) {
+	startTime := time.Now()
+	ctx, cancel := context.WithTimeout(parentCtx, 30*time.Second)
+	defer cancel()
+
+	prompt := geoGuessUserPrompt(zoom, language)
 
 	dataURI := "data:image/png;base64," + imageBase64
 
@@ -919,9 +931,13 @@ func (c *client) GuessLocationFromImage(parentCtx context.Context, imageBase64 s
 		Model: c.modelName,
 		Messages: []visionMessage{
 			{
+				Role:    "system",
+				Content: geoGuessSystemPrompt,
+			},
+			{
 				Role: "user",
 				Content: []visionContentPart{
-					{Type: "image_url", ImageURL: &visionImageURL{URL: dataURI}},
+					{Type: "image_url", ImageURL: &visionImageURL{URL: dataURI, Detail: "high"}},
 					{Type: "text", Text: prompt},
 				},
 			},

@@ -1,15 +1,23 @@
 package api
 
 import (
+	"bytes"
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"image"
+	"image/color"
+	"image/draw"
+	"image/png"
 	"io"
 	"log"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
+
+	_ "image/gif"
+	_ "image/jpeg"
 
 	"github.com/gin-gonic/gin"
 	"github.com/my-streetview-project/backend/internal/openai"
@@ -231,7 +239,13 @@ func (gh *GeoHandlers) AIGuess(c *gin.Context) {
 		return
 	}
 
-	imageBase64 := base64.StdEncoding.EncodeToString(imageBytes)
+	aiImageBytes, err := annotateGeoAICenterReticle(imageBytes)
+	if err != nil {
+		log.Printf("[GEO] Failed to annotate AI satellite image, falling back to raw image: %v", err)
+		aiImageBytes = imageBytes
+	}
+
+	imageBase64 := base64.StdEncoding.EncodeToString(aiImageBytes)
 
 	guessLat, guessLng, reasoning, err := gh.aiClient.GuessLocationFromImage(c.Request.Context(), imageBase64, zoom, language)
 	if err != nil {
@@ -248,6 +262,105 @@ func (gh *GeoHandlers) AIGuess(c *gin.Context) {
 			"reasoning": reasoning,
 		},
 	})
+}
+
+func annotateGeoAICenterReticle(imageBytes []byte) ([]byte, error) {
+	img, _, err := image.Decode(bytes.NewReader(imageBytes))
+	if err != nil {
+		return nil, err
+	}
+
+	bounds := img.Bounds()
+	if bounds.Dx() <= 0 || bounds.Dy() <= 0 {
+		return nil, fmt.Errorf("invalid image bounds")
+	}
+
+	rgba := image.NewRGBA(bounds)
+	draw.Draw(rgba, bounds, img, bounds.Min, draw.Src)
+
+	cx := bounds.Min.X + bounds.Dx()/2
+	cy := bounds.Min.Y + bounds.Dy()/2
+	drawGeoAICenterReticle(rgba, cx, cy)
+
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, rgba); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func drawGeoAICenterReticle(img *image.RGBA, cx, cy int) {
+	white := color.RGBA{R: 255, G: 255, B: 255, A: 245}
+	red := color.RGBA{R: 230, G: 40, B: 40, A: 255}
+
+	drawThickLine(img, cx-22, cy, cx-5, cy, 5, white)
+	drawThickLine(img, cx+5, cy, cx+22, cy, 5, white)
+	drawThickLine(img, cx, cy-22, cx, cy-5, 5, white)
+	drawThickLine(img, cx, cy+5, cx, cy+22, 5, white)
+
+	drawThickLine(img, cx-21, cy, cx-6, cy, 3, red)
+	drawThickLine(img, cx+6, cy, cx+21, cy, 3, red)
+	drawThickLine(img, cx, cy-21, cx, cy-6, 3, red)
+	drawThickLine(img, cx, cy+6, cx, cy+21, 3, red)
+
+	drawCircleOutline(img, cx, cy, 7, 2, white)
+	drawCircleOutline(img, cx, cy, 6, 2, red)
+	setPixelIfInBounds(img, cx, cy, red)
+}
+
+func drawThickLine(img *image.RGBA, x1, y1, x2, y2, thickness int, col color.RGBA) {
+	if x1 == x2 {
+		for y := minInt(y1, y2); y <= maxInt(y1, y2); y++ {
+			for dx := -thickness / 2; dx <= thickness/2; dx++ {
+				setPixelIfInBounds(img, x1+dx, y, col)
+			}
+		}
+		return
+	}
+
+	if y1 == y2 {
+		for x := minInt(x1, x2); x <= maxInt(x1, x2); x++ {
+			for dy := -thickness / 2; dy <= thickness/2; dy++ {
+				setPixelIfInBounds(img, x, y1+dy, col)
+			}
+		}
+	}
+}
+
+func drawCircleOutline(img *image.RGBA, cx, cy, radius, thickness int, col color.RGBA) {
+	inner := radius - thickness
+	innerSq := inner * inner
+	outerSq := radius * radius
+	for y := cy - radius; y <= cy+radius; y++ {
+		for x := cx - radius; x <= cx+radius; x++ {
+			dx := x - cx
+			dy := y - cy
+			distSq := dx*dx + dy*dy
+			if distSq >= innerSq && distSq <= outerSq {
+				setPixelIfInBounds(img, x, y, col)
+			}
+		}
+	}
+}
+
+func setPixelIfInBounds(img *image.RGBA, x, y int, col color.RGBA) {
+	if image.Pt(x, y).In(img.Bounds()) {
+		img.SetRGBA(x, y, col)
+	}
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func (gh *GeoHandlers) proxySatelliteImage(c *gin.Context, lat, lng float64, zoom int, width, height int, cacheControl string) {

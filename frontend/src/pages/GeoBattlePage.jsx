@@ -16,7 +16,6 @@ import {
 } from "../services/api";
 import { loadGoogleMapsScript } from "../utils/googleMaps";
 import {
-  PERFECT_GUESS_DISTANCE_KM,
   formatDistance,
   isPerfectGuess,
 } from "../utils/geoGameUtils";
@@ -81,13 +80,9 @@ function getOutcomeLabel(room, t) {
   return t("geo_online.draw");
 }
 
-function formatBattleDistance(distanceKm, t) {
-  if (isPerfectGuess(distanceKm)) {
-    const distance =
-      PERFECT_GUESS_DISTANCE_KM === 1
-        ? t("geo.one_km")
-        : formatDistance(PERFECT_GUESS_DISTANCE_KM);
-    return t("geo.perfect_distance_short", { distance });
+function formatBattleDistance(distanceKm, t, zoomSteps = 0) {
+  if (isPerfectGuess(distanceKm, zoomSteps)) {
+    return t("geo.perfect_distance_short");
   }
   return formatDistance(distanceKm);
 }
@@ -160,7 +155,7 @@ function GeoBattleHubPage() {
     if (!res.success || !res.data) return;
 
     if (res.data.status === "matched" && res.data.room?.room_id) {
-      navigate(`/geo/online/${res.data.room.room_id}`, { replace: true });
+      navigate(`/guess/online/${res.data.room.room_id}`, { replace: true });
       return;
     }
 
@@ -204,7 +199,7 @@ function GeoBattleHubPage() {
       return;
     }
 
-    navigate(`/geo/online/${res.data.room.room_id}`);
+    navigate(`/guess/online/${res.data.room.room_id}`);
   };
 
   const handleJoinRoom = async () => {
@@ -226,7 +221,7 @@ function GeoBattleHubPage() {
       return;
     }
 
-    navigate(`/geo/online/${res.data.room.room_id}`);
+    navigate(`/guess/online/${res.data.room.room_id}`);
   };
 
   const handleMatchmaking = async () => {
@@ -247,7 +242,7 @@ function GeoBattleHubPage() {
     }
 
     if (res.data.status === "matched" && res.data.room?.room_id) {
-      navigate(`/geo/online/${res.data.room.room_id}`);
+      navigate(`/guess/online/${res.data.room.room_id}`);
       return;
     }
 
@@ -272,7 +267,7 @@ function GeoBattleHubPage() {
         <div className="geo-battle-topbar">
           <button
             className="geo-battle-back"
-            onClick={() => navigate("/geo")}
+            onClick={() => navigate("/guess")}
             type="button"
           >
             ← {t("geo_online.back_single")}
@@ -760,12 +755,12 @@ function GeoBattleRoomPage({ roomId }) {
 
   const handleLeaveRoom = async () => {
     if (!room) {
-      navigate("/geo/online");
+      navigate("/guess/online");
       return;
     }
 
     await runAction("leave", () => leaveGeoBattleRoom(room.room_id));
-    navigate("/geo/online");
+    navigate("/guess/online");
   };
 
   const handleCopyCode = async () => {
@@ -852,7 +847,7 @@ function GeoBattleRoomPage({ roomId }) {
           <button
             type="button"
             className="geo-battle-primary-btn"
-            onClick={() => navigate("/geo/online")}
+            onClick={() => navigate("/guess/online")}
           >
             {t("geo_online.return_lobby")}
           </button>
@@ -1104,6 +1099,7 @@ function GeoBattleRoomPage({ roomId }) {
                           ? formatBattleDistance(
                               room.round.my_guess.distance_km,
                               t,
+                              room.round.my_guess.zoom_steps,
                             )
                           : t("geo.gave_up")}
                       </div>
@@ -1122,6 +1118,7 @@ function GeoBattleRoomPage({ roomId }) {
                           ? formatBattleDistance(
                               room.round.opponent_guess.distance_km,
                               t,
+                              room.round.opponent_guess.zoom_steps,
                             )
                           : t("geo.gave_up")}
                       </div>

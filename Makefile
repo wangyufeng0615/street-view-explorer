@@ -5,6 +5,9 @@ BACKEND_LOG := $(LOG_DIR)/backend.log
 FRONTEND_LOG := $(LOG_DIR)/frontend.log
 BACKEND_PID := $(LOG_DIR)/backend.pid
 FRONTEND_PID := $(LOG_DIR)/frontend.pid
+LOCAL_DEV_HOST ?= 127.0.0.1
+LOCAL_BACKEND_ADDRESS ?= $(LOCAL_DEV_HOST):8080
+LOCAL_FRONTEND_HOST ?= $(LOCAL_DEV_HOST)
 REMOTE_HOST ?= kr
 REMOTE_DIR ?= /root/street-view-explorer
 REMOTE_BRANCH ?= main
@@ -17,8 +20,8 @@ HEALTH_TIMEOUT ?= 240
 # 前台启动开发环境（Ctrl+C 同时停止）
 dev:
 	@trap 'kill 0' INT TERM; \
-	(cd backend && go run cmd/server/main.go 2>&1 | sed 's/^/[BE] /') & \
-	(cd frontend && yarn dev 2>&1 | sed 's/^/[FE] /') & \
+	(cd backend && SERVER_ADDRESS=$(LOCAL_BACKEND_ADDRESS) go run cmd/server/main.go 2>&1 | sed 's/^/[BE] /') & \
+	(cd frontend && yarn dev --host $(LOCAL_FRONTEND_HOST) 2>&1 | sed 's/^/[FE] /') & \
 	wait
 
 # 部署命令
@@ -99,7 +102,7 @@ backend-dev:
 	else \
 		rm -f "$(BACKEND_PID)"; \
 		echo "启动 Backend..."; \
-		(cd backend && nohup go run cmd/server/main.go > ../$(BACKEND_LOG) 2>&1 & echo $$! > ../$(BACKEND_PID)); \
+		(cd backend && nohup env SERVER_ADDRESS=$(LOCAL_BACKEND_ADDRESS) go run cmd/server/main.go > ../$(BACKEND_LOG) 2>&1 & echo $$! > ../$(BACKEND_PID)); \
 		echo "Backend 已启动 (PID: $$(cat "$(BACKEND_PID)"))"; \
 	fi
 
@@ -111,6 +114,6 @@ frontend-dev:
 	else \
 		rm -f "$(FRONTEND_PID)"; \
 		echo "启动 Frontend..."; \
-		(cd frontend && nohup yarn dev > ../$(FRONTEND_LOG) 2>&1 & echo $$! > ../$(FRONTEND_PID)); \
+		(cd frontend && nohup yarn dev --host $(LOCAL_FRONTEND_HOST) > ../$(FRONTEND_LOG) 2>&1 & echo $$! > ../$(FRONTEND_PID)); \
 		echo "Frontend 已启动 (PID: $$(cat "$(FRONTEND_PID)"))"; \
 	fi

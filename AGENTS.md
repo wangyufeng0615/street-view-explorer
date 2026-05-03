@@ -78,9 +78,10 @@ backend/
 - `/` - 随机街景探索首页。
 - `/agent` - Odyssey，给外部 AI 复制旅行 skill 和旅程入口。
 - `/agent/letter/:id` - 公开旅程来信。
-- `/geo` - 单人卫星图猜地理。
-- `/geo/online` - 在线 1v1 对战大厅。
-- `/geo/online/:roomId` - 在线对战房间。
+- `/guess` - 单人卫星图猜地理。
+- `/guess/online` - 在线 1v1 对战大厅。
+- `/guess/online/:roomId` - 在线对战房间。
+- `/geo`、`/geo/online`、`/geo/online/:roomId` - 旧路由，前端重定向到对应 `/guess` 路由。
 
 ## API 路由
 
@@ -132,7 +133,7 @@ backend/
 - 单人局起始 zoom 是 14，最小 zoom 是 2；后端 `GET /api/v1/geo/satellite` 和 `POST /api/v1/geo/ai-guess` 也校验 `zoom` 必须在 2-14。
 - `generateRoundPlan()` 会从 `geoDatabase.js` 选 2 或 3 个题库点，其余使用后端随机位置；题库点会经过 `jitterCoord()` 小偏移。
 - `GeoGamePage.jsx` 的 loading effect 使用 `langRef` 读取语言，避免语言切换重新抽题。
-- 计分公式在前后端一致：`5000 * exp(-zoomSteps * 0.12) * exp(-effectiveDistanceKm / 1500)`；误差小于等于 1 km 时 `effectiveDistanceKm = 0`，视为完美猜中。
+- 计分公式在前后端一致：`5000 * exp(-zoomSteps * 0.12) * exp(-effectiveDistanceKm / 1500)`；`effectiveDistanceKm = max(0, distanceKm - min(100, 1 * 1.45^zoomSteps))`，拉远后容错半径会动态变大。
 - Atlas AI 猜测只看到用户锁定结果时当前 zoom 的一张卫星图，不会看到前面每次拉远的历史图；prompt 明确要求猜这张图的中心点，并按 UI 语言返回 reasoning。
 - 结果地图图钉颜色语义：绿色是正确位置，红色是玩家，紫色是 Atlas；结果文字区也按同一语义展示。
 - 以前审查中关注过近邻题库点、`roundPlan` 生命周期和小轮数边界；修改这些文件时要补充相应测试。
@@ -147,7 +148,7 @@ backend/
 - 前端用 polling 同步状态：playing 约 1.5 秒，其余约 2.5 秒；服务端 `server_time` 用于修正倒计时。
 - 房间码 6 位，来自 `ABCDEFGHJKLMNPQRSTUVWXYZ23456789`；昵称最多 20 个 rune，会去掉控制字符。
 - `GET /image` 根据当前玩家 zoom 返回同一目标卫星图；reveal/finished 阶段最多展示 zoom 5。
-- 双人对战计分和单人局一致，误差小于等于 1 km 也视为零误差；跳过或超时本轮为 0 分。
+- 双人对战计分和单人局一致，也使用随拉远次数增长的动态容错半径；跳过或超时本轮为 0 分。
 - finished 或 lobby 阶段离开会移除玩家；playing 等中途离开会直接结束房间。
 
 ## 安全与日志注意

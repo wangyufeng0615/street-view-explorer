@@ -1,5 +1,11 @@
 import React, { useEffect, lazy, Suspense } from "react";
-import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import {
+  BrowserRouter as Router,
+  Routes,
+  Route,
+  Navigate,
+  useLocation,
+} from "react-router-dom";
 import HomePage from "./pages/HomePage";
 import { getOrCreateSessionId } from "./utils/session";
 import { testSentry } from "./services/sentryLazy";
@@ -8,6 +14,18 @@ const AgentPage = lazy(() => import("./pages/AgentPage"));
 const LetterPage = lazy(() => import("./pages/LetterPage"));
 const GeoGamePage = lazy(() => import("./pages/GeoGamePage"));
 const GeoBattlePage = lazy(() => import("./pages/GeoBattlePage"));
+
+function LegacyGeoRedirect() {
+  const location = useLocation();
+  const nextPath = location.pathname.replace(/^\/geo/, "/guess");
+
+  return (
+    <Navigate
+      to={`${nextPath}${location.search}${location.hash}`}
+      replace
+    />
+  );
+}
 
 // Create router with future flags enabled
 const router = {
@@ -73,7 +91,7 @@ function App() {
             }
           />
           <Route
-            path="/geo"
+            path="/guess"
             element={
               <Suspense
                 fallback={
@@ -98,7 +116,7 @@ function App() {
             }
           />
           <Route
-            path="/geo/online"
+            path="/guess/online"
             element={
               <Suspense
                 fallback={
@@ -123,7 +141,7 @@ function App() {
             }
           />
           <Route
-            path="/geo/online/:roomId"
+            path="/guess/online/:roomId"
             element={
               <Suspense
                 fallback={
@@ -147,6 +165,7 @@ function App() {
               </Suspense>
             }
           />
+          <Route path="/geo/*" element={<LegacyGeoRedirect />} />
           <Route
             path="/agent/letter/:id"
             element={

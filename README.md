@@ -15,7 +15,7 @@ An interactive map application for exploring random Google Street View locations
 - Visit history, shared site-wide footprint map, and regional or custom exploration preferences.
 - Bilingual UI in English and Chinese.
 - Odyssey agent journey flow where an external AI can create journeys, save stops, and publish illustrated letters.
-- Solo "Guess Where" game using satellite imagery, curated city entries, random backend locations, optional AI opponent, score decay by zoom-outs plus distance, and a 1 km perfect-distance threshold.
+- Solo "Guess Where" game using satellite imagery, curated city entries, random backend locations, optional AI opponent, and score decay with zoom-aware distance tolerance.
 - Online 1v1 geography duel with private room codes, quick matchmaking, synchronized rounds, server-authoritative scoring, and reconnect-safe polling.
 - Docker Compose deployment with an Nginx frontend/API proxy and a Go backend using SQLite.
 
@@ -134,9 +134,10 @@ Frontend variables live in `frontend/.env`.
 - `/` - random Street View explorer.
 - `/agent` - Odyssey setup and instructions for an external AI traveler.
 - `/agent/letter/:id` - public Odyssey letter.
-- `/geo` - solo satellite guessing game.
-- `/geo/online` - online duel lobby with private room and matchmaking entry points.
-- `/geo/online/:roomId` - online duel room.
+- `/guess` - solo satellite guessing game.
+- `/guess/online` - online duel lobby with private room and matchmaking entry points.
+- `/guess/online/:roomId` - online duel room.
+- `/geo`, `/geo/online`, and `/geo/online/:roomId` - legacy redirects to the `/guess` routes.
 
 ## API Summary
 
