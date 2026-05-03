@@ -227,5 +227,13 @@ func (gh *GeoHandlers) OnlineRoomImage(c *gin.Context) {
 		return
 	}
 
-	gh.proxySatelliteImage(c, lat, lng, zoom, "no-store")
+	gh.proxySatelliteImage(
+		c,
+		lat,
+		lng,
+		zoom,
+		geoSatelliteImageDefaultWidth,
+		geoSatelliteImageDefaultHeight,
+		"no-store",
+	)
 }

@@ -62,10 +62,15 @@ async function fetchWithTimeout(url, options, timeout = DEFAULT_TIMEOUT) {
 }
 
 // 获取随机位置
-export async function getRandomLocation(language = null, source = null) {
+export async function getRandomLocation(
+  language = null,
+  source = null,
+  countryCode = null,
+) {
   const lang = language || getCurrentLanguage();
   let url = `${API_V1}/locations/random?lang=${lang}`;
   if (source) url += `&source=${encodeURIComponent(source)}`;
+  if (countryCode) url += `&country=${encodeURIComponent(countryCode)}`;
 
   try {
     const resp = await fetchWithTimeout(url, {

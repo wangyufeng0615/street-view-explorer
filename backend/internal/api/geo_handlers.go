@@ -17,10 +17,13 @@ import (
 )
 
 const (
-	geoSatelliteImageSize  = "640x480"
-	geoSatelliteImageScale = 2
-	geoMinZoom             = 2
-	geoMaxZoom             = 14
+	geoSatelliteImageDefaultWidth  = 640
+	geoSatelliteImageDefaultHeight = 480
+	geoSatelliteImageScale         = 2
+	geoSatelliteImageMinSide       = 120
+	geoSatelliteImageMaxSide       = 640
+	geoMinZoom                     = 2
+	geoMaxZoom                     = 14
 )
 
 // GeoHandlers handles the geo guessing game endpoints.
@@ -87,14 +90,21 @@ func (gh *GeoHandlers) SatelliteImage(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "invalid zoom"})
 		return
 	}
+	width, height, err := geoSatelliteImageSizeFromValues(c.Query("width"), c.Query("height"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
+		return
+	}
 
-	gh.proxySatelliteImage(c, lat, lng, zoom, "public, max-age=86400")
+	gh.proxySatelliteImage(c, lat, lng, zoom, width, height, "public, max-age=86400")
 }
 
 type geoAIGuessRequest struct {
 	Lat      *float64 `json:"lat"`
 	Lng      *float64 `json:"lng"`
 	Zoom     *int     `json:"zoom"`
+	Width    *int     `json:"width"`
+	Height   *int     `json:"height"`
 	Language string   `json:"lang"`
 }
 
@@ -106,13 +116,52 @@ func normalizeGeoLanguage(language string) string {
 	return "en"
 }
 
-func geoSatelliteImageURL(apiKey string, lat, lng float64, zoom int) string {
+func geoSatelliteImageSizeFromValues(widthValue, heightValue string) (int, int, error) {
+	if widthValue == "" && heightValue == "" {
+		return geoSatelliteImageDefaultWidth, geoSatelliteImageDefaultHeight, nil
+	}
+	if widthValue == "" || heightValue == "" {
+		return 0, 0, fmt.Errorf("width and height must be provided together")
+	}
+	width, err := strconv.Atoi(widthValue)
+	if err != nil {
+		return 0, 0, fmt.Errorf("invalid width")
+	}
+	height, err := strconv.Atoi(heightValue)
+	if err != nil {
+		return 0, 0, fmt.Errorf("invalid height")
+	}
+	return validateGeoSatelliteImageSize(width, height)
+}
+
+func geoSatelliteImageSizeFromRequest(widthValue, heightValue *int) (int, int, error) {
+	if widthValue == nil && heightValue == nil {
+		return geoSatelliteImageDefaultWidth, geoSatelliteImageDefaultHeight, nil
+	}
+	if widthValue == nil || heightValue == nil {
+		return 0, 0, fmt.Errorf("width and height must be provided together")
+	}
+	return validateGeoSatelliteImageSize(*widthValue, *heightValue)
+}
+
+func validateGeoSatelliteImageSize(width, height int) (int, int, error) {
+	if width < geoSatelliteImageMinSide || width > geoSatelliteImageMaxSide {
+		return 0, 0, fmt.Errorf("invalid width")
+	}
+	if height < geoSatelliteImageMinSide || height > geoSatelliteImageMaxSide {
+		return 0, 0, fmt.Errorf("invalid height")
+	}
+	return width, height, nil
+}
+
+func geoSatelliteImageURL(apiKey string, lat, lng float64, zoom int, width, height int) string {
 	return fmt.Sprintf(
-		"https://maps.googleapis.com/maps/api/staticmap?center=%.6f,%.6f&zoom=%d&size=%s&scale=%d&maptype=satellite&key=%s",
+		"https://maps.googleapis.com/maps/api/staticmap?center=%.6f,%.6f&zoom=%d&size=%dx%d&scale=%d&maptype=satellite&key=%s",
 		lat,
 		lng,
 		zoom,
-		geoSatelliteImageSize,
+		width,
+		height,
 		geoSatelliteImageScale,
 		apiKey,
 	)
@@ -153,8 +202,13 @@ func (gh *GeoHandlers) AIGuess(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "Zoom must be 2-14"})
 		return
 	}
+	width, height, err := geoSatelliteImageSizeFromRequest(req.Width, req.Height)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
+		return
+	}
 
-	imageURL := geoSatelliteImageURL(gh.googleAPIKey, lat, lng, zoom)
+	imageURL := geoSatelliteImageURL(gh.googleAPIKey, lat, lng, zoom, width, height)
 
 	resp, err := gh.httpClient.Get(imageURL)
 	if err != nil {
@@ -196,8 +250,8 @@ func (gh *GeoHandlers) AIGuess(c *gin.Context) {
 	})
 }
 
-func (gh *GeoHandlers) proxySatelliteImage(c *gin.Context, lat, lng float64, zoom int, cacheControl string) {
-	imageURL := geoSatelliteImageURL(gh.googleAPIKey, lat, lng, zoom)
+func (gh *GeoHandlers) proxySatelliteImage(c *gin.Context, lat, lng float64, zoom int, width, height int, cacheControl string) {
+	imageURL := geoSatelliteImageURL(gh.googleAPIKey, lat, lng, zoom, width, height)
 
 	resp, err := gh.httpClient.Get(imageURL)
 	if err != nil {

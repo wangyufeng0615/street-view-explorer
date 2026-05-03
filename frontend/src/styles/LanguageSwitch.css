@@ -1,0 +1,55 @@
+.language-switch {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid rgba(26, 43, 60, 0.14);
+  border-radius: 999px;
+  background: #f7f5f0;
+}
+
+.language-switch--dark {
+  border-color: rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.language-switch__button {
+  min-width: 36px;
+  height: 28px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #1a2b3c;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 28px;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.language-switch--dark .language-switch__button {
+  color: #e5e7eb;
+}
+
+.language-switch__button:hover:not(:disabled) {
+  background: rgba(14, 116, 144, 0.1);
+}
+
+.language-switch__button--active,
+.language-switch__button--active:hover {
+  background: #1a2b3c;
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.16);
+  cursor: default;
+}
+
+.language-switch--dark .language-switch__button--active,
+.language-switch--dark .language-switch__button--active:hover {
+  background: #ffffff;
+  color: #111827;
+}

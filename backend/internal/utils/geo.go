@@ -5,6 +5,7 @@ import (
 	"log"
 	"math"
 	"math/rand"
+	"strings"
 	"time"
 
 	"github.com/my-streetview-project/backend/internal/models"
@@ -28,6 +29,7 @@ type Region struct {
 	// 国家信息，用于按国家等概率选择
 	CountryName string
 	CountryCode string
+	CountryISO2 string
 	// 预计算的面积，避免运行时重复计算
 	Area float64
 }
@@ -95,6 +97,43 @@ func getLandMassRegions() ([]Region, error) {
 	return globalLandRegions, nil
 }
 
+// NormalizeISOAlpha2CountryCode normalizes ISO 3166-1 alpha-2 country codes.
+func NormalizeISOAlpha2CountryCode(countryCode string) (string, bool) {
+	code := strings.ToUpper(strings.TrimSpace(countryCode))
+	if len(code) != 2 {
+		return "", false
+	}
+	for _, r := range code {
+		if r < 'A' || r > 'Z' {
+			return "", false
+		}
+	}
+	return code, true
+}
+
+func countryRegionsByISOAlpha2(countryCode string) ([]Region, error) {
+	code, ok := NormalizeISOAlpha2CountryCode(countryCode)
+	if !ok {
+		return nil, fmt.Errorf("无效的国家代码: %s", countryCode)
+	}
+
+	landRegions, err := getLandMassRegions()
+	if err != nil {
+		return nil, err
+	}
+
+	regions := make([]Region, 0)
+	for _, region := range landRegions {
+		if region.CountryISO2 == code {
+			regions = append(regions, region)
+		}
+	}
+	if len(regions) == 0 {
+		return nil, fmt.Errorf("不支持的国家代码: %s", code)
+	}
+	return regions, nil
+}
+
 // extractLandRegionsFromGeoJSON 从GeoJSON数据中提取陆地区域边界
 func extractLandRegionsFromGeoJSON(fc *geojson.FeatureCollection, isMinorIsland bool) []Region {
 	var regions []Region
@@ -107,6 +146,7 @@ func extractLandRegionsFromGeoJSON(fc *geojson.FeatureCollection, isMinorIsland 
 		// 提取国家信息
 		countryName := ""
 		countryCode := ""
+		countryISO2 := ""
 		if feature.Properties != nil {
 			if name, exists := feature.Properties["NAME"]; exists {
 				if nameStr, ok := name.(string); ok {
@@ -122,13 +162,18 @@ func extractLandRegionsFromGeoJSON(fc *geojson.FeatureCollection, isMinorIsland 
 					countryCode = codeStr
 				}
 			}
+			if code, exists := feature.Properties["ISO_A2"]; exists {
+				if codeStr, ok := code.(string); ok && codeStr != "-99" {
+					countryISO2 = strings.ToUpper(codeStr)
+				}
+			}
 		}
 
 		switch geom := feature.Geometry.(type) {
 		case orb.Polygon:
-			regions = append(regions, extractRegionsFromPolygon(geom, isMinorIsland, countryName, countryCode)...)
+			regions = append(regions, extractRegionsFromPolygon(geom, isMinorIsland, countryName, countryCode, countryISO2)...)
 		case orb.MultiPolygon:
-			regions = append(regions, extractRegionsFromMultiPolygon(geom, isMinorIsland, countryName, countryCode)...)
+			regions = append(regions, extractRegionsFromMultiPolygon(geom, isMinorIsland, countryName, countryCode, countryISO2)...)
 		}
 	}
 
@@ -144,7 +189,7 @@ func extractLandRegionsFromGeoJSON(fc *geojson.FeatureCollection, isMinorIsland 
 }
 
 // extractRegionsFromPolygon 从多边形提取区域边界
-func extractRegionsFromPolygon(polygon orb.Polygon, isMinorIsland bool, countryName, countryCode string) []Region {
+func extractRegionsFromPolygon(polygon orb.Polygon, isMinorIsland bool, countryName, countryCode, countryISO2 string) []Region {
 	if len(polygon) == 0 || len(polygon[0]) == 0 {
 		return nil
 	}
@@ -164,6 +209,7 @@ func extractRegionsFromPolygon(polygon orb.Polygon, isMinorIsland bool, countryN
 		IsMinorIsland: isMinorIsland,
 		CountryName:   countryName,
 		CountryCode:   countryCode,
+		CountryISO2:   countryISO2,
 		// Area 将在 InitializeGeoData 中计算
 	}
 
@@ -172,7 +218,7 @@ func extractRegionsFromPolygon(polygon orb.Polygon, isMinorIsland bool, countryN
 
 // extractRegionsFromMultiPolygon 从多多边形提取区域边界
 // 将每个多边形作为独立区域，避免大国家的岛屿导致坐标密度不均
-func extractRegionsFromMultiPolygon(multiPolygon orb.MultiPolygon, isMinorIsland bool, countryName, countryCode string) []Region {
+func extractRegionsFromMultiPolygon(multiPolygon orb.MultiPolygon, isMinorIsland bool, countryName, countryCode, countryISO2 string) []Region {
 	if len(multiPolygon) == 0 {
 		return nil
 	}
@@ -200,6 +246,7 @@ func extractRegionsFromMultiPolygon(multiPolygon orb.MultiPolygon, isMinorIsland
 			IsMinorIsland: isMinorIsland,
 			CountryName:   countryName,
 			CountryCode:   countryCode,
+			CountryISO2:   countryISO2,
 			// Area 将在 InitializeGeoData 中计算
 		}
 
@@ -332,6 +379,21 @@ func GenerateRandomCoordinate(regions []models.Region) (latitude, longitude floa
 	// 随机选择一个区域
 	region := selectRandomRegion(selectedRegions)
 
+	return generateCoordinateInRegion(region)
+}
+
+// GenerateRandomCoordinateInCountry generates a coordinate inside one ISO 3166-1 alpha-2 country.
+func GenerateRandomCoordinateInCountry(countryCode string) (latitude, longitude float64, err error) {
+	regions, err := countryRegionsByISOAlpha2(countryCode)
+	if err != nil {
+		return 0, 0, err
+	}
+	region := selectRegionWithinCountry(regions)
+	lat, lng := generateCoordinateInRegion(region)
+	return lat, lng, nil
+}
+
+func generateCoordinateInRegion(region Region) (latitude, longitude float64) {
 	// 尝试在实际多边形内生成坐标
 	if len(region.Polygons) > 0 {
 		// 随机选择一个多边形（对于MultiPolygon情况）

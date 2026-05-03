@@ -10,7 +10,14 @@ vi.mock("../utils/googleMaps", () => ({
 }));
 
 vi.mock("react-i18next", () => ({
-  useTranslation: () => ({ t: (key) => key, i18n: { language: "en" } }),
+  useTranslation: () => ({
+    t: (key) => key,
+    i18n: {
+      language: "en",
+      resolvedLanguage: "en",
+      changeLanguage: vi.fn(() => Promise.resolve()),
+    },
+  }),
 }));
 
 vi.mock("react-router-dom", () => ({ useNavigate: () => navigate }));
@@ -33,6 +40,9 @@ describe("GeoGamePage", () => {
     expect(screen.getByText("geo.title")).toBeInTheDocument();
     expect(screen.getByText("geo.start_atlas")).toBeInTheDocument();
     expect(screen.getByText("geo.invite_friend_online")).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "language" })).toBeInTheDocument();
+    expect(document.querySelector(".geo-main")).not.toBeInTheDocument();
+    expect(document.querySelector(".geo-map-container")).not.toBeInTheDocument();
   });
 
   it("shows the concise intro", () => {
@@ -52,5 +62,7 @@ describe("GeoGamePage", () => {
     render(<GeoGamePage />);
     fireEvent.click(screen.getByText("geo.start_atlas"));
     expect(screen.queryByText("geo.start_atlas")).not.toBeInTheDocument();
+    expect(document.querySelector(".geo-main")).toBeInTheDocument();
+    expect(screen.getByText("geo.map_loading")).toBeInTheDocument();
   });
 });

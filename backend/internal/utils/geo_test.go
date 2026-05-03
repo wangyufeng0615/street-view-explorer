@@ -172,6 +172,40 @@ func TestGenerateRandomCoordinate(t *testing.T) {
 	}
 }
 
+func TestGenerateRandomCoordinateInCountry(t *testing.T) {
+	requireGeoTestData(t)
+
+	code, ok := NormalizeISOAlpha2CountryCode("jp")
+	if !ok || code != "JP" {
+		t.Fatalf("expected jp to normalize to JP, got %q", code)
+	}
+
+	regions, err := countryRegionsByISOAlpha2("JP")
+	if err != nil {
+		t.Fatalf("expected Japan regions: %v", err)
+	}
+	if len(regions) == 0 {
+		t.Fatal("expected at least one Japan region")
+	}
+
+	for i := 0; i < 20; i++ {
+		lat, lng, err := GenerateRandomCoordinateInCountry("JP")
+		if err != nil {
+			t.Fatalf("country coordinate generation failed: %v", err)
+		}
+		if !coordinateInAnyPolygon(lat, lng, regions) {
+			t.Fatalf("coordinate (%.6f, %.6f) is outside Japan polygons", lat, lng)
+		}
+	}
+
+	if _, _, err := GenerateRandomCoordinateInCountry("XX"); err == nil {
+		t.Fatal("expected unsupported country code to fail")
+	}
+	if _, ok := NormalizeISOAlpha2CountryCode("USA"); ok {
+		t.Fatal("expected alpha-3 country code to be rejected")
+	}
+}
+
 // TestRegionCaching 测试区域缓存机制
 func TestRegionCaching(t *testing.T) {
 	requireGeoTestData(t)

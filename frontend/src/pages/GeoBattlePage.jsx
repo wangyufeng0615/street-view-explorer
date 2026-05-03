@@ -20,12 +20,24 @@ import {
   formatDistance,
   isPerfectGuess,
 } from "../utils/geoGameUtils";
+import LanguageSwitch from "../components/LanguageSwitch";
 import "../styles/GeoBattle.css";
 
 const NICKNAME_STORAGE_KEY = "geoBattleNickname";
 const WORLD_CENTER = { lat: 20, lng: 0 };
 const SYNC_INTERVAL_PLAYING = 1500;
 const SYNC_INTERVAL_IDLE = 2500;
+const NICKNAMES = {
+  zh: [
+    "星图旅人",
+    "云层观察员",
+    "海岸猎手",
+    "地图玩家",
+    "经纬探员",
+    "山脊向导",
+  ],
+  en: ["Sky Mapper", "Cloud Scout", "Coast Hunter", "Map Runner", "Geo Pilot"],
+};
 
 function readSavedNickname() {
   if (typeof window === "undefined") return "";
@@ -35,6 +47,17 @@ function readSavedNickname() {
 function saveNickname(nickname) {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(NICKNAME_STORAGE_KEY, nickname);
+}
+
+function getGeoLanguage(i18n) {
+  const language = i18n.resolvedLanguage || i18n.language || "en";
+  return language.startsWith("zh") ? "zh" : "en";
+}
+
+function generateNickname(language = "en") {
+  const names = NICKNAMES[language] || NICKNAMES.en;
+  const name = names[Math.floor(Math.random() * names.length)];
+  return `${name}${Math.floor(100 + Math.random() * 900)}`;
 }
 
 function normalizeRoomCode(code) {
@@ -117,13 +140,20 @@ function PlayerStatusCard({ title, player, currentPhase, t }) {
 }
 
 function GeoBattleHubPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
-  const [nickname, setNickname] = useState(readSavedNickname());
+  const activeLanguage = getGeoLanguage(i18n);
+  const [nickname, setNickname] = useState(
+    () => readSavedNickname() || generateNickname(activeLanguage),
+  );
   const [roomCode, setRoomCode] = useState("");
   const [matchmaking, setMatchmaking] = useState({ status: "idle" });
   const [busyAction, setBusyAction] = useState("");
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    saveNickname(nickname);
+  }, [nickname]);
 
   const syncMatchmaking = useCallback(async () => {
     const res = await getGeoBattleMatchmakingStatus();
@@ -231,6 +261,11 @@ function GeoBattleHubPage() {
     setMatchmaking({ status: "idle" });
   };
 
+  const handleRandomNickname = () => {
+    setNickname(generateNickname(activeLanguage));
+    setError("");
+  };
+
   return (
     <div className="geo-battle-page">
       <div className="geo-battle-shell geo-battle-shell--hub">
@@ -244,112 +279,127 @@ function GeoBattleHubPage() {
           </button>
           <div className="geo-battle-title-block">
             <div className="geo-battle-title">{t("geo_online.title")}</div>
-            <div className="geo-battle-subtitle">
-              {t("geo_online.subtitle")}
-            </div>
           </div>
         </div>
 
-        <div className="geo-battle-hub-grid">
-          <div className="geo-battle-panel">
+        <div className="geo-battle-lobby">
+          <div className="geo-battle-panel geo-battle-profile-panel">
             <label className="geo-battle-field">
               <span>{t("geo_online.nickname")}</span>
-              <input
-                value={nickname}
-                onChange={(event) => setNickname(event.target.value)}
-                placeholder={t("geo_online.nickname_placeholder")}
-                maxLength={20}
-              />
-            </label>
-
-            <div className="geo-battle-action-grid">
-              <button
-                type="button"
-                className="geo-battle-primary-btn"
-                disabled={busyAction !== "" || matchmaking.status === "queued"}
-                onClick={handleCreateRoom}
-              >
-                {busyAction === "create"
-                  ? t("geo_online.loading")
-                  : t("geo_online.create_room")}
-              </button>
-              <div className="geo-battle-action-hint">
-                {t("geo_online.create_hint")}
-              </div>
-
-              <label className="geo-battle-field geo-battle-field--compact">
-                <span>{t("geo_online.room_code")}</span>
+              <div className="geo-battle-nickname-row">
                 <input
-                  value={roomCode}
-                  onChange={(event) => setRoomCode(event.target.value)}
-                  placeholder={t("geo_online.room_code_placeholder")}
-                  maxLength={6}
+                  value={nickname}
+                  onChange={(event) => setNickname(event.target.value)}
+                  placeholder={t("geo_online.nickname_placeholder")}
+                  maxLength={20}
                 />
-              </label>
-              <button
-                type="button"
-                className="geo-battle-secondary-btn"
-                disabled={busyAction !== "" || matchmaking.status === "queued"}
-                onClick={handleJoinRoom}
-              >
-                {busyAction === "join"
-                  ? t("geo_online.loading")
-                  : t("geo_online.join_room")}
-              </button>
-              <div className="geo-battle-action-hint">
-                {t("geo_online.join_hint")}
-              </div>
-
-              <button
-                type="button"
-                className="geo-battle-secondary-btn"
-                disabled={busyAction !== "" || matchmaking.status === "queued"}
-                onClick={handleMatchmaking}
-              >
-                {busyAction === "match"
-                  ? t("geo_online.loading")
-                  : t("geo_online.matchmaking")}
-              </button>
-              <div className="geo-battle-action-hint">
-                {t("geo_online.matchmaking_hint")}
-              </div>
-            </div>
-
-            {error && <div className="geo-battle-banner">{error}</div>}
-          </div>
-
-          <div className="geo-battle-panel geo-battle-panel--side">
-            <div className="geo-battle-side-title">
-              {t("geo_online.rules_title")}
-            </div>
-            <ul className="geo-battle-rule-list">
-              <li>{t("geo_online.rule_1")}</li>
-              <li>{t("geo_online.rule_2")}</li>
-              <li>{t("geo_online.rule_3")}</li>
-              <li>{t("geo_online.rule_4")}</li>
-            </ul>
-
-            {matchmaking.status === "queued" && (
-              <div className="geo-battle-matchmaking-card">
-                <div className="geo-battle-side-title">
-                  {t("geo_online.matchmaking_wait")}
-                </div>
-                <div className="geo-battle-side-copy">
-                  {t("geo_online.matchmaking_wait_hint")}
-                </div>
                 <button
                   type="button"
-                  className="geo-battle-secondary-btn"
-                  disabled={busyAction !== ""}
-                  onClick={handleCancelMatchmaking}
+                  className="geo-battle-icon-btn"
+                  aria-label={t("geo_online.randomize_nickname")}
+                  title={t("geo_online.randomize_nickname")}
+                  onClick={handleRandomNickname}
                 >
-                  {busyAction === "cancel-match"
-                    ? t("geo_online.loading")
-                    : t("geo_online.cancel_matchmaking")}
+                  ↻
                 </button>
               </div>
-            )}
+            </label>
           </div>
+
+          <div className="geo-battle-hub-grid">
+            <section className="geo-battle-panel geo-battle-private-panel">
+              <div className="geo-battle-choice-title">
+                {t("geo_online.private_room")}
+              </div>
+              <div className="geo-battle-private-actions">
+                <button
+                  type="button"
+                  className="geo-battle-primary-btn"
+                  disabled={
+                    busyAction !== "" || matchmaking.status === "queued"
+                  }
+                  onClick={handleCreateRoom}
+                >
+                  {busyAction === "create"
+                    ? t("geo_online.loading")
+                    : t("geo_online.create_room")}
+                </button>
+                <div className="geo-battle-join-row">
+                  <label className="geo-battle-field geo-battle-field--compact">
+                    <span>{t("geo_online.room_code")}</span>
+                    <input
+                      value={roomCode}
+                      onChange={(event) => setRoomCode(event.target.value)}
+                      placeholder={t("geo_online.room_code_placeholder")}
+                      maxLength={6}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="geo-battle-secondary-btn"
+                    disabled={
+                      busyAction !== "" || matchmaking.status === "queued"
+                    }
+                    onClick={handleJoinRoom}
+                  >
+                    {busyAction === "join"
+                      ? t("geo_online.loading")
+                      : t("geo_online.join_room")}
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            <section className="geo-battle-panel geo-battle-match-panel">
+              <div className="geo-battle-choice-title">
+                {t("geo_online.match_room")}
+              </div>
+              {matchmaking.status !== "queued" && (
+                <button
+                  type="button"
+                  className="geo-battle-secondary-btn geo-battle-match-btn"
+                  disabled={
+                    busyAction !== "" || matchmaking.status === "queued"
+                  }
+                  onClick={handleMatchmaking}
+                >
+                  {busyAction === "match"
+                    ? t("geo_online.loading")
+                    : t("geo_online.matchmaking")}
+                </button>
+              )}
+
+              {matchmaking.status === "queued" && (
+                <div className="geo-battle-matchmaking-card">
+                  <div className="geo-battle-matchmaking-visual" aria-hidden>
+                    <span />
+                    <span />
+                    <span />
+                  </div>
+                  <div>
+                    <div className="geo-battle-side-title">
+                      {t("geo_online.matchmaking_wait")}
+                    </div>
+                    <div className="geo-battle-side-copy">
+                      {t("geo_online.matchmaking_wait_hint")}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="geo-battle-secondary-btn"
+                    disabled={busyAction !== ""}
+                    onClick={handleCancelMatchmaking}
+                  >
+                    {busyAction === "cancel-match"
+                      ? t("geo_online.loading")
+                      : t("geo_online.cancel_matchmaking")}
+                  </button>
+                </div>
+              )}
+            </section>
+          </div>
+
+          {error && <div className="geo-battle-banner">{error}</div>}
         </div>
       </div>
     </div>
@@ -526,6 +576,7 @@ function GeoBattleRoomPage({ roomId }) {
     pendingMarkerRef.current = new maps.Marker({
       position: guessPin,
       map: guessMapRef.current,
+      clickable: false,
       icon: {
         path: maps.SymbolPath.CIRCLE,
         scale: 8,
@@ -840,6 +891,7 @@ function GeoBattleRoomPage({ roomId }) {
             </div>
           </div>
           <div className="geo-battle-room-meta">
+            <LanguageSwitch />
             {room.room_code && (
               <button
                 type="button"
@@ -934,7 +986,15 @@ function GeoBattleRoomPage({ roomId }) {
                 {t("geo_online.map_error")}
               </div>
             ) : (
-              <div ref={guessMapElRef} className="geo-battle-map" />
+              <div className="geo-battle-map-stage">
+                <div ref={guessMapElRef} className="geo-battle-map" />
+                {!mapsReady && (
+                  <div className="geo-battle-map-loading">
+                    <div className="geo-battle-spinner" />
+                    <span>{t("geo_online.map_loading")}</span>
+                  </div>
+                )}
+              </div>
             )}
 
             <div className="geo-battle-controls">

@@ -95,11 +95,30 @@ func (h *Handlers) GetRandomLocation(c *gin.Context) {
 
 	// Get language from query parameter, default to "en" (align with frontend default)
 	language := c.DefaultQuery("lang", "en")
+	countryCode := ""
+	for _, key := range []string{"country", "country_code", "countryCode"} {
+		if raw := c.Query(key); raw != "" {
+			normalized, ok := utils.NormalizeISOAlpha2CountryCode(raw)
+			if !ok {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"success": false,
+					"error":   "country must be an ISO 3166-1 alpha-2 country code",
+				})
+				return
+			}
+			countryCode = normalized
+			break
+		}
+	}
 
 	// 获取随机位置（自动处理用户偏好）
-	loc, err := svc.LocationService.GetRandomLocation(sessionID, language)
+	loc, err := svc.LocationService.GetRandomLocation(sessionID, language, countryCode)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
+		status := http.StatusInternalServerError
+		if countryCode != "" && strings.Contains(err.Error(), "不支持的国家代码") {
+			status = http.StatusBadRequest
+		}
+		c.JSON(status, gin.H{
 			"success": false,
 			"error":   err.Error(),
 		})
