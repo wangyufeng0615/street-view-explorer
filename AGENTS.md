@@ -143,7 +143,7 @@ backend/
 - 当前在线对战是固定 1v1，服务端权威状态保存在 `GeoBattleService` 的内存 map 中，后端重启会丢房间和匹配队列。
 - 房间模式：`private` 和 `matchmaking`。
 - 阶段：`lobby -> preparing -> countdown -> playing -> reveal -> finished`。
-- 默认 5 轮，每轮 30 秒，reveal 8 秒，countdown 5 秒。
+- 默认 5 轮，每轮 100 秒，reveal 8 秒，countdown 5 秒。
 - 好友房需要双方 ready 后才开始；随机匹配成功后自动进入 preparing。
 - 前端用 polling 同步状态：playing 约 1.5 秒，其余约 2.5 秒；服务端 `server_time` 用于修正倒计时。
 - 房间码 6 位，来自 `ABCDEFGHJKLMNPQRSTUVWXYZ23456789`；昵称最多 20 个 rune，会去掉控制字符。

@@ -12,6 +12,11 @@ import { loadGoogleMapsScript } from "../utils/googleMaps";
 import { getRandomLocation } from "../services/api";
 import LanguageSwitch from "../components/LanguageSwitch";
 import {
+  GameFeedbackBubbles,
+  GameSoundToggle,
+} from "../components/GameFeedback";
+import { useGameFeedback } from "../hooks/useGameFeedback";
+import {
   TOTAL_ROUNDS,
   START_ZOOM,
   MIN_ZOOM,
@@ -19,7 +24,9 @@ import {
   calculateScore,
   formatDistance,
   generateRoundPlan,
+  hasSamePanoTarget,
   isPerfectGuess,
+  isRoundTargetDuplicate,
   jitterCoord,
 } from "../utils/geoGameUtils";
 import "../styles/GeoGame.css";
@@ -43,6 +50,8 @@ const RESULT_PIN_OFFSET_PX = 16;
 const STATIC_MAP_MAX_SIDE = 640;
 const STATIC_MAP_MIN_SIDE = 120;
 const SATELLITE_ZOOM_TRANSITION_MS = 760;
+const RANDOM_TARGET_MAX_ATTEMPTS = 6;
+const RANDOM_TARGET_MAX_FAILURES = 2;
 
 // ─── State ──────────────────────────────────────────────────
 
@@ -60,6 +69,7 @@ const initialState = {
   aiLoading: false,
   roundPlan: null, // Array<{ source: 'database'|'random', entry? }>
   countryCode: "",
+  usedTargets: [],
 };
 
 function reducer(state, action) {
@@ -82,6 +92,7 @@ function reducer(state, action) {
         ...state,
         phase: "PLAYING",
         target: action.payload,
+        usedTargets: appendUsedTarget(state.usedTargets, action.payload),
       };
     case "ZOOM_OUT":
       if (state.phase !== "PLAYING" || state.currentZoom <= MIN_ZOOM) {
@@ -164,6 +175,7 @@ function reducer(state, action) {
         aiLoading: false,
         roundPlan: state.roundPlan, // preserve across rounds
         countryCode: state.countryCode,
+        usedTargets: state.usedTargets,
       };
     }
     case "RESTART":
@@ -176,6 +188,20 @@ function reducer(state, action) {
 function normalizeCountryCode(countryCode) {
   const code = (countryCode || "").trim().toUpperCase();
   return /^[A-Z]{2}$/.test(code) ? code : "";
+}
+
+function appendUsedTarget(usedTargets, target) {
+  if (!target || !Number.isFinite(target.lat) || !Number.isFinite(target.lng)) {
+    return usedTargets;
+  }
+  return [
+    ...usedTargets,
+    {
+      lat: target.lat,
+      lng: target.lng,
+      panoId: target.panoId || target.pano_id || "",
+    },
+  ];
 }
 
 function getCountryCodeFromSearch(search) {
@@ -380,27 +406,46 @@ function getDatabaseRoundTarget(entry, language) {
   return { lat, lng, address: `${name}, ${country}`, country };
 }
 
-async function getRandomRoundTarget(language, countryCode) {
-  for (let attempt = 0; attempt < 2; attempt++) {
+async function getRandomRoundTarget(language, countryCode, usedTargets = []) {
+  let failures = 0;
+  let nearestFallback = null;
+  for (let attempt = 0; attempt < RANDOM_TARGET_MAX_ATTEMPTS; attempt++) {
     const res = await getRandomLocation(language, "geo_game", countryCode);
     if (res.success && res.data) {
       const d = res.data;
-      return {
+      const target = {
         lat: d.latitude,
         lng: d.longitude,
         address: d.formatted_address,
         country: d.country,
+        panoId: d.pano_id || d.panoId || "",
       };
+      if (isRoundTargetDuplicate(target, usedTargets)) {
+        if (!hasSamePanoTarget(target, usedTargets) && !nearestFallback) {
+          nearestFallback = target;
+        }
+        continue;
+      }
+      return target;
     }
+    failures += 1;
+    if (failures >= RANDOM_TARGET_MAX_FAILURES) break;
   }
-  return null;
+  return nearestFallback;
 }
 
-async function resolveRoundTarget(plan, language, countryCode) {
+async function resolveRoundTarget(
+  plan,
+  language,
+  countryCode,
+  usedTargets = [],
+) {
   if (plan?.source === "database") {
-    return getDatabaseRoundTarget(plan.entry, language);
+    const target = getDatabaseRoundTarget(plan.entry, language);
+    if (!isRoundTargetDuplicate(target, usedTargets)) return target;
+    return getRandomRoundTarget(language, countryCode, usedTargets);
   }
-  return getRandomRoundTarget(language, countryCode);
+  return getRandomRoundTarget(language, countryCode, usedTargets);
 }
 
 function getCurrentPlayerScore(state) {
@@ -474,7 +519,9 @@ export function getGameOverAtlasMessage(state, t, playerTotal, aiTotal) {
     }).trim();
   }
 
-  const sortedRounds = [...guessedRounds].sort((a, b) => a.distance - b.distance);
+  const sortedRounds = [...guessedRounds].sort(
+    (a, b) => a.distance - b.distance,
+  );
   const bestRound = sortedRounds[0];
   const secondRound = sortedRounds[1] || bestRound;
   const roughRound = sortedRounds[sortedRounds.length - 1] || bestRound;
@@ -494,7 +541,12 @@ export function getGameOverAtlasMessage(state, t, playerTotal, aiTotal) {
     placeList: formatPlaceList(highlightPlaces, t),
     perfectPlaceList: formatPlaceList(perfectPlaces, t),
     perfectCount: perfectRounds.length,
-    distance: formatResultDistance(bestRound.distance, t, true, bestRound.zoomSteps),
+    distance: formatResultDistance(
+      bestRound.distance,
+      t,
+      true,
+      bestRound.zoomSteps,
+    ),
     score: formatPlainScore(t, playerTotal),
     outcome,
   };
@@ -602,8 +654,22 @@ export default function GeoGamePage() {
   const [satelliteImageSize, setSatelliteImageSize] = useState(
     getInitialSatelliteRequestSize,
   );
+  const {
+    bubbles: feedbackBubbles,
+    showFeedbackBubble,
+    playFeedback,
+    soundEnabled,
+    toggleSound,
+  } = useGameFeedback({ storageKey: "geoGameSound" });
   const zoomTransitionRequestRef = useRef(0);
   const zoomTransitionTimerRef = useRef(null);
+  const feedbackRef = useRef({ showFeedbackBubble, playFeedback, t });
+  feedbackRef.current = { showFeedbackBubble, playFeedback, t };
+  const phaseFeedbackRef = useRef({
+    phase: initialState.phase,
+    round: initialState.round,
+    aiGuessReady: false,
+  });
 
   // ─── Fetch location: database entry or random API ───
   // Active language is read via ref to avoid re-triggering round selection.
@@ -616,8 +682,10 @@ export default function GeoGamePage() {
     const preloadedTarget = preloadedTargetsRef.current[state.round];
     if (preloadedTarget) {
       delete preloadedTargetsRef.current[state.round];
-      dispatch({ type: "SET_TARGET", payload: preloadedTarget });
-      return;
+      if (!isRoundTargetDuplicate(preloadedTarget, state.usedTargets)) {
+        dispatch({ type: "SET_TARGET", payload: preloadedTarget });
+        return;
+      }
     }
 
     let cancelled = false;
@@ -626,6 +694,7 @@ export default function GeoGamePage() {
         plan,
         langRef.current,
         state.countryCode,
+        state.usedTargets,
       );
       if (cancelled) return;
       dispatch(
@@ -640,6 +709,7 @@ export default function GeoGamePage() {
     state.round,
     state.roundPlan,
     state.countryCode,
+    state.usedTargets,
   ]);
 
   // ─── Load Google Maps API (with error handling) ───
@@ -699,7 +769,15 @@ export default function GeoGamePage() {
       const s = stateRef.current;
       if (s.phase !== "PLAYING") return;
       const pos = { lat: e.latLng.lat(), lng: e.latLng.lng() };
+      const hadPin = Boolean(s.guessPin);
       dispatch({ type: "PLACE_PIN", payload: pos });
+      feedbackRef.current.playFeedback("place");
+      feedbackRef.current.showFeedbackBubble(
+        feedbackRef.current.t(
+          hadPin ? "geo.feedback_pin_moved" : "geo.feedback_pin_placed",
+        ),
+        "player",
+      );
       if (pendingMarkerRef.current) {
         pendingMarkerRef.current.setPosition(pos);
       } else {
@@ -742,6 +820,7 @@ export default function GeoGamePage() {
         plan,
         langRef.current,
         state.countryCode,
+        state.usedTargets,
       );
       if (cancelled || !target) return;
       preloadedTargetsRef.current[nextRound] = target;
@@ -757,6 +836,7 @@ export default function GeoGamePage() {
     state.round,
     state.roundPlan,
     state.countryCode,
+    state.usedTargets,
     satelliteImageSize,
   ]);
 
@@ -959,6 +1039,40 @@ export default function GeoGamePage() {
     activeGeoLanguage,
   ]);
 
+  useEffect(() => {
+    const previous = phaseFeedbackRef.current;
+    const aiGuessReady =
+      state.phase === "ROUND_RESULT" && Boolean(state.aiGuess);
+
+    if (previous.phase === "LOADING" && state.phase === "PLAYING") {
+      playFeedback("ready");
+      showFeedbackBubble(t("geo.feedback_round_ready"), "success");
+    }
+
+    if (!previous.aiGuessReady && aiGuessReady) {
+      playFeedback("place");
+      showFeedbackBubble(t("geo.feedback_ai_done"), "atlas");
+    }
+
+    if (previous.phase !== "GAME_OVER" && state.phase === "GAME_OVER") {
+      playFeedback("finish");
+      showFeedbackBubble(t("geo.feedback_game_finished"), "success");
+    }
+
+    phaseFeedbackRef.current = {
+      phase: state.phase,
+      round: state.round,
+      aiGuessReady,
+    };
+  }, [
+    state.phase,
+    state.round,
+    state.aiGuess,
+    playFeedback,
+    showFeedbackBubble,
+    t,
+  ]);
+
   // ─── Cleanup ───
   function cleanupMarkers() {
     if (pendingMarkerRef.current) {
@@ -1008,20 +1122,42 @@ export default function GeoGamePage() {
     dispatch({ type: "RESTART" });
   }, [cancelSatelliteZoomTransition]);
   const handleLockIn = useCallback(() => {
+    const currentState = stateRef.current;
+    if (
+      currentState.phase !== "PLAYING" ||
+      !currentState.guessPin ||
+      !currentState.target
+    ) {
+      return;
+    }
     cancelSatelliteZoomTransition();
+    playFeedback("lock");
+    showFeedbackBubble(t("geo.feedback_locked"), "target");
     dispatch({ type: "LOCK_IN" });
-  }, [cancelSatelliteZoomTransition]);
+  }, [cancelSatelliteZoomTransition, playFeedback, showFeedbackBubble, t]);
   const handleGiveUp = useCallback(() => {
+    const currentState = stateRef.current;
+    if (currentState.phase !== "PLAYING" || !currentState.target) return;
     cancelSatelliteZoomTransition();
+    playFeedback("skip");
+    showFeedbackBubble(t("geo.feedback_gave_up"), "warning");
     dispatch({ type: "GIVE_UP" });
-  }, [cancelSatelliteZoomTransition]);
+  }, [cancelSatelliteZoomTransition, playFeedback, showFeedbackBubble, t]);
   const handleStartGame = useCallback(
     (options) => {
       preloadedTargetsRef.current = {};
       cancelSatelliteZoomTransition();
+      playFeedback("ready");
+      showFeedbackBubble(t("geo.feedback_game_started"), "success");
       dispatch({ type: "START_GAME", ...options });
     },
-    [cancelSatelliteZoomTransition, dispatch],
+    [
+      cancelSatelliteZoomTransition,
+      dispatch,
+      playFeedback,
+      showFeedbackBubble,
+      t,
+    ],
   );
 
   const satelliteUrl = state.target
@@ -1069,6 +1205,8 @@ export default function GeoGamePage() {
         });
       }
       dispatch({ type: "ZOOM_OUT" });
+      playFeedback("zoom");
+      showFeedbackBubble(t("geo.feedback_zoom_out"), "zoom");
 
       if (!prefersReducedMotion) {
         if (zoomTransitionTimerRef.current) {
@@ -1088,9 +1226,18 @@ export default function GeoGamePage() {
       if (zoomTransitionRequestRef.current !== requestId) return;
       setZoomTransitionLoading(false);
       setImgError(true);
+      playFeedback("error");
+      showFeedbackBubble(t("geo.feedback_image_error"), "danger");
     };
     img.src = toUrl;
-  }, [satelliteImageSize, zoomTransition, zoomTransitionLoading]);
+  }, [
+    satelliteImageSize,
+    zoomTransition,
+    zoomTransitionLoading,
+    playFeedback,
+    showFeedbackBubble,
+    t,
+  ]);
 
   useEffect(() => {
     if (!zoomTransition?.animationDone || !imgLoaded) return;
@@ -1143,6 +1290,12 @@ export default function GeoGamePage() {
                   )}
                 </>
               )}
+              <GameSoundToggle
+                enabled={soundEnabled}
+                onToggle={toggleSound}
+                enabledLabel={t("geo.feedback_sound_on")}
+                disabledLabel={t("geo.feedback_sound_off")}
+              />
               <LanguageSwitch className="geo-topbar-language" />
             </div>
           </div>
@@ -1162,6 +1315,8 @@ export default function GeoGamePage() {
                   onError={() => {
                     setImgError(true);
                     setImgLoaded(true);
+                    playFeedback("error");
+                    showFeedbackBubble(t("geo.feedback_image_error"), "danger");
                   }}
                 />
               )}
@@ -1275,6 +1430,7 @@ export default function GeoGamePage() {
           onNext={handleNextRound}
         />
       )}
+      <GameFeedbackBubbles bubbles={feedbackBubbles} />
     </div>
   );
 }
@@ -1393,10 +1549,7 @@ function RoundResult({ state, t, onNext }) {
         )}
       </div>
 
-      <button
-        className="geo-result-btn"
-        onClick={onNext}
-      >
+      <button className="geo-result-btn" onClick={onNext}>
         {state.round >= TOTAL_ROUNDS
           ? t("geo.see_results")
           : t("geo.next_round")}

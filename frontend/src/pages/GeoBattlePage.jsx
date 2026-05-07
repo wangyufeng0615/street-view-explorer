@@ -17,15 +17,25 @@ import {
 import { loadGoogleMapsScript } from "../utils/googleMaps";
 import {
   formatDistance,
+  getEffectiveDistanceKm,
+  getGuessToleranceKm,
   isPerfectGuess,
 } from "../utils/geoGameUtils";
 import LanguageSwitch from "../components/LanguageSwitch";
+import {
+  GameFeedbackBubbles,
+  GameSoundToggle,
+} from "../components/GameFeedback";
+import { useGameFeedback } from "../hooks/useGameFeedback";
 import "../styles/GeoBattle.css";
 
 const NICKNAME_STORAGE_KEY = "geoBattleNickname";
 const WORLD_CENTER = { lat: 20, lng: 0 };
 const SYNC_INTERVAL_PLAYING = 1500;
 const SYNC_INTERVAL_IDLE = 2500;
+const SATELLITE_ZOOM_TRANSITION_MS = 760;
+const SCORE_ZOOM_DECAY_PER_STEP = 0.12;
+const SCORE_DISTANCE_DECAY_KM = 1500;
 const BATTLE_MARKERS = {
   target: { color: "#10b981", zIndex: 30, scale: 17 },
   player: { color: "#ef4444", zIndex: 50, scale: 16 },
@@ -76,6 +86,55 @@ function getRemainingSeconds(deadlineAt, clockOffset = 0, now = Date.now()) {
   return Math.max(0, Math.ceil((deadline - serverNow) / 1000));
 }
 
+function parseSnapshotTime(value) {
+  if (!value) return null;
+  const ms = Date.parse(value);
+  return Number.isNaN(ms) ? null : ms;
+}
+
+function isOlderRoomSnapshot(room, latest) {
+  const serverTimeMs = parseSnapshotTime(room?.server_time);
+  const updatedAtMs = parseSnapshotTime(room?.updated_at);
+
+  if (
+    serverTimeMs != null &&
+    latest.serverTimeMs != null &&
+    serverTimeMs < latest.serverTimeMs
+  ) {
+    return true;
+  }
+
+  if (
+    (serverTimeMs == null || serverTimeMs === latest.serverTimeMs) &&
+    updatedAtMs != null &&
+    latest.updatedAtMs != null &&
+    updatedAtMs < latest.updatedAtMs
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+function rememberRoomSnapshot(room, latest) {
+  const serverTimeMs = parseSnapshotTime(room?.server_time);
+  const updatedAtMs = parseSnapshotTime(room?.updated_at);
+
+  if (serverTimeMs != null) {
+    latest.serverTimeMs =
+      latest.serverTimeMs == null
+        ? serverTimeMs
+        : Math.max(latest.serverTimeMs, serverTimeMs);
+  }
+
+  if (updatedAtMs != null) {
+    latest.updatedAtMs =
+      latest.updatedAtMs == null
+        ? updatedAtMs
+        : Math.max(latest.updatedAtMs, updatedAtMs);
+  }
+}
+
 function getOutcomeLabel(room, t) {
   if (!room?.opponent) return null;
   if (room.me.total_score > room.opponent.total_score)
@@ -90,6 +149,62 @@ function formatBattleDistance(distanceKm, t, zoomSteps = 0) {
     return t("geo.perfect_distance_short");
   }
   return formatDistance(distanceKm);
+}
+
+function formatScoreFactor(value) {
+  if (!Number.isFinite(value)) return "1.00";
+  return value.toFixed(2);
+}
+
+function getBattleScoreBreakdown(zoomSteps = 0, distanceKm = null) {
+  const steps = Math.max(0, Number.isFinite(zoomSteps) ? zoomSteps : 0);
+  const zoomFactor = Math.exp(-steps * SCORE_ZOOM_DECAY_PER_STEP);
+  const toleranceKm = getGuessToleranceKm(steps);
+  const hasDistance = Number.isFinite(distanceKm);
+  const effectiveDistanceKm = hasDistance
+    ? getEffectiveDistanceKm(steps, distanceKm)
+    : null;
+  const distanceFactor = hasDistance
+    ? Math.exp(-effectiveDistanceKm / SCORE_DISTANCE_DECAY_KM)
+    : null;
+
+  return {
+    zoomFactor,
+    toleranceKm,
+    effectiveDistanceKm,
+    distanceFactor,
+  };
+}
+
+function BattleScoreBreakdown({ round, remainingSeconds, t }) {
+  const zoomSteps = round?.zoom_steps || 0;
+  const breakdown = getBattleScoreBreakdown(zoomSteps);
+  const timeText =
+    remainingSeconds != null
+      ? t("geo_online.score_time_remaining", { seconds: remainingSeconds })
+      : t("geo_online.score_time_no_penalty");
+
+  return (
+    <div className="geo-battle-score-breakdown">
+      <div className="geo-battle-score-formula">
+        {t("geo_online.score_formula")}
+      </div>
+      <div className="geo-battle-score-pills">
+        <span>{t("geo_online.score_base")}</span>
+        <span>
+          {t("geo_online.score_zoom_factor", {
+            factor: formatScoreFactor(breakdown.zoomFactor),
+          })}
+        </span>
+        <span>
+          {t("geo_online.score_tolerance", {
+            distance: formatDistance(breakdown.toleranceKm),
+          })}
+        </span>
+        <span>{timeText}</span>
+      </div>
+    </div>
+  );
 }
 
 function getBattleMarkerLabel(type, t) {
@@ -145,10 +260,15 @@ function getRoundWinnerLabel(round, t) {
   return t("geo_online.round_winner_draw");
 }
 
-function BattleGuessStat({ label, guess, t }) {
+function BattleGuessStat({ label, guess, type = "player", t }) {
   const score = guess?.score || 0;
+  const breakdown = getBattleScoreBreakdown(
+    guess?.zoom_steps || 0,
+    guess?.distance_km,
+  );
+  const statType = type === "opponent" ? "opponent" : "player";
   return (
-    <div className="geo-battle-guess-stat">
+    <div className={`geo-battle-guess-stat geo-battle-guess-stat--${statType}`}>
       <span>{label}</span>
       <strong>+{score.toLocaleString()}</strong>
       <em>
@@ -156,6 +276,17 @@ function BattleGuessStat({ label, guess, t }) {
           ? formatBattleDistance(guess.distance_km, t, guess.zoom_steps)
           : t("geo.gave_up")}
       </em>
+      {guess && !guess.skipped && (
+        <small>
+          {t("geo_online.score_result_factors", {
+            zoom: formatScoreFactor(breakdown.zoomFactor),
+            distance:
+              breakdown.distanceFactor == null
+                ? "--"
+                : formatScoreFactor(breakdown.distanceFactor),
+          })}
+        </small>
+      )}
     </div>
   );
 }
@@ -163,6 +294,7 @@ function BattleGuessStat({ label, guess, t }) {
 function RoundResultOverlay({ room, t }) {
   const round = room.round;
   if (!round) return null;
+  const winner = getRoundWinner(round);
 
   return (
     <div className="geo-battle-controls geo-battle-controls--result">
@@ -176,7 +308,9 @@ function RoundResultOverlay({ room, t }) {
               {getRoundPlace(round, t)}
             </div>
           </div>
-          <div className="geo-battle-round-outcome">
+          <div
+            className={`geo-battle-round-outcome geo-battle-round-outcome--${winner}`}
+          >
             {getRoundWinnerLabel(round, t)}
           </div>
         </div>
@@ -184,11 +318,13 @@ function RoundResultOverlay({ room, t }) {
           <BattleGuessStat
             label={t("geo_online.you")}
             guess={round.my_guess}
+            type="player"
             t={t}
           />
           <BattleGuessStat
             label={t("geo_online.opponent")}
             guess={round.opponent_guess}
+            type="opponent"
             t={t}
           />
         </div>
@@ -226,7 +362,9 @@ function FinalResultOverlay({
 
   return (
     <div className="geo-battle-controls geo-battle-controls--final">
-      <div className={`geo-battle-final-card geo-battle-final-card--${outcomeKey}`}>
+      <div
+        className={`geo-battle-final-card geo-battle-final-card--${outcomeKey}`}
+      >
         <div className="geo-battle-final-hero">
           <span>{t("geo_online.finished")}</span>
           <strong>{outcomeLabel}</strong>
@@ -238,13 +376,15 @@ function FinalResultOverlay({
           </em>
         </div>
         <div className="geo-battle-final-scoreboard">
-          <div>
+          <div className="geo-battle-final-score geo-battle-final-score--player">
             <span>{t("geo_online.you")}</span>
             <strong>{room.me.total_score.toLocaleString()}</strong>
           </div>
-          <div>
+          <div className="geo-battle-final-score geo-battle-final-score--opponent">
             <span>{t("geo_online.opponent")}</span>
-            <strong>{(room.opponent?.total_score || 0).toLocaleString()}</strong>
+            <strong>
+              {(room.opponent?.total_score || 0).toLocaleString()}
+            </strong>
           </div>
         </div>
         <div className="geo-battle-rounds-title">
@@ -258,9 +398,13 @@ function FinalResultOverlay({
                 <span>{getRoundPlace(round, t)}</span>
               </div>
               <div className="geo-battle-round-row-scores">
-                <span>{round.my_guess?.score?.toLocaleString() || 0}</span>
+                <span className="geo-battle-round-row-score geo-battle-round-row-score--player">
+                  {round.my_guess?.score?.toLocaleString() || 0}
+                </span>
                 <em>{getRoundWinnerLabel(round, t)}</em>
-                <span>{round.opponent_guess?.score?.toLocaleString() || 0}</span>
+                <span className="geo-battle-round-row-score geo-battle-round-row-score--opponent">
+                  {round.opponent_guess?.score?.toLocaleString() || 0}
+                </span>
               </div>
             </div>
           ))}
@@ -305,32 +449,53 @@ function getRoomMessage(room, t) {
   return room.message || t(`geo_online.phase_${room.phase}`);
 }
 
-function PlayerStatusCard({ title, player, currentPhase, t }) {
+function PlayerStatusCard({
+  title,
+  player,
+  playerRole = "player",
+  currentPhase,
+  t,
+}) {
   if (!player) {
     return null;
   }
+  const role = playerRole === "opponent" ? "opponent" : "player";
 
+  let statusTone = player.is_online ? "online" : "offline";
   let status = player.is_online
     ? t("geo_online.status_online")
     : t("geo_online.status_offline");
 
   if (player.left) {
     status = t("geo_online.opponent_left");
+    statusTone = "left";
   } else if (currentPhase === "lobby" || currentPhase === "finished") {
     status = player.is_ready
       ? t("geo_online.ready_state")
       : t("geo_online.not_ready");
+    statusTone = player.is_ready ? "ready" : "waiting";
   } else if (player.has_submitted_this_round) {
     status = t("geo_online.locked");
+    statusTone = "locked";
   }
 
   return (
-    <div className="geo-battle-player-card">
-      <div className="geo-battle-player-label">{title}</div>
+    <div className={`geo-battle-player-card geo-battle-player-card--${role}`}>
+      <div
+        className={`geo-battle-player-label geo-battle-player-label--${role}`}
+      >
+        {title}
+      </div>
       <div className="geo-battle-player-name">{player.nickname}</div>
       <div className="geo-battle-player-meta">
-        <span>{status}</span>
-        <span>{player.total_score.toLocaleString()}</span>
+        <span
+          className={`geo-battle-player-status geo-battle-player-status--${statusTone}`}
+        >
+          {status}
+        </span>
+        <span className="geo-battle-player-score">
+          {player.total_score.toLocaleString()}
+        </span>
       </div>
     </div>
   );
@@ -619,6 +784,16 @@ function GeoBattleRoomPage({ roomId }) {
   const [imgLoaded, setImgLoaded] = useState(false);
   const [imgError, setImgError] = useState(false);
   const [imageObjectUrl, setImageObjectUrl] = useState(null);
+  const [imageLoading, setImageLoading] = useState(false);
+  const [displayedImageVersion, setDisplayedImageVersion] = useState("");
+  const [zoomTransition, setZoomTransition] = useState(null);
+  const {
+    bubbles: feedbackBubbles,
+    showFeedbackBubble,
+    playFeedback,
+    soundEnabled,
+    toggleSound,
+  } = useGameFeedback({ storageKey: "geoBattleSound" });
 
   const guessMapElRef = useRef(null);
   const guessMapRef = useRef(null);
@@ -627,6 +802,17 @@ function GeoBattleRoomPage({ roomId }) {
   const resultMarkersRef = useRef([]);
   const resultLinesRef = useRef([]);
   const roomRef = useRef(room);
+  const imageObjectUrlRef = useRef(null);
+  const displayedImageVersionRef = useRef("");
+  const zoomTransitionRequestRef = useRef(0);
+  const zoomTransitionTimerRef = useRef(null);
+  const latestRoomSnapshotRef = useRef({
+    serverTimeMs: null,
+    updatedAtMs: null,
+  });
+  const feedbackRef = useRef({ showFeedbackBubble, playFeedback, t });
+  feedbackRef.current = { showFeedbackBubble, playFeedback, t };
+  const roomFeedbackRef = useRef(null);
   roomRef.current = room;
   const clockOffsetRef = useRef(0);
   const [nowTick, setNowTick] = useState(() => Date.now());
@@ -674,18 +860,43 @@ function GeoBattleRoomPage({ roomId }) {
     }
   }, [refreshMapViewport]);
 
+  const applyRoomSnapshot = useCallback((nextRoom) => {
+    if (isOlderRoomSnapshot(nextRoom, latestRoomSnapshotRef.current)) {
+      return false;
+    }
+    rememberRoomSnapshot(nextRoom, latestRoomSnapshotRef.current);
+    setRoom(nextRoom);
+    return true;
+  }, []);
+
   const applyRoomResponse = useCallback(
     (response) => {
       if (!response.success || !response.data?.room) {
         setActionError(response.error || t("geo_online.generic_error"));
         return false;
       }
-      setRoom(response.data.room);
+      applyRoomSnapshot(response.data.room);
       setActionError("");
       return true;
     },
-    [t],
+    [applyRoomSnapshot, t],
   );
+
+  useEffect(() => {
+    latestRoomSnapshotRef.current = {
+      serverTimeMs: null,
+      updatedAtMs: null,
+    };
+    setRoom(null);
+    setFatalError("");
+    setActionError("");
+    setActionNotice("");
+    setSyncFailures(0);
+    setGuessPin(null);
+    clearPendingMarker();
+    clearResultOverlays();
+    resetMapViewport();
+  }, [clearPendingMarker, clearResultOverlays, resetMapViewport, roomId]);
 
   const loadRoomSnapshot = useCallback(async () => {
     let res;
@@ -695,8 +906,10 @@ function GeoBattleRoomPage({ roomId }) {
       res = { success: false, error: error.message };
     }
     if (res.success && res.data?.room) {
-      setRoom(res.data.room);
-      setFatalError("");
+      const accepted = applyRoomSnapshot(res.data.room);
+      if (accepted) {
+        setFatalError("");
+      }
       setSyncFailures(0);
       return true;
     }
@@ -709,11 +922,29 @@ function GeoBattleRoomPage({ roomId }) {
       return next;
     });
     return false;
-  }, [roomId, t]);
+  }, [applyRoomSnapshot, roomId, t]);
 
   useEffect(() => {
     loadRoomSnapshot();
   }, [loadRoomSnapshot]);
+
+  useEffect(() => {
+    if (!room?.phase_deadline_at) return undefined;
+    const deadlineMs = Date.parse(room.phase_deadline_at);
+    if (Number.isNaN(deadlineMs)) return undefined;
+
+    const delayMs = Math.max(
+      0,
+      deadlineMs - (Date.now() + clockOffsetRef.current) + 80,
+    );
+    const timeoutId = window.setTimeout(() => {
+      loadRoomSnapshot();
+    }, delayMs);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [loadRoomSnapshot, room?.phase, room?.phase_deadline_at]);
 
   useEffect(() => {
     const interval = window.setInterval(
@@ -766,7 +997,17 @@ function GeoBattleRoomPage({ roomId }) {
       }
 
       const pos = { lat: event.latLng.lat(), lng: event.latLng.lng() };
+      const hadPin = Boolean(pendingMarkerRef.current);
       setGuessPin(pos);
+      feedbackRef.current.playFeedback("place");
+      feedbackRef.current.showFeedbackBubble(
+        feedbackRef.current.t(
+          hadPin
+            ? "geo_online.feedback_pin_moved"
+            : "geo_online.feedback_pin_placed",
+        ),
+        "player",
+      );
     });
 
     guessMapRef.current = map;
@@ -850,16 +1091,17 @@ function GeoBattleRoomPage({ roomId }) {
   useEffect(() => {
     if (!room) return;
 
-    clearPendingMarker();
     clearResultOverlays();
 
     if (room.phase !== "reveal" && room.phase !== "finished") {
       if (room.phase !== "playing") {
+        clearPendingMarker();
         resetMapViewport();
       }
       return;
     }
 
+    clearPendingMarker();
     if (!mapsReady || !guessMapRef.current || !room.round?.target) return;
 
     const maps = mapsAPIRef.current;
@@ -957,6 +1199,56 @@ function GeoBattleRoomPage({ roomId }) {
     room?.round?.index,
   ]);
 
+  useEffect(() => {
+    if (!room) {
+      roomFeedbackRef.current = null;
+      return;
+    }
+
+    const nextSnapshot = {
+      phase: room.phase,
+      roundIndex: room.round?.index || 0,
+      opponentLocked: Boolean(room.round?.opponent_locked),
+      meSubmitted: Boolean(room.me?.has_submitted_this_round),
+    };
+    const previous = roomFeedbackRef.current;
+    if (!previous) {
+      roomFeedbackRef.current = nextSnapshot;
+      return;
+    }
+
+    const phaseChanged =
+      previous.phase !== nextSnapshot.phase ||
+      previous.roundIndex !== nextSnapshot.roundIndex;
+    if (phaseChanged) {
+      if (room.phase === "countdown") {
+        playFeedback("ready");
+        showFeedbackBubble(t("geo_online.feedback_countdown"), "success");
+      } else if (room.phase === "playing") {
+        playFeedback("ready");
+        showFeedbackBubble(t("geo_online.feedback_round_start"), "target");
+      } else if (room.phase === "reveal") {
+        playFeedback("reveal");
+        showFeedbackBubble(t("geo_online.feedback_reveal"), "target");
+      } else if (room.phase === "finished") {
+        playFeedback("finish");
+        showFeedbackBubble(t("geo_online.feedback_finished"), "success");
+      }
+    }
+
+    if (
+      room.phase === "playing" &&
+      !nextSnapshot.meSubmitted &&
+      !previous.opponentLocked &&
+      nextSnapshot.opponentLocked
+    ) {
+      playFeedback("place");
+      showFeedbackBubble(t("geo_online.feedback_opponent_locked"), "opponent");
+    }
+
+    roomFeedbackRef.current = nextSnapshot;
+  }, [room, playFeedback, showFeedbackBubble, t]);
+
   const runAction = useCallback(async (actionName, runner) => {
     setActionBusy(actionName);
     setActionError("");
@@ -971,16 +1263,36 @@ function GeoBattleRoomPage({ roomId }) {
 
   const handleReadyToggle = async () => {
     if (!room) return;
+    const readying = !room.me.is_ready;
     const res = await runAction("ready", () =>
-      setGeoBattleReady(room.room_id, !room.me.is_ready),
+      setGeoBattleReady(room.room_id, readying),
     );
-    applyRoomResponse(res);
+    if (applyRoomResponse(res)) {
+      playFeedback("ready");
+      showFeedbackBubble(
+        t(
+          readying
+            ? "geo_online.feedback_ready"
+            : "geo_online.feedback_unready",
+        ),
+        "success",
+      );
+    } else {
+      playFeedback("error");
+      showFeedbackBubble(t("geo_online.feedback_error"), "danger");
+    }
   };
 
   const handleZoomOut = async () => {
     if (!room) return;
     const res = await runAction("zoom", () => zoomOutGeoBattle(room.room_id));
-    applyRoomResponse(res);
+    if (applyRoomResponse(res)) {
+      playFeedback("zoom");
+      showFeedbackBubble(t("geo_online.feedback_zoom_out"), "zoom");
+    } else {
+      playFeedback("error");
+      showFeedbackBubble(t("geo_online.feedback_error"), "danger");
+    }
   };
 
   const handleSubmitGuess = async () => {
@@ -992,7 +1304,12 @@ function GeoBattleRoomPage({ roomId }) {
       }),
     );
     if (applyRoomResponse(res)) {
+      playFeedback("lock");
+      showFeedbackBubble(t("geo_online.feedback_locked"), "target");
       setGuessPin(null);
+    } else {
+      playFeedback("error");
+      showFeedbackBubble(t("geo_online.feedback_error"), "danger");
     }
   };
 
@@ -1002,7 +1319,12 @@ function GeoBattleRoomPage({ roomId }) {
       submitGeoBattleGuess(room.room_id, { give_up: true }),
     );
     if (applyRoomResponse(res)) {
+      playFeedback("skip");
+      showFeedbackBubble(t("geo_online.feedback_gave_up"), "warning");
       setGuessPin(null);
+    } else {
+      playFeedback("error");
+      showFeedbackBubble(t("geo_online.feedback_error"), "danger");
     }
   };
 
@@ -1021,9 +1343,13 @@ function GeoBattleRoomPage({ roomId }) {
     try {
       await navigator.clipboard.writeText(room.room_code);
       setActionNotice(t("geo_online.code_copied"));
+      playFeedback("place");
+      showFeedbackBubble(t("geo_online.code_copied"), "success");
       window.setTimeout(() => setActionNotice(""), 1500);
     } catch {
       setActionError(t("geo_online.copy_failed"));
+      playFeedback("error");
+      showFeedbackBubble(t("geo_online.copy_failed"), "danger");
     }
   };
 
@@ -1031,8 +1357,17 @@ function GeoBattleRoomPage({ roomId }) {
     ? `${room.phase}-${room.round?.index || 0}-${room.round?.current_zoom || 0}-${room.round?.zoom_steps || 0}`
     : "0";
   const imageAvailable = Boolean(
-    room?.round && room.phase !== "lobby" && room.phase !== "preparing",
+    room?.round &&
+      (room.phase === "playing" ||
+        room.phase === "reveal" ||
+        room.phase === "finished"),
   );
+  const imageForCurrentState =
+    imageAvailable && displayedImageVersion === imageVersion;
+  const imageInteractionPending =
+    imageAvailable && !imageForCurrentState && !imgError;
+  const showImageLoading =
+    imageAvailable && imageLoading && !imageObjectUrl && !imgError;
   const remainingSeconds = getRemainingSeconds(
     room?.phase_deadline_at,
     clockOffsetRef.current,
@@ -1044,17 +1379,30 @@ function GeoBattleRoomPage({ roomId }) {
     if (!imageAvailable || !room?.room_id) {
       setImageObjectUrl((prev) => {
         if (prev) URL.revokeObjectURL(prev);
+        imageObjectUrlRef.current = null;
         return null;
       });
+      displayedImageVersionRef.current = "";
+      setDisplayedImageVersion("");
+      setImageLoading(false);
       setImgLoaded(false);
       setImgError(false);
+      setZoomTransition(null);
       return undefined;
     }
 
     let cancelled = false;
     let createdUrl = null;
+    let activatedUrl = false;
     const controller = new AbortController();
-    setImgLoaded(false);
+    const hadVisibleImage = Boolean(imageObjectUrlRef.current);
+    const previousImageVersion = displayedImageVersionRef.current;
+    const transitionRequestId = zoomTransitionRequestRef.current + 1;
+    zoomTransitionRequestRef.current = transitionRequestId;
+    setImageLoading(true);
+    if (!hadVisibleImage) {
+      setImgLoaded(false);
+    }
     setImgError(false);
 
     fetchGeoBattleImage(room.room_id, imageVersion, controller.signal)
@@ -1064,30 +1412,81 @@ function GeoBattleRoomPage({ roomId }) {
           return;
         }
         createdUrl = url;
+        activatedUrl = true;
+        const shouldAnimateZoom =
+          hadVisibleImage &&
+          previousImageVersion &&
+          previousImageVersion !== imageVersion &&
+          room?.phase === "playing" &&
+          !(
+            typeof window !== "undefined" &&
+            window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches
+          );
         setImageObjectUrl((prev) => {
           if (prev) URL.revokeObjectURL(prev);
+          imageObjectUrlRef.current = url;
           return url;
         });
+        displayedImageVersionRef.current = imageVersion;
+        setDisplayedImageVersion(imageVersion);
+        setImageLoading(false);
+        setImgLoaded(true);
+        setImgError(false);
+        if (shouldAnimateZoom) {
+          setZoomTransition({
+            toUrl: url,
+            requestId: transitionRequestId,
+            animationDone: false,
+          });
+          if (zoomTransitionTimerRef.current) {
+            window.clearTimeout(zoomTransitionTimerRef.current);
+          }
+          zoomTransitionTimerRef.current = window.setTimeout(() => {
+            setZoomTransition((current) =>
+              current?.requestId === transitionRequestId
+                ? { ...current, animationDone: true }
+                : current,
+            );
+            zoomTransitionTimerRef.current = null;
+          }, SATELLITE_ZOOM_TRANSITION_MS);
+        } else {
+          setZoomTransition(null);
+        }
       })
       .catch((err) => {
         if (cancelled || err.name === "AbortError") return;
+        setImageLoading(false);
         setImgError(true);
         setImgLoaded(true);
+        feedbackRef.current.playFeedback("error");
+        feedbackRef.current.showFeedbackBubble(
+          feedbackRef.current.t("geo_online.feedback_image_error"),
+          "danger",
+        );
       });
 
     return () => {
       cancelled = true;
       controller.abort();
-      if (createdUrl) URL.revokeObjectURL(createdUrl);
+      if (createdUrl && !activatedUrl) URL.revokeObjectURL(createdUrl);
     };
   }, [imageAvailable, room?.room_id, imageVersion]);
 
   useEffect(() => {
+    if (!zoomTransition?.animationDone || !imgLoaded) return;
+    setZoomTransition(null);
+  }, [zoomTransition, imgLoaded]);
+
+  useEffect(() => {
     return () => {
-      setImageObjectUrl((prev) => {
-        if (prev) URL.revokeObjectURL(prev);
-        return null;
-      });
+      zoomTransitionRequestRef.current += 1;
+      if (zoomTransitionTimerRef.current) {
+        window.clearTimeout(zoomTransitionTimerRef.current);
+      }
+      if (imageObjectUrlRef.current) {
+        URL.revokeObjectURL(imageObjectUrlRef.current);
+        imageObjectUrlRef.current = null;
+      }
     };
   }, []);
 
@@ -1149,6 +1548,12 @@ function GeoBattleRoomPage({ roomId }) {
                 {t("geo_online.room_code_short")}: {room.room_code}
               </button>
             )}
+            <GameSoundToggle
+              enabled={soundEnabled}
+              onToggle={toggleSound}
+              enabledLabel={t("geo.feedback_sound_on")}
+              disabledLabel={t("geo.feedback_sound_off")}
+            />
             {syncFailures > 0 && (
               <span className="geo-battle-sync-warning">
                 {t("geo_online.connection_unstable")}
@@ -1161,10 +1566,13 @@ function GeoBattleRoomPage({ roomId }) {
           <PlayerStatusCard
             title={t("geo_online.you")}
             player={room.me}
+            playerRole="player"
             currentPhase={room.phase}
             t={t}
           />
-          <div className="geo-battle-phase-card">
+          <div
+            className={`geo-battle-phase-card geo-battle-phase-card--${room.phase}`}
+          >
             <div className="geo-battle-phase-label">
               {t("geo.round", { n: room.round?.index || 1 })} /{" "}
               {room.round?.total || 5}
@@ -1179,6 +1587,7 @@ function GeoBattleRoomPage({ roomId }) {
           <PlayerStatusCard
             title={t("geo_online.opponent")}
             player={room.opponent}
+            playerRole="opponent"
             currentPhase={room.phase}
             t={t}
           />
@@ -1200,16 +1609,43 @@ function GeoBattleRoomPage({ roomId }) {
                     key={imageObjectUrl}
                     src={imageObjectUrl}
                     alt=""
-                    className={`geo-battle-satellite-img ${imgLoaded ? "loaded" : ""}`}
+                    className={`geo-battle-satellite-img ${imgLoaded ? "loaded" : ""} ${
+                      zoomTransition ? "geo-battle-satellite-img--handoff" : ""
+                    }`}
                     onLoad={() => setImgLoaded(true)}
                     onError={() => {
                       setImgLoaded(true);
                       setImgError(true);
+                      playFeedback("error");
+                      showFeedbackBubble(
+                        t("geo_online.feedback_image_error"),
+                        "danger",
+                      );
                     }}
                     draggable={false}
                   />
                 )}
-                {(!imgLoaded || !imageObjectUrl) && !imgError && (
+                {zoomTransition && (
+                  <div
+                    className="geo-battle-satellite-transition"
+                    aria-hidden="true"
+                  >
+                    <img
+                      src={zoomTransition.toUrl}
+                      className="geo-battle-satellite-transition-img"
+                      alt=""
+                      draggable={false}
+                      onAnimationEnd={() =>
+                        setZoomTransition((current) =>
+                          current?.requestId === zoomTransition.requestId
+                            ? { ...current, animationDone: true }
+                            : current,
+                        )
+                      }
+                    />
+                  </div>
+                )}
+                {showImageLoading && (
                   <div className="geo-battle-overlay">
                     <div className="geo-battle-spinner" />
                     <span>{t("geo_online.loading_image")}</span>
@@ -1220,12 +1656,26 @@ function GeoBattleRoomPage({ roomId }) {
                     <span>{t("geo_online.image_error")}</span>
                   </div>
                 )}
+                {imageObjectUrl && !imgError && (
+                  <div
+                    className={`geo-battle-satellite-center-pin ${
+                      room.phase === "playing"
+                        ? "geo-battle-satellite-center-pin--neutral"
+                        : "geo-battle-satellite-center-pin--answer"
+                    }`}
+                    aria-label={t("geo.image_center")}
+                  />
+                )}
                 {room.phase === "playing" && (
                   <div className="geo-battle-satellite-controls">
                     <button
                       type="button"
                       className="geo-battle-zoom-btn"
-                      disabled={!room.can_zoom_out || actionBusy !== ""}
+                      disabled={
+                        !room.can_zoom_out ||
+                        actionBusy !== "" ||
+                        imageInteractionPending
+                      }
                       onClick={handleZoomOut}
                       aria-busy={actionBusy === "zoom"}
                     >
@@ -1301,7 +1751,8 @@ function GeoBattleRoomPage({ roomId }) {
                       disabled={
                         !guessPin ||
                         !room.can_submit_guess ||
-                        actionBusy !== ""
+                        actionBusy !== "" ||
+                        imageInteractionPending
                       }
                       onClick={handleSubmitGuess}
                     >
@@ -1326,11 +1777,15 @@ function GeoBattleRoomPage({ roomId }) {
                           ? t("geo_online.opponent_locked")
                           : t("geo_online.place_guess")}
                     </div>
+                    <BattleScoreBreakdown
+                      round={room.round}
+                      remainingSeconds={remainingSeconds}
+                      t={t}
+                    />
                   </div>
                 )}
 
-                {(room.phase === "preparing" ||
-                  room.phase === "countdown") && (
+                {(room.phase === "preparing" || room.phase === "countdown") && (
                   <div className="geo-battle-controls geo-battle-controls--status">
                     <div className="geo-battle-side-copy">
                       {room.phase === "preparing"
@@ -1359,6 +1814,7 @@ function GeoBattleRoomPage({ roomId }) {
           </div>
         </div>
       </div>
+      <GameFeedbackBubbles bubbles={feedbackBubbles} />
     </div>
   );
 }

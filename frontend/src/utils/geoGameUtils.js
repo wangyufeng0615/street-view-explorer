@@ -8,6 +8,7 @@ export const MIN_ZOOM = 2;
 export const PERFECT_GUESS_DISTANCE_KM = 1;
 export const MAX_GUESS_TOLERANCE_KM = 100;
 export const GUESS_TOLERANCE_GROWTH_PER_ZOOM_OUT = 1.45;
+export const MIN_ROUND_DISTANCE_KM = 10;
 
 const COUNTRY_CODE_BY_NAME = {
   Angola: "AO",
@@ -211,6 +212,35 @@ export function formatDistance(km) {
   return `${Math.round(km).toLocaleString()} km`;
 }
 
+export function isRoundTargetDuplicate(
+  candidate,
+  usedTargets = [],
+  minDistanceKm = MIN_ROUND_DISTANCE_KM,
+) {
+  if (!candidate || !Array.isArray(usedTargets)) return false;
+  if (hasSamePanoTarget(candidate, usedTargets)) return true;
+  const candidateHasCoords = hasFiniteCoords(candidate);
+
+  return usedTargets.some((target) => {
+    if (!target) return false;
+    if (!candidateHasCoords || !hasFiniteCoords(target)) return false;
+    return (
+      haversineDistance(candidate.lat, candidate.lng, target.lat, target.lng) <
+      minDistanceKm
+    );
+  });
+}
+
+export function hasSamePanoTarget(candidate, usedTargets = []) {
+  if (!candidate || !Array.isArray(usedTargets)) return false;
+  const candidatePanoId = normalizePanoId(candidate.panoId || candidate.pano_id);
+  if (!candidatePanoId) return false;
+  return usedTargets.some(
+    (target) =>
+      normalizePanoId(target?.panoId || target?.pano_id) === candidatePanoId,
+  );
+}
+
 // ─── Round plan generation ─────────────────────────────────
 
 /**
@@ -268,7 +298,7 @@ function pickCities(count, countryCode = "") {
     const easy = shuffled.find(
       (e) =>
         e.difficulty === 1 &&
-        (!shouldAvoidSameCountry || !usedCountries.has(e.country)),
+        canPickDatabaseEntry(e, picked, usedCountries, shouldAvoidSameCountry),
     );
     if (easy) {
       picked.push(easy);
@@ -279,13 +309,32 @@ function pickCities(count, countryCode = "") {
   // Fill remaining slots
   for (const entry of shuffled) {
     if (picked.length >= count) break;
-    if (picked.includes(entry)) continue;
-    if (shouldAvoidSameCountry && usedCountries.has(entry.country)) continue;
+    if (
+      !canPickDatabaseEntry(
+        entry,
+        picked,
+        usedCountries,
+        shouldAvoidSameCountry,
+      )
+    ) {
+      continue;
+    }
     picked.push(entry);
     if (shouldAvoidSameCountry) usedCountries.add(entry.country);
   }
 
   return picked;
+}
+
+function canPickDatabaseEntry(
+  entry,
+  picked,
+  usedCountries,
+  shouldAvoidSameCountry,
+) {
+  if (picked.includes(entry)) return false;
+  if (shouldAvoidSameCountry && usedCountries.has(entry.country)) return false;
+  return !isRoundTargetDuplicate(entry, picked);
 }
 
 function getDatabasePool(countryCode) {
@@ -300,6 +349,14 @@ export function getEntryCountryCode(entry) {
 function normalizeCountryCode(countryCode) {
   const code = (countryCode || "").trim().toUpperCase();
   return /^[A-Z]{2}$/.test(code) ? code : "";
+}
+
+function normalizePanoId(panoId) {
+  return typeof panoId === "string" ? panoId.trim() : "";
+}
+
+function hasFiniteCoords(target) {
+  return Number.isFinite(target.lat) && Number.isFinite(target.lng);
 }
 
 /** Apply a small random offset so the same city shows different views. */

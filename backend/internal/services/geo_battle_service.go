@@ -32,7 +32,7 @@ var (
 )
 
 const (
-	geoBattleRoundDuration      = 30 * time.Second
+	geoBattleRoundDuration      = 100 * time.Second
 	geoBattleRevealDuration     = 8 * time.Second
 	geoBattleCountdownDuration  = 5 * time.Second
 	geoBattleQueueTTL           = 10 * time.Minute
@@ -231,6 +231,10 @@ func (s *GeoBattleService) JoinPrivateRoom(sessionID, nickname, code string) (mo
 	}
 
 	now := time.Now()
+	if room.Phase == models.GeoBattlePhaseFinished {
+		s.resetRoomToLobbyLocked(room, now)
+	}
+
 	room.Players = append(room.Players, &geoBattlePlayer{
 		SessionID:   sessionID,
 		Nickname:    nickname,
@@ -251,6 +255,7 @@ func (s *GeoBattleService) JoinMatchmaking(sessionID, nickname string) (models.G
 
 	s.mu.Lock()
 	startRoomID := ""
+	prepareToken := uint64(0)
 
 	if room := s.activeRoomForSessionLocked(sessionID); room != nil {
 		if room.Mode != models.GeoBattleModeMatchmaking {
@@ -322,7 +327,6 @@ func (s *GeoBattleService) JoinMatchmaking(sessionID, nickname string) (models.G
 	room := &geoBattleRoom{
 		ID:        roomID,
 		Mode:      models.GeoBattleModeMatchmaking,
-		Phase:     models.GeoBattlePhasePreparing,
 		CreatedAt: now,
 		UpdatedAt: now,
 		Players: []*geoBattlePlayer{
@@ -343,15 +347,17 @@ func (s *GeoBattleService) JoinMatchmaking(sessionID, nickname string) (models.G
 			},
 		},
 	}
+	s.enterPreparingLocked(room, room.PrepareToken+1)
 
 	s.rooms[room.ID] = room
 	s.sessionRooms[opponent.SessionID] = room.ID
 	s.sessionRooms[sessionID] = room.ID
 	startRoomID = room.ID
+	prepareToken = room.PrepareToken
 	snapshot := s.snapshotLocked(room, sessionID)
 	s.mu.Unlock()
 
-	s.startPreparationAsync(startRoomID, 1)
+	s.generatePreparedRoundsAsync(startRoomID, prepareToken)
 
 	return models.GeoBattleMatchmakingSnapshot{
 		Status: models.GeoBattleQueueMatched,
@@ -419,6 +425,7 @@ func (s *GeoBattleService) SetReady(roomID, sessionID string, ready bool) (model
 	s.mu.Lock()
 	startPreparation := false
 	prepareToken := uint64(0)
+	startRoomID := ""
 
 	room, err := s.roomForSessionLocked(roomID, sessionID)
 	if err != nil {
@@ -439,13 +446,15 @@ func (s *GeoBattleService) SetReady(roomID, sessionID string, ready bool) (model
 	if s.activePlayerCountLocked(room) == 2 && s.everyActivePlayerReadyLocked(room) {
 		startPreparation = true
 		prepareToken = room.PrepareToken + 1
+		startRoomID = room.ID
+		s.enterPreparingLocked(room, prepareToken)
 	}
 
 	snapshot := s.snapshotLocked(room, sessionID)
 	s.mu.Unlock()
 
 	if startPreparation {
-		s.startPreparationAsync(room.ID, prepareToken)
+		s.generatePreparedRoundsAsync(startRoomID, prepareToken)
 	}
 
 	return snapshot, nil
@@ -527,10 +536,6 @@ func (s *GeoBattleService) SubmitGuess(roomID, sessionID string, lat, lng *float
 	round.Guesses[sessionID] = guess
 	room.UpdatedAt = now
 
-	if s.everyActivePlayerSubmittedLocked(room) {
-		s.enterRevealLocked(room, "")
-	}
-
 	return s.snapshotLocked(room, sessionID), nil
 }
 
@@ -565,17 +570,11 @@ func (s *GeoBattleService) LeaveRoom(roomID, sessionID string) error {
 		room.UpdatedAt = now
 		if room.HostSessionID == sessionID {
 			room.HostSessionID = room.Players[0].SessionID
-			room.Players[0].IsHost = true
 		}
 		for _, remaining := range room.Players {
-			remaining.Ready = false
-			if remaining.SessionID == room.HostSessionID {
-				remaining.IsHost = true
-			}
+			remaining.IsHost = remaining.SessionID == room.HostSessionID
 		}
-		room.Phase = models.GeoBattlePhaseLobby
-		room.PhaseDeadlineAt = nil
-		room.Message = ""
+		s.resetRoomToLobbyLocked(room, now)
 		return nil
 	}
 
@@ -597,7 +596,9 @@ func (s *GeoBattleService) GetImageSpec(roomID, sessionID string) (float64, floa
 	if len(room.Rounds) == 0 || room.CurrentRound >= len(room.Rounds) {
 		return 0, 0, 0, ErrGeoBattleImageNotReady
 	}
-	if room.Phase == models.GeoBattlePhaseLobby || room.Phase == models.GeoBattlePhasePreparing {
+	if room.Phase == models.GeoBattlePhaseLobby ||
+		room.Phase == models.GeoBattlePhasePreparing ||
+		room.Phase == models.GeoBattlePhaseCountdown {
 		return 0, 0, 0, ErrGeoBattleImageNotReady
 	}
 
@@ -651,21 +652,7 @@ func (s *GeoBattleService) cleanupLoop() {
 	}
 }
 
-func (s *GeoBattleService) startPreparationAsync(roomID string, token uint64) {
-	s.mu.Lock()
-	room, ok := s.rooms[roomID]
-	if !ok {
-		s.mu.Unlock()
-		return
-	}
-	room.PrepareToken = token
-	room.ScheduleToken++
-	room.Phase = models.GeoBattlePhasePreparing
-	room.PhaseDeadlineAt = nil
-	room.Message = ""
-	room.UpdatedAt = time.Now()
-	s.mu.Unlock()
-
+func (s *GeoBattleService) generatePreparedRoundsAsync(roomID string, token uint64) {
 	go func(expectedToken uint64) {
 		rounds, err := s.generateRounds()
 
@@ -705,6 +692,46 @@ func (s *GeoBattleService) startPreparationAsync(roomID string, token uint64) {
 
 		s.enterCountdownLocked(room, "")
 	}(token)
+}
+
+func (s *GeoBattleService) enterPreparingLocked(room *geoBattleRoom, token uint64) {
+	now := time.Now()
+	room.PrepareToken = token
+	room.ScheduleToken++
+	room.Phase = models.GeoBattlePhasePreparing
+	room.PhaseDeadlineAt = nil
+	room.Message = ""
+	room.Rounds = nil
+	room.CurrentRound = 0
+	room.UpdatedAt = now
+	for _, player := range room.Players {
+		if player.Left {
+			continue
+		}
+		player.Ready = false
+		player.TotalScore = 0
+		player.CurrentZoom = models.GeoBattleStartZoom
+		player.CurrentSteps = 0
+	}
+}
+
+func (s *GeoBattleService) resetRoomToLobbyLocked(room *geoBattleRoom, now time.Time) {
+	room.Phase = models.GeoBattlePhaseLobby
+	room.PhaseDeadlineAt = nil
+	room.Message = ""
+	room.Rounds = nil
+	room.CurrentRound = 0
+	room.ScheduleToken++
+	room.UpdatedAt = now
+	for _, player := range room.Players {
+		if player.Left {
+			continue
+		}
+		player.Ready = false
+		player.TotalScore = 0
+		player.CurrentZoom = models.GeoBattleStartZoom
+		player.CurrentSteps = 0
+	}
 }
 
 func (s *GeoBattleService) generateRounds() ([]geoBattleRound, error) {
@@ -900,7 +927,7 @@ func (s *GeoBattleService) snapshotLocked(room *geoBattleRoom, sessionID string)
 			IsReady:               player.Ready,
 			IsOnline:              now.Sub(player.LastSeenAt) <= geoBattleOnlineThreshold,
 			HasSubmittedThisRound: s.currentGuessLocked(room, sessionID) != nil,
-			TotalScore:            player.TotalScore,
+			TotalScore:            s.visibleTotalScoreLocked(room, player),
 			Left:                  player.Left,
 		}
 	}
@@ -912,7 +939,7 @@ func (s *GeoBattleService) snapshotLocked(room *geoBattleRoom, sessionID string)
 			IsReady:               opponent.Ready,
 			IsOnline:              now.Sub(opponent.LastSeenAt) <= geoBattleOnlineThreshold,
 			HasSubmittedThisRound: s.currentGuessLocked(room, opponent.SessionID) != nil,
-			TotalScore:            opponent.TotalScore,
+			TotalScore:            s.visibleTotalScoreLocked(room, opponent),
 			Left:                  opponent.Left,
 		}
 	}
@@ -923,10 +950,7 @@ func (s *GeoBattleService) snapshotLocked(room *geoBattleRoom, sessionID string)
 		snapshot.Round = roundSnapshot
 
 		if includeResults {
-			lastRound := room.CurrentRound
-			if room.Phase == models.GeoBattlePhaseFinished {
-				lastRound = len(room.Rounds) - 1
-			}
+			lastRound := min(room.CurrentRound, len(room.Rounds)-1)
 			snapshot.Rounds = make([]models.GeoBattleRoundSnapshot, 0, lastRound+1)
 			for index := 0; index <= lastRound; index++ {
 				if index >= len(room.Rounds) {
@@ -954,9 +978,24 @@ func (room *geoBattleRoom) roundFinishedLocked(index int) bool {
 		return false
 	}
 	if room.Phase == models.GeoBattlePhaseFinished {
-		return true
+		return index <= room.CurrentRound
 	}
 	return index < room.CurrentRound || room.Phase == models.GeoBattlePhaseReveal
+}
+
+func (s *GeoBattleService) visibleTotalScoreLocked(room *geoBattleRoom, player *geoBattlePlayer) int {
+	if room == nil || player == nil {
+		return 0
+	}
+	if room.Phase != models.GeoBattlePhasePlaying ||
+		room.CurrentRound < 0 ||
+		room.CurrentRound >= len(room.Rounds) {
+		return player.TotalScore
+	}
+	if guess := room.Rounds[room.CurrentRound].Guesses[player.SessionID]; guess != nil {
+		return player.TotalScore - guess.Score
+	}
+	return player.TotalScore
 }
 
 func (s *GeoBattleService) roundSnapshotLocked(room *geoBattleRoom, index int, player, opponent *geoBattlePlayer, includeResults bool) *models.GeoBattleRoundSnapshot {
@@ -978,9 +1017,11 @@ func (s *GeoBattleService) roundSnapshotLocked(room *geoBattleRoom, index int, p
 			roundSnapshot.ZoomSteps = player.CurrentSteps
 		}
 		if guess := round.Guesses[player.SessionID]; guess != nil {
-			roundSnapshot.MyGuess = geoBattleGuessSnapshotFromInternal(guess)
 			roundSnapshot.ZoomSteps = guess.ZoomSteps
 			roundSnapshot.CurrentZoom = max(models.GeoBattleMinZoom, models.GeoBattleStartZoom-guess.ZoomSteps)
+			if includeResults || index < room.CurrentRound || room.Phase == models.GeoBattlePhaseFinished {
+				roundSnapshot.MyGuess = geoBattleGuessSnapshotFromInternal(guess)
+			}
 		}
 	}
 

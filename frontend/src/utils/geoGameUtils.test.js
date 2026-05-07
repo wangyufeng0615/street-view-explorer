@@ -8,9 +8,11 @@ import {
   TOTAL_ROUNDS,
   START_ZOOM,
   MIN_ZOOM,
+  MIN_ROUND_DISTANCE_KM,
   generateRoundPlan,
   getEntryCountryCode,
   isPerfectGuess,
+  isRoundTargetDuplicate,
 } from "./geoGameUtils";
 import GEO_DATABASE from "../data/geoDatabase";
 
@@ -155,5 +157,49 @@ describe("generateRoundPlan", () => {
 
     expect(plan).toHaveLength(5);
     expect(plan.every((round) => round.source === "random")).toBe(true);
+  });
+
+  it("does not schedule nearby database targets in the same country game", () => {
+    for (let run = 0; run < 50; run++) {
+      const databaseRounds = generateRoundPlan(5, "ZA").filter(
+        (round) => round.source === "database",
+      );
+
+      for (let i = 0; i < databaseRounds.length; i++) {
+        for (let j = i + 1; j < databaseRounds.length; j++) {
+          const a = databaseRounds[i].entry;
+          const b = databaseRounds[j].entry;
+          expect(
+            haversineDistance(a.lat, a.lng, b.lat, b.lng),
+          ).toBeGreaterThanOrEqual(MIN_ROUND_DISTANCE_KM);
+        }
+      }
+    }
+  });
+});
+
+describe("isRoundTargetDuplicate", () => {
+  it("rejects exact Street View pano repeats", () => {
+    expect(
+      isRoundTargetDuplicate({ lat: 48.858, lng: 2.294, panoId: "same-pano" }, [
+        { lat: 51.501, lng: -0.125, panoId: "same-pano" },
+      ]),
+    ).toBe(true);
+  });
+
+  it("rejects nearby coordinates even when the pano differs", () => {
+    expect(
+      isRoundTargetDuplicate({ lat: 51.53, lng: -0.1, panoId: "next" }, [
+        { lat: 51.5074, lng: -0.1278, panoId: "previous" },
+      ]),
+    ).toBe(true);
+  });
+
+  it("allows distant targets", () => {
+    expect(
+      isRoundTargetDuplicate({ lat: 48.8566, lng: 2.3522, panoId: "paris" }, [
+        { lat: 51.5074, lng: -0.1278, panoId: "london" },
+      ]),
+    ).toBe(false);
   });
 });

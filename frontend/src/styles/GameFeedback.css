@@ -1,0 +1,138 @@
+.game-feedback-bubbles {
+  position: fixed;
+  top: 66px;
+  right: 18px;
+  z-index: 90;
+  display: grid;
+  gap: 8px;
+  width: min(360px, calc(100vw - 24px));
+  pointer-events: none;
+}
+
+.game-feedback-bubble {
+  --feedback-accent: #0e7490;
+  --feedback-bg: rgba(236, 254, 255, 0.96);
+  --feedback-text: #164e63;
+
+  padding: 10px 12px;
+  border: 1px solid rgba(14, 116, 144, 0.18);
+  border-left: 5px solid var(--feedback-accent);
+  border-radius: 8px;
+  background: var(--feedback-bg);
+  color: var(--feedback-text);
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.16);
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  animation: gameFeedbackBubbleIn 0.22s ease-out;
+}
+
+.game-feedback-bubble--success,
+.game-feedback-bubble--target {
+  --feedback-accent: #10b981;
+  --feedback-bg: rgba(236, 253, 245, 0.96);
+  --feedback-text: #064e3b;
+}
+
+.game-feedback-bubble--warning,
+.game-feedback-bubble--zoom {
+  --feedback-accent: #f97316;
+  --feedback-bg: rgba(255, 247, 237, 0.96);
+  --feedback-text: #7c2d12;
+}
+
+.game-feedback-bubble--danger {
+  --feedback-accent: #ef4444;
+  --feedback-bg: rgba(254, 242, 242, 0.96);
+  --feedback-text: #7f1d1d;
+}
+
+.game-feedback-bubble--player {
+  --feedback-accent: #ef4444;
+  --feedback-bg: rgba(254, 242, 242, 0.96);
+  --feedback-text: #991b1b;
+}
+
+.game-feedback-bubble--opponent {
+  --feedback-accent: #2563eb;
+  --feedback-bg: rgba(239, 246, 255, 0.96);
+  --feedback-text: #1e3a8a;
+}
+
+.game-feedback-bubble--atlas {
+  --feedback-accent: #8b5cf6;
+  --feedback-bg: rgba(245, 243, 255, 0.96);
+  --feedback-text: #5b21b6;
+}
+
+.game-sound-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 5px 10px;
+  border: 1px solid rgba(14, 116, 144, 0.22);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.9);
+  color: #164e63;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
+  font-size: 12px;
+  font-weight: 850;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    transform 0.15s ease,
+    border-color 0.15s ease,
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.game-sound-toggle:hover {
+  transform: translateY(-1px);
+  border-color: rgba(14, 116, 144, 0.45);
+}
+
+.game-sound-toggle--off {
+  border-color: rgba(100, 116, 139, 0.22);
+  background: rgba(248, 250, 252, 0.9);
+  color: #475569;
+}
+
+.game-sound-toggle span:first-child {
+  font-size: 14px;
+  line-height: 1;
+}
+
+@keyframes gameFeedbackBubbleIn {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (max-width: 768px) {
+  .game-feedback-bubbles {
+    top: 76px;
+    right: 12px;
+    left: 12px;
+    width: auto;
+  }
+
+  .game-feedback-bubble {
+    font-size: 13px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .game-feedback-bubble,
+  .game-sound-toggle {
+    animation: none;
+    transition: none;
+  }
+}

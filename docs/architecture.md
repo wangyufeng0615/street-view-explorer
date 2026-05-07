@@ -140,7 +140,7 @@ Important constants:
 
 - 5 rounds per match.
 - Start zoom 14, minimum zoom 2.
-- 30 seconds per playing round.
+- 100 seconds per playing round.
 - 5 seconds countdown.
 - 8 seconds reveal.
 - Queue TTL 10 minutes.
