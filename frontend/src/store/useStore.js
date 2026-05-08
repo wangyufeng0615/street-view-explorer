@@ -344,7 +344,15 @@ const useStore = create(
             },
 
             // UI Actions
-            setHeading: (heading) => set({ heading }),
+            setHeading: (heading) => {
+                const numericHeading = Number(heading);
+                if (!Number.isFinite(numericHeading)) return;
+
+                const normalizedHeading = ((Math.round(numericHeading) % 360) + 360) % 360;
+                if (get().heading !== normalizedHeading) {
+                    set({ heading: normalizedHeading });
+                }
+            },
             setScale: (scale) => set({ scale }),
 
             showToastMessage: (message) => {

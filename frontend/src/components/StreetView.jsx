@@ -2,6 +2,28 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { loadGoogleMapsWhenVisible } from '../utils/googleMaps';
 
+const AUTO_ROTATE_FRAME_INTERVAL_MS = 1000 / 24;
+const AUTO_ROTATE_DEGREES_PER_SECOND = 1.8;
+const AUTO_ROTATE_START_DELAY_MS = 2000;
+const AUTO_ROTATE_RESUME_DELAY_MS = 3000;
+const AUTO_ROTATE_VISIBILITY_RESUME_DELAY_MS = 500;
+
+function isDocumentVisible() {
+    return typeof document === 'undefined' || document.visibilityState === 'visible';
+}
+
+function isPageFocused() {
+    return typeof document === 'undefined' ||
+        typeof document.hasFocus !== 'function' ||
+        document.hasFocus();
+}
+
+function normalizeHeading(heading) {
+    const numericHeading = Number(heading);
+    if (!Number.isFinite(numericHeading)) return 0;
+    return ((numericHeading % 360) + 360) % 360;
+}
+
 const styles = {
     container: {
         width: '100%',
@@ -73,9 +95,12 @@ const styles = {
 export default function StreetView({ latitude, longitude, onPovChanged }) {
     const panoramaRef = useRef(null);
     const panoramaInstanceRef = useRef(null); // 存储街景实例的引用
-    const autoRotateRef = useRef(null); // 存储自动旋转定时器的引用
+    const autoRotateRef = useRef(null); // 存储自动旋转动画帧的引用
     const userInteractionTimerRef = useRef(null); // 存储用户交互恢复定时器
     const isAutoRotatingRef = useRef(false); // 标记是否正在自动旋转
+    const isContainerVisibleRef = useRef(true);
+    const onPovChangedRef = useRef(onPovChanged);
+    const lastNotifiedHeadingRef = useRef(null);
     const cleanupFunctionsRef = useRef([]); // 存储所有需要清理的函数
     const mountedRef = useRef(true); // 跟踪组件是否已挂载
     const [error, setError] = useState(null);
@@ -83,52 +108,90 @@ export default function StreetView({ latitude, longitude, onPovChanged }) {
     const [showInteractionTip, setShowInteractionTip] = useState(false);
     const { t } = useTranslation();
 
-    // 自动旋转函数 - 使用 requestAnimationFrame 实现丝滑效果
+    useEffect(() => {
+        onPovChangedRef.current = onPovChanged;
+    }, [onPovChanged]);
+
+    const canAutoRotate = () => (
+        mountedRef.current &&
+        isDocumentVisible() &&
+        isPageFocused() &&
+        isContainerVisibleRef.current
+    );
+
+    const notifyHeadingChanged = (heading) => {
+        const normalizedHeading = normalizeHeading(heading);
+        const roundedHeading = Math.round(normalizedHeading);
+
+        if (lastNotifiedHeadingRef.current === roundedHeading) {
+            return;
+        }
+
+        lastNotifiedHeadingRef.current = roundedHeading;
+
+        if (onPovChangedRef.current) {
+            onPovChangedRef.current(normalizedHeading);
+        }
+    };
+
+    const scheduleAutoRotateResume = (delay = AUTO_ROTATE_RESUME_DELAY_MS) => {
+        if (userInteractionTimerRef.current) {
+            clearTimeout(userInteractionTimerRef.current);
+        }
+
+        userInteractionTimerRef.current = setTimeout(() => {
+            userInteractionTimerRef.current = null;
+            if (panoramaInstanceRef.current && canAutoRotate()) {
+                startAutoRotate(panoramaInstanceRef.current);
+            }
+        }, delay);
+    };
+
+    // 自动旋转函数 - 用 rAF 对齐屏幕刷新，但限制昂贵的 Street View POV 更新频率
     const startAutoRotate = (panorama) => {
+        if (!canAutoRotate()) {
+            return;
+        }
         
         if (autoRotateRef.current) {
             stopAutoRotate(); // 先停止现有的旋转
         }
         
         let currentHeading = panorama.getPov().heading; // 从当前角度开始
-        const rotateSpeed = 0.03; // 每帧旋转0.03度
         let lastTime = performance.now();
-        let animationId;
+        let lastPovUpdateTime = lastTime;
 
         isAutoRotatingRef.current = true;
         
-        const animate = (currentTime) => {
+        const rotate = (currentTime) => {
             // 检查组件是否已卸载
             if (!mountedRef.current) {
                 stopAutoRotate();
                 return;
             }
             
-            if (!panorama || !panoramaInstanceRef.current || !isAutoRotatingRef.current) {
+            if (!panorama || !panoramaInstanceRef.current || !isAutoRotatingRef.current || !canAutoRotate()) {
                 stopAutoRotate();
+                return;
+            }
+
+            const elapsedSinceLastPovUpdate = currentTime - lastPovUpdateTime;
+            if (elapsedSinceLastPovUpdate < AUTO_ROTATE_FRAME_INTERVAL_MS) {
+                autoRotateRef.current = requestAnimationFrame(rotate);
                 return;
             }
 
             // 计算时间差，确保旋转速度在不同设备上保持一致
             const deltaTime = currentTime - lastTime;
-
-            // 根据实际帧率调整旋转速度
-            const speedMultiplier = deltaTime / 16.67; // 16.67ms约等于60fps
-            const actualRotateSpeed = rotateSpeed * speedMultiplier;
+            currentHeading = normalizeHeading(
+                currentHeading + AUTO_ROTATE_DEGREES_PER_SECOND * (deltaTime / 1000),
+            );
             
-            currentHeading = (currentHeading + actualRotateSpeed) % 360;
-            
-            // 使用更平滑的设置方式
             try {
                 panorama.setPov({
                     heading: currentHeading,
                     pitch: panorama.getPov().pitch
                 });
-                
-                // 通知父组件视角变化
-                if (onPovChanged) {
-                    onPovChanged(currentHeading);
-                }
             } catch (error) {
                 // 如果街景实例出现问题，停止旋转
                 console.warn('街景旋转时出现错误:', error);
@@ -137,17 +200,16 @@ export default function StreetView({ latitude, longitude, onPovChanged }) {
             }
             
             lastTime = currentTime;
+            lastPovUpdateTime = currentTime;
             
-            // 继续下一帧 - 只有在组件挂载且正在旋转时
+            // 继续下一帧；真正的 POV 更新由上面的间隔限制到约 30fps
             if (mountedRef.current && isAutoRotatingRef.current) {
-                animationId = requestAnimationFrame(animate);
-                autoRotateRef.current = animationId;
+                autoRotateRef.current = requestAnimationFrame(rotate);
             }
         };
         
         // 开始动画
-        animationId = requestAnimationFrame(animate);
-        autoRotateRef.current = animationId;
+        autoRotateRef.current = requestAnimationFrame(rotate);
     };
 
     // 停止自动旋转
@@ -170,17 +232,8 @@ export default function StreetView({ latitude, longitude, onPovChanged }) {
         if (isAutoRotatingRef.current) {
             stopAutoRotate();
             
-            // 清除之前的恢复定时器
-            if (userInteractionTimerRef.current) {
-                clearTimeout(userInteractionTimerRef.current);
-            }
-            
             // 3秒后恢复自动旋转
-            userInteractionTimerRef.current = setTimeout(() => {
-                if (panoramaInstanceRef.current) {
-                    startAutoRotate(panoramaInstanceRef.current);
-                }
-            }, 3000);
+            scheduleAutoRotateResume();
         }
     };
 
@@ -199,6 +252,48 @@ export default function StreetView({ latitude, longitude, onPovChanged }) {
             // 清理所有注册的清理函数
             cleanupFunctionsRef.current.forEach(fn => fn());
             cleanupFunctionsRef.current = [];
+        };
+    }, []);
+
+    useEffect(() => {
+        const handleVisibilityOrFocusChange = () => {
+            if (!isDocumentVisible() || !isPageFocused()) {
+                stopAutoRotate();
+                return;
+            }
+
+            scheduleAutoRotateResume(AUTO_ROTATE_VISIBILITY_RESUME_DELAY_MS);
+        };
+
+        document.addEventListener('visibilitychange', handleVisibilityOrFocusChange);
+        window.addEventListener('blur', handleVisibilityOrFocusChange);
+        window.addEventListener('focus', handleVisibilityOrFocusChange);
+
+        let observer = null;
+        const streetViewElement = panoramaRef.current;
+        if ('IntersectionObserver' in window && streetViewElement) {
+            observer = new IntersectionObserver((entries) => {
+                const entry = entries[0];
+                isContainerVisibleRef.current = entry?.isIntersecting ?? true;
+
+                if (!isContainerVisibleRef.current) {
+                    stopAutoRotate();
+                    return;
+                }
+
+                scheduleAutoRotateResume(AUTO_ROTATE_VISIBILITY_RESUME_DELAY_MS);
+            }, { threshold: 0.1 });
+
+            observer.observe(streetViewElement);
+        }
+
+        return () => {
+            document.removeEventListener('visibilitychange', handleVisibilityOrFocusChange);
+            window.removeEventListener('blur', handleVisibilityOrFocusChange);
+            window.removeEventListener('focus', handleVisibilityOrFocusChange);
+            if (observer) {
+                observer.disconnect();
+            }
         };
     }, []);
 
@@ -302,10 +397,10 @@ export default function StreetView({ latitude, longitude, onPovChanged }) {
                     
                     // 延迟启动自动旋转，让街景先完全加载
                     autoRotateTimeoutId = setTimeout(() => {
-                        if (isMounted && mountedRef.current && panoramaInstanceRef.current) {
+                        if (isMounted && mountedRef.current && panoramaInstanceRef.current && canAutoRotate()) {
                             startAutoRotate(panorama);
                         }
-                    }, 2000); // 街景加载完成后等待2秒再开始旋转
+                    }, AUTO_ROTATE_START_DELAY_MS); // 街景加载完成后等待2秒再开始旋转
                     
                     // 延迟显示操作提示
                     tipTimeoutId = setTimeout(() => {
@@ -326,9 +421,9 @@ export default function StreetView({ latitude, longitude, onPovChanged }) {
 
                 // 监听视角变化，只用于通知父组件
                 const povListener = panorama.addListener('pov_changed', () => {
-                    if (onPovChanged && panorama) {
+                    if (panorama) {
                         const currentPov = panorama.getPov();
-                        onPovChanged(currentPov.heading);
+                        notifyHeadingChanged(currentPov.heading);
                     }
                 });
                 listeners.push(povListener);
