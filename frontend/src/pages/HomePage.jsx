@@ -11,6 +11,7 @@ import React, {
 import { useTranslation } from "react-i18next";
 import TopBar from "../components/TopBar";
 import Sidebar from "../components/Sidebar";
+import AtlasVoicePanel from "../components/AtlasVoicePanel";
 import "../styles/animations.css";
 import "../styles/HomePage.css";
 import "../styles/responsive.css";
@@ -35,13 +36,14 @@ import useStore from "../store/useStore";
 
 // Memoized StreetViewContainer wrapper
 const StreetViewContainer = memo(
-  ({ latitude, longitude, onPovChanged }) => {
+  ({ latitude, longitude, heading, onPovChanged }) => {
     return (
       <div className="street-view-container">
         <Suspense fallback={<div style={{ width: '100%', height: '100%', backgroundColor: '#222' }} />}>
           <StreetView
             latitude={latitude}
             longitude={longitude}
+            heading={heading}
             onPovChanged={onPovChanged}
           />
         </Suspense>
@@ -51,7 +53,8 @@ const StreetViewContainer = memo(
   (prevProps, nextProps) => {
     return (
       prevProps.latitude === nextProps.latitude &&
-      prevProps.longitude === nextProps.longitude
+      prevProps.longitude === nextProps.longitude &&
+      prevProps.heading === nextProps.heading
     );
   },
 );
@@ -310,6 +313,7 @@ export default function HomePage() {
           <StreetViewContainer
             latitude={location?.latitude}
             longitude={location?.longitude}
+            heading={heading}
             onPovChanged={handlePovChanged}
           />
         </div>
@@ -325,6 +329,8 @@ export default function HomePage() {
           descRetries={descRetries}
           onRetryDescription={handleRetryDescription}
         />
+
+        <AtlasVoicePanel />
       </div>
 
       {/* 全局加载动画 - lazy loaded */}

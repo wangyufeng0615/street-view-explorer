@@ -6,7 +6,12 @@ import { getAgentJourneys, getAgentJourneyDetail } from "../services/api";
 import "../styles/AgentPage.css";
 
 // Load classical fonts for title
-if (typeof document !== "undefined" && !document.getElementById("odyssey-fonts")) {
+if (
+  typeof document !== "undefined" &&
+  window.location.hostname !== "localhost" &&
+  window.location.hostname !== "127.0.0.1" &&
+  !document.getElementById("odyssey-fonts")
+) {
   const link = document.createElement("link");
   link.id = "odyssey-fonts";
   link.rel = "stylesheet";

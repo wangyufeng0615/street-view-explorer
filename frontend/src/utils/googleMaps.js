@@ -30,6 +30,10 @@ function cleanupExistingScripts() {
  * Preload Google Maps API (just establish connection, don't execute)
  */
 export function preloadGoogleMaps() {
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+        return;
+    }
+
     // Only preconnect, don't actually load the script
     const link = document.createElement('link');
     link.rel = 'preconnect';

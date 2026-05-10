@@ -14,6 +14,18 @@ Fill at least:
 - `backend/.env`: `AI_API_KEY`, `GOOGLE_API_KEY`.
 - `frontend/.env`: `VITE_GOOGLE_MAPS_API_KEY`.
 
+For Atlas Voice local testing, also set `OPENAI_API_KEY` or `REALTIME_API_KEY` in `backend/.env`. Optional voice knobs are `OPENAI_REALTIME_MODEL`, `OPENAI_REALTIME_VOICE` (default `cedar`), `OPENAI_REALTIME_TRANSCRIPTION_MODEL`, `OPENAI_REALTIME_VAD_TYPE`, `OPENAI_REALTIME_VAD_EAGERNESS`, and `OPENAI_REALTIME_ALLOWED_ORIGINS`. Atlas defaults to `semantic_vad` with `high` eagerness so spoken turns close quickly. The browser session update can also override `VITE_REALTIME_VOICE`, `VITE_REALTIME_OUTPUT_SPEED`, `VITE_REALTIME_VAD_TYPE`, `VITE_REALTIME_VAD_EAGERNESS`, and `VITE_REALTIME_RESPONSE_WATCHDOG_MS`.
+
+To try Doubao as the speech output while keeping OpenAI Realtime for input, tools, and text generation, set `ATLAS_VOICE_PROVIDER=doubao` or pass `--voice-provider doubao`. The backend then asks OpenAI for text output and streams that text through Volcengine BigTTS (`DOUBAO_TTS_RESOURCE_ID`, default `seed-tts-2.0` for TTS 2.0 voices). Configure either `DOUBAO_TTS_API_KEY`, or `DOUBAO_TTS_APP_ID`/`DOUBAO_TTS_APPID` plus `DOUBAO_TTS_ACCESS_KEY`/`DOUBAO_TTS_TOKEN`; optional tuning includes `DOUBAO_TTS_SPEAKER` (default `zh_male_m191_uranus_bigtts`, Yunzhou 2.0 male) and `DOUBAO_TTS_SPEECH_RATE`.
+
+```bash
+cd backend
+go run cmd/server/main.go --proxy http://127.0.0.1:10086 \
+  --voice-provider doubao \
+  --doubao-tts-api-key "$DOUBAO_TTS_API_KEY" \
+  --doubao-tts-speaker zh_male_m191_uranus_bigtts
+```
+
 Start both services:
 
 ```bash
@@ -47,6 +59,17 @@ yarn typecheck
 yarn build
 ```
 
+Atlas Voice origin smoke:
+
+```bash
+curl -i -H 'Origin: http://127.0.0.1:3100' \
+  -H 'Connection: Upgrade' \
+  -H 'Upgrade: websocket' \
+  http://localhost:8080/api/v1/realtime/ws
+```
+
+Expected without a valid WebSocket handshake is a non-101 response, but it should not be a cross-origin rejection for local dev. A browser origin outside same-origin, localhost, or `OPENAI_REALTIME_ALLOWED_ORIGINS` should be rejected before it can proxy to OpenAI.
+
 End-to-end local smoke:
 
 ```bash
@@ -60,8 +83,8 @@ curl -I -H 'X-Session-ID: 0123456789abcdef0123456789abcdef' \
 Online duel smoke with two sessions:
 
 ```bash
-HOST=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-GUEST=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+HOST=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+GUEST=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 
 curl -s -X POST http://localhost:8080/api/v1/geo/online/rooms \
   -H "Content-Type: application/json" \
@@ -76,6 +99,28 @@ curl -s -X POST http://localhost:8080/api/v1/geo/online/rooms/join \
 ```
 
 The room does not start until both players post `ready: true`.
+
+After copying `room_id`, ready both players and confirm the countdown does not expose the satellite image yet:
+
+```bash
+ROOM_ID=room_xxx
+
+curl -s -X POST "http://localhost:8080/api/v1/geo/online/rooms/$ROOM_ID/ready" \
+  -H "Content-Type: application/json" \
+  -H "X-Session-ID: $HOST" \
+  -d '{"ready":true}'
+
+curl -s -X POST "http://localhost:8080/api/v1/geo/online/rooms/$ROOM_ID/ready" \
+  -H "Content-Type: application/json" \
+  -H "X-Session-ID: $GUEST" \
+  -d '{"ready":true}'
+
+curl -s -o /dev/null -w '%{http_code}\n' \
+  -H "X-Session-ID: $HOST" \
+  "http://localhost:8080/api/v1/geo/online/rooms/$ROOM_ID/image"
+```
+
+Expected during `countdown`: `409`. Expected after the phase becomes `playing`: `200`. If both players submit guesses during `playing`, the snapshot should keep current-round guesses, target, and score hidden until the deadline-driven `reveal` phase.
 
 ## Deployment
 
@@ -99,8 +144,8 @@ The invalid geo satellite request above should return `400`; it verifies that th
 Use this after pushing the target branch:
 
 ```bash
-git push
-make deploy-remote
+git push origin "$(git branch --show-current)"
+make deploy-remote REMOTE_BRANCH="$(git branch --show-current)"
 ```
 
 Defaults:
@@ -115,6 +160,8 @@ HEALTH_TIMEOUT=240
 ```
 
 `make deploy-remote` runs on the VPS: `git fetch`, `git checkout`, `git pull --ff-only`, `make deploy`, then waits for backend and nginx health checks. It also verifies backend `/health`, nginx `/nginx_status` from inside the nginx container, prints container/image IDs and start times, and checks that pano IDs containing `.` are no longer rejected by input validation. If the local remote name differs from the VPS remote name, set `LOCAL_GIT_REMOTE` and `REMOTE_GIT_REMOTE` separately.
+
+The remote deploy script refuses to continue when tracked files in `REMOTE_DIR` are dirty. For an exact release mirror, clean or discard deliberate temporary remote-only files before deploying; do not leave a stash or `docker-compose.override.yml` unless it is intentionally part of operations.
 
 For the public site, also smoke the SPA and geo backend path from outside the VPS:
 
@@ -181,9 +228,15 @@ Use `--skip-proxy-check` only when the proxy health check itself is unreliable b
 
 ### Online duel image not ready
 
-- `/image` returns a conflict before rounds are prepared.
-- Wait for the room phase to move out of `lobby` or `preparing`.
+- `/image` returns a conflict before the round is playable.
+- Wait for the room phase to move out of `lobby`, `preparing`, or `countdown`.
 - If preparation fails, the room returns to `lobby` with `prepare_failed` and both players must ready up again.
+
+### Online duel reveals too early
+
+- The backend should stay in `playing` until the phase deadline even if both players have submitted guesses.
+- During `playing`, snapshots may show `has_submitted_this_round` / `opponent_locked`, but must not include target coordinates, opponent guess details, or current-round score deltas.
+- If the UI reveals the satellite, target, or scores before `reveal`, compare the browser snapshot phase with the backend response before changing the service.
 
 ### Backend startup waits on map data
 

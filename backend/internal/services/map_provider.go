@@ -18,4 +18,15 @@ type MapProvider interface {
 
 	// GeocodeAddress forward-geocodes an address to coordinates.
 	GeocodeAddress(ctx context.Context, address string) (float64, float64, string, error)
+
+	// SearchPlace resolves a spoken place or landmark query to a concrete map candidate.
+	SearchPlace(ctx context.Context, query string, language string) (*PlaceCandidate, error)
+}
+
+type PlaceCandidate struct {
+	Name             string
+	FormattedAddress string
+	PlaceID          string
+	Latitude         float64
+	Longitude        float64
 }

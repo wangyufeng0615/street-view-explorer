@@ -31,6 +31,14 @@ func main() {
 	proxyPass := flag.String("proxy-pass", "", "代理认证密码")
 	openaiProxy := flag.String("openai-proxy", "", "AI专用代理URL")
 	mapsProxy := flag.String("maps-proxy", "", "Google Maps专用代理URL")
+	voiceProvider := flag.String("voice-provider", "", "Atlas Voice 发声服务: openai 或 doubao")
+	doubaoTTSAPIKey := flag.String("doubao-tts-api-key", "", "豆包语音合成新版控制台 API Key")
+	doubaoTTSAppID := flag.String("doubao-tts-app-id", "", "豆包语音合成 App ID / App Key")
+	doubaoTTSAccessKey := flag.String("doubao-tts-access-key", "", "豆包语音合成 Access Token / Access Key")
+	doubaoTTSToken := flag.String("doubao-tts-token", "", "豆包语音合成 Access Token，等同于 --doubao-tts-access-key")
+	doubaoTTSSpeaker := flag.String("doubao-tts-speaker", "", "豆包语音合成音色 speaker / voice_type")
+	doubaoTTSResourceID := flag.String("doubao-tts-resource-id", "", "豆包语音合成 Resource ID，默认 volc.service_type.10029")
+	doubaoTTSSpeechRate := flag.Int("doubao-tts-speech-rate", 0, "豆包语音合成语速，-50 到 100，默认 0")
 	skipProxyCheck := flag.Bool("skip-proxy-check", false, "跳过代理健康检查")
 	flag.Parse()
 
@@ -92,6 +100,31 @@ func main() {
 				log.Printf("Google Maps代理健康检查通过")
 			}
 		}
+	}
+	if *voiceProvider != "" {
+		os.Setenv("ATLAS_VOICE_PROVIDER", *voiceProvider)
+		log.Printf("Atlas Voice 发声服务: %s", *voiceProvider)
+	}
+	if *doubaoTTSAPIKey != "" {
+		os.Setenv("DOUBAO_TTS_API_KEY", *doubaoTTSAPIKey)
+	}
+	if *doubaoTTSAppID != "" {
+		os.Setenv("DOUBAO_TTS_APP_ID", *doubaoTTSAppID)
+	}
+	if *doubaoTTSAccessKey != "" {
+		os.Setenv("DOUBAO_TTS_ACCESS_KEY", *doubaoTTSAccessKey)
+	}
+	if *doubaoTTSToken != "" {
+		os.Setenv("DOUBAO_TTS_TOKEN", *doubaoTTSToken)
+	}
+	if *doubaoTTSSpeaker != "" {
+		os.Setenv("DOUBAO_TTS_SPEAKER", *doubaoTTSSpeaker)
+	}
+	if *doubaoTTSResourceID != "" {
+		os.Setenv("DOUBAO_TTS_RESOURCE_ID", *doubaoTTSResourceID)
+	}
+	if *doubaoTTSSpeechRate != 0 {
+		os.Setenv("DOUBAO_TTS_SPEECH_RATE", fmt.Sprintf("%d", *doubaoTTSSpeechRate))
 	}
 
 	// 初始化地理数据（必须在服务启动时完成）
@@ -170,6 +203,7 @@ func main() {
 				"proxy_status":       proxyStatus,
 				"ai_proxy":           os.Getenv("AI_PROXY_URL") != "",
 				"maps_proxy":         os.Getenv("MAPS_PROXY_URL") != "",
+				"voice_provider":     os.Getenv("ATLAS_VOICE_PROVIDER"),
 			},
 		})
 	})
@@ -179,9 +213,10 @@ func main() {
 
 	// 设置路由
 	handlers := api.NewHandlers(locationService, aiService)
-	agentHandlers := api.NewAgentHandlers(repo, repo, handlers.GlobalServices(), cfg.GoogleMapsAPIKey())
+	agentHandlers := api.NewAgentHandlers(repo, repo, handlers.GlobalServices(), cfg.GoogleMapsAPIKey(), googleMaps.HTTPClient())
 	geoHandlers := api.NewGeoHandlers(globalAIClient, cfg.GoogleMapsAPIKey(), locationService, geoBattleService, googleMaps.HTTPClient())
-	api.SetupRoutes(r, handlers, agentHandlers, geoHandlers)
+	realtimeHandlers := api.NewRealtimeHandlers()
+	api.SetupRoutes(r, handlers, agentHandlers, realtimeHandlers, geoHandlers)
 
 	addr := cfg.ServerAddress()
 	logger := utils.SystemLogger()

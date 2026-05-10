@@ -41,9 +41,9 @@ go run cmd/server/main.go --openai-proxy http://127.0.0.1:10086 --maps-proxy htt
 
 ```text
 frontend/src/
-├── components/     # StreetView, GlobalMap, PreviewMap, Sidebar, TopBar 等
+├── components/     # StreetView, GlobalMap, PreviewMap, Sidebar, TopBar, GameFeedback 等
 ├── pages/          # HomePage, AgentPage, LetterPage, GeoGamePage, GeoBattlePage
-├── hooks/          # useLocationData, useExplorationMode, useKeyboardNavigation 等
+├── hooks/          # useLocationData, useExplorationMode, useKeyboardNavigation, useGameFeedback 等
 ├── store/          # Zustand 状态管理
 ├── services/       # api.js，同源 /api/v1 包装
 ├── locales/        # en/zh 翻译
@@ -89,6 +89,7 @@ backend/
 
 - `GET /api/v1/locations/random` - 随机街景位置，支持 `lang` 和 `source`。
 - `GET /api/v1/locations/lookup` - 根据坐标反查位置。
+- `GET /api/v1/locations/search` - 通过 Google Places/Geocoding 搜索具体地点或地标，并跳到附近街景。
 - `GET /api/v1/locations/:panoId/description` - AI 简短描述。
 - `GET /api/v1/locations/:panoId/detailed-description` - AI 详细描述。
 - `GET /api/v1/visits` - 全站共享的 Atlas 足迹历史；写入仍保留 session 作为账本字段，读取不按用户过滤。
@@ -131,8 +132,11 @@ backend/
 
 - 单人局总轮数来自 `frontend/src/utils/geoGameUtils.js` 的 `TOTAL_ROUNDS = 5`。
 - 单人局起始 zoom 是 14，最小 zoom 是 2；后端 `GET /api/v1/geo/satellite` 和 `POST /api/v1/geo/ai-guess` 也校验 `zoom` 必须在 2-14。
+- `GET /api/v1/geo/satellite` 可带 `width,height`，两者必须同时提供且每边在 120-640；单人和 AI 猜测会按当前卫星面板比例请求图片，缺省仍是 640x480。
 - `generateRoundPlan()` 会从 `geoDatabase.js` 选 2 或 3 个题库点，其余使用后端随机位置；题库点会经过 `jitterCoord()` 小偏移。
 - `GeoGamePage.jsx` 的 loading effect 使用 `langRef` 读取语言，避免语言切换重新抽题。
+- 单人卫星图中心图钉必须始终可见；拉远时先加载下一张静态图，再用约 760ms 的 handoff 动画切换，避免闪烁。
+- 简单音效和气泡提示通过 `useGameFeedback()` / `GameFeedback.jsx` 复用，单人模式的本地开关 key 是 `geoGameSound`。
 - 计分公式在前后端一致：`5000 * exp(-zoomSteps * 0.12) * exp(-effectiveDistanceKm / 1500)`；`effectiveDistanceKm = max(0, distanceKm - min(100, 1 * 1.45^zoomSteps))`，拉远后容错半径会动态变大。
 - Atlas AI 猜测只看到用户锁定结果时当前 zoom 的一张卫星图，不会看到前面每次拉远的历史图；prompt 明确要求猜这张图的中心点，并按 UI 语言返回 reasoning。
 - 结果地图图钉颜色语义：绿色是正确位置，红色是玩家，紫色是 Atlas；结果文字区也按同一语义展示。
@@ -147,7 +151,13 @@ backend/
 - 好友房需要双方 ready 后才开始；随机匹配成功后自动进入 preparing。
 - 前端用 polling 同步状态：playing 约 1.5 秒，其余约 2.5 秒；服务端 `server_time` 用于修正倒计时。
 - 房间码 6 位，来自 `ABCDEFGHJKLMNPQRSTUVWXYZ23456789`；昵称最多 20 个 rune，会去掉控制字符。
+- `GET /image` 只在 `playing/reveal/finished` 可用；`lobby/preparing/countdown` 返回 image-not-ready，避免倒计时提前露出卫星图。
+- `SubmitGuess` 只记录猜测，不会因为双方都锁定就直接 reveal；playing 阶段快照会隐藏当前轮猜测详情、目标和本轮新增分数，直到服务端 deadline 推进到 reveal。
 - `GET /image` 根据当前玩家 zoom 返回同一目标卫星图；reveal/finished 阶段最多展示 zoom 5。
+- 多人卫星图也必须显示中心图钉，并和单人模式使用一致的拉远 handoff 动画；加载新图时保留旧图，禁用地图交互避免误点。
+- 多人颜色语义：红色是你，蓝色是对手，绿色是正确位置；这些颜色要在玩家卡片、地图图钉、气泡和结果文字里保持一致。
+- 多人结果必须清晰展示拉远次数、时间剩余或不扣分状态、距离，以及 base/zoom/tolerance/distance/final 等计分权重。
+- 多人音效和气泡提示也走 `useGameFeedback()` / `GameFeedback.jsx`，本地开关 key 是 `geoBattleSound`。
 - 双人对战计分和单人局一致，也使用随拉远次数增长的动态容错半径；跳过或超时本轮为 0 分。
 - finished 或 lobby 阶段离开会移除玩家；playing 等中途离开会直接结束房间。
 
@@ -155,6 +165,7 @@ backend/
 
 - `RateLimitMiddleware()` 默认开启；`/api/v1/geo/ai-guess` 是每 IP 每分钟 30 次，`/api/v1/geo/satellite` 和 `/api/v1/geo/online/rooms/:roomId/image` 是每 IP 每分钟 180 次。
 - Google Static Maps 请求失败日志会隐藏 `GOOGLE_API_KEY`；不要把旧本地日志或生产日志原样外发，尤其是 2026-05-03 之前生成的地图错误日志。
+- 分支发布时先 push 当前分支，再用 `make deploy-remote REMOTE_BRANCH=$(git branch --show-current)`，保持本地、origin、VPS 三边一致；远端有 tracked dirty 文件时部署脚本会拒绝继续。
 - 生产部署后至少确认 `docker compose ps`、后端 `/health`、nginx `/nginx_status`，再用一个非法 zoom 请求确认新后端已生效。
 
 ## 环境变量
@@ -170,6 +181,12 @@ backend/
 - `SQLITE_PATH`，默认 `data/streetview.db`
 - `RATE_LIMIT_ENABLED`，默认 `true`
 - `PROXY_URL` / `AI_PROXY_URL` / `MAPS_PROXY_URL`
+- `OPENAI_API_KEY` / `REALTIME_API_KEY`，Atlas Voice 语音功能需要其一
+- `OPENAI_REALTIME_MODEL` / `OPENAI_REALTIME_VOICE`（默认 `cedar`）/ `OPENAI_REALTIME_TRANSCRIPTION_MODEL`
+- `OPENAI_REALTIME_ALLOWED_ORIGINS` / `REALTIME_ALLOWED_ORIGINS`，额外允许的语音 WebSocket 浏览器来源
+- `ATLAS_VOICE_PROVIDER`，默认 `openai`；设为 `doubao` 时 OpenAI Realtime 只负责听写、文本回复和工具调用，音频由豆包 TTS 输出
+- `DOUBAO_TTS_API_KEY`，或 `DOUBAO_TTS_APP_ID`/`DOUBAO_TTS_APPID` + `DOUBAO_TTS_ACCESS_KEY`/`DOUBAO_TTS_TOKEN`；豆包语音合成凭据
+- `DOUBAO_TTS_SPEAKER`（默认 `zh_male_m191_uranus_bigtts`，云舟 2.0 男声）/ `DOUBAO_TTS_RESOURCE_ID`（默认 `seed-tts-2.0`）/ `DOUBAO_TTS_SPEECH_RATE`
 - `SENTRY_DSN` / `SENTRY_ENABLED` / `GO_ENV`
 
 前端必须配置：
@@ -179,6 +196,11 @@ backend/
 前端常用可选：
 
 - `VITE_GOOGLE_MAPS_MAP_ID`
+- `VITE_REALTIME_TRANSPORT`，默认 `backend-ws`
+- `VITE_REALTIME_TRANSCRIPTION_MODEL`
+- `VITE_REALTIME_VOICE`，默认 `cedar`
+- `VITE_REALTIME_OUTPUT_SPEED`，默认 `1`
+- `VITE_ATLAS_VOICE_PROVIDER`，可选前端覆盖；通常留空，由后端 `/api/v1/realtime/voice-config` 决定
 - `VITE_SENTRY_DSN`
 - `VITE_VERSION`
 

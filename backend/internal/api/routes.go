@@ -4,7 +4,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func SetupRoutes(r *gin.Engine, h *Handlers, ah *AgentHandlers, gh ...*GeoHandlers) {
+func SetupRoutes(r *gin.Engine, h *Handlers, ah *AgentHandlers, rh *RealtimeHandlers, gh ...*GeoHandlers) {
 	// API 版本组
 	v1 := r.Group("/api/v1")
 	{
@@ -13,6 +13,7 @@ func SetupRoutes(r *gin.Engine, h *Handlers, ah *AgentHandlers, gh ...*GeoHandle
 		{
 			locations.GET("/random", h.GetRandomLocation)
 			locations.GET("/lookup", h.LookupLocation)
+			locations.GET("/search", h.SearchLocation)
 			locations.GET("/:panoId/description", h.GetLocationDescription)
 			locations.GET("/:panoId/detailed-description", h.GetLocationDetailedDescription)
 		}
@@ -25,6 +26,18 @@ func SetupRoutes(r *gin.Engine, h *Handlers, ah *AgentHandlers, gh ...*GeoHandle
 		{
 			preferences.POST("/exploration", h.SetExplorationPreference)
 			preferences.POST("/exploration/remove", h.DeleteExplorationPreference)
+		}
+
+		// Realtime voice demo
+		if rh != nil {
+			realtime := v1.Group("/realtime")
+			{
+				realtime.GET("/voice-config", rh.GetVoiceConfig)
+				realtime.GET("/client-secret", rh.CreateClientSecret)
+				realtime.POST("/calls", rh.ProxyCallSDP)
+				realtime.GET("/ws", rh.ConnectWebSocket)
+				realtime.POST("/doubao-tts", rh.SynthesizeDoubaoTTS)
+			}
 		}
 
 		// Agent Journey (token-based auth)

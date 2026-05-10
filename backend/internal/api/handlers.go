@@ -373,6 +373,59 @@ func (h *Handlers) LookupLocation(c *gin.Context) {
 	})
 }
 
+// SearchLocation resolves a concrete place query and loads nearby Street View.
+func (h *Handlers) SearchLocation(c *gin.Context) {
+	query := strings.TrimSpace(c.Query("q"))
+	language := c.DefaultQuery("lang", "en")
+
+	if query == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "Missing q parameter",
+		})
+		return
+	}
+	if len([]rune(query)) > 240 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "Search query is too long",
+		})
+		return
+	}
+
+	svc := h.servicesForMode(c)
+	loc, place, err := svc.LocationService.SearchLocation(query, language)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"success": false,
+			"error":   err.Error(),
+			"data": gin.H{
+				"place": place,
+			},
+		})
+		return
+	}
+
+	sessionID := h.getOptionalSessionID(c)
+	if sessionID != "" {
+		if err := svc.LocationService.RecordVisit(sessionID, *loc, models.VisitSourceLookup); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"error":   err.Error(),
+			})
+			return
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data": gin.H{
+			"location": loc,
+			"place":    place,
+		},
+	})
+}
+
 func parseCoordinate(raw string, min, max float64) (float64, error) {
 	value, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
 	if err != nil {

@@ -80,19 +80,27 @@
     }
     </script>
     
-    <!-- DNS Prefetch and Preconnect for better performance -->
-    <link rel="dns-prefetch" href="https://fonts.googleapis.com">
-    <link rel="dns-prefetch" href="https://fonts.gstatic.com">
-    <link rel="dns-prefetch" href="https://maps.googleapis.com">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link rel="preconnect" href="https://maps.googleapis.com">
-    
-    <!-- Optimize font loading with font-display: swap -->
-    <link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@300;400;500;600;700&family=Noto+Serif+SC:wght@400;500;600&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
-    <noscript>
-        <link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@300;400;500;600;700&family=Noto+Serif+SC:wght@400;500;600&display=swap" rel="stylesheet">
-    </noscript>
+    <!-- Production-only external font hints. Local dev keeps browser egress behind the configured proxy. -->
+    <script>
+        if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+            [
+                ['dns-prefetch', 'https://fonts.googleapis.com'],
+                ['dns-prefetch', 'https://fonts.gstatic.com'],
+                ['preconnect', 'https://fonts.googleapis.com'],
+                ['preconnect', 'https://fonts.gstatic.com', true],
+            ].forEach(([rel, href, crossOrigin]) => {
+                const link = document.createElement('link');
+                link.rel = rel;
+                link.href = href;
+                if (crossOrigin) link.crossOrigin = '';
+                document.head.appendChild(link);
+            });
+            const font = document.createElement('link');
+            font.rel = 'stylesheet';
+            font.href = 'https://fonts.googleapis.com/css2?family=Comfortaa:wght@300;400;500;600;700&family=Noto+Serif+SC:wght@400;500;600&display=swap';
+            document.head.appendChild(font);
+        }
+    </script>
     
     <!-- Inline critical font CSS for immediate text rendering -->
     <style>

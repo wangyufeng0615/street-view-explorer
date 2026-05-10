@@ -20,7 +20,8 @@ export default defineConfig({
   // Server configuration
   server: {
     host: '127.0.0.1',
-    port: 3000,
+    port: Number(process.env.VITE_DEV_PORT || 3100),
+    strictPort: true,
     open: true,
     // Proxy API requests to backend
     proxy: {
@@ -28,6 +29,7 @@ export default defineConfig({
         target: 'http://localhost:8080',
         changeOrigin: true,
         secure: false,
+        ws: true,
       },
     },
   },

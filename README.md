@@ -15,8 +15,8 @@ An interactive map application for exploring random Google Street View locations
 - Visit history, shared site-wide footprint map, and regional or custom exploration preferences.
 - Bilingual UI in English and Chinese.
 - Odyssey agent journey flow where an external AI can create journeys, save stops, and publish illustrated letters.
-- Solo "Guess Where" game using satellite imagery, curated city entries, random backend locations, optional AI opponent, and score decay with zoom-aware distance tolerance.
-- Online 1v1 geography duel with private room codes, quick matchmaking, synchronized rounds, server-authoritative scoring, and reconnect-safe polling.
+- Solo "Guess Where" game using satellite imagery, curated city entries, random backend locations, optional AI opponent, center-pin zoom reveals, score decay with zoom-aware distance tolerance, and lightweight sound/bubble feedback.
+- Online 1v1 geography duel with private room codes, quick matchmaking, 100-second synchronized rounds, server-authoritative scoring, consistent color-coded pins, score-factor breakdowns, and reconnect-safe polling.
 - Docker Compose deployment with an Nginx frontend/API proxy and a Go backend using SQLite.
 
 ## Quick Start
@@ -87,8 +87,15 @@ go run cmd/server/main.go --openai-proxy http://127.0.0.1:10086 --maps-proxy htt
 
 ```bash
 make deploy       # docker compose build + up -d
-make deploy-remote # ssh to REMOTE_HOST=kr, pull REMOTE_BRANCH=main, deploy, and verify
+make deploy-remote # ssh to REMOTE_HOST=kr, pull REMOTE_BRANCH (default main), deploy, and verify
 make clean        # docker compose down -v and remove containers
+```
+
+For branch releases, push first and deploy the same branch so the local and VPS trees stay aligned:
+
+```bash
+git push origin "$(git branch --show-current)"
+make deploy-remote REMOTE_BRANCH="$(git branch --show-current)"
 ```
 
 Docker Compose exposes Nginx on `127.0.0.1:3000`; the backend is only exposed to the internal Compose network.
@@ -102,6 +109,19 @@ Backend variables live in `backend/.env`.
 | `SERVER_ADDRESS` | No | Backend listen address, default `:8080`. |
 | `SQLITE_PATH` | No | SQLite database path, default `data/streetview.db`. |
 | `AI_API_KEY` | Yes | OpenRouter key used by AI services. |
+| `OPENAI_API_KEY` or `REALTIME_API_KEY` | No | OpenAI key for Atlas Voice / Realtime. Required only when voice is enabled. |
+| `OPENAI_REALTIME_MODEL` | No | Realtime voice model, default `gpt-realtime-2`. |
+| `OPENAI_REALTIME_VOICE` | No | Realtime output voice, default `cedar`. |
+| `OPENAI_REALTIME_TRANSCRIPTION_MODEL` | No | Input transcription model, default `gpt-4o-mini-transcribe`. |
+| `OPENAI_REALTIME_VAD_TYPE`, `OPENAI_REALTIME_VAD_EAGERNESS` | No | Realtime turn detection tuning, default `semantic_vad` with `high` eagerness for faster voice replies. |
+| `OPENAI_REALTIME_VAD_THRESHOLD`, `OPENAI_REALTIME_VAD_PREFIX_PADDING_MS`, `OPENAI_REALTIME_VAD_SILENCE_DURATION_MS` | No | Optional `server_vad` tuning when `OPENAI_REALTIME_VAD_TYPE=server_vad`. Defaults are `0.5`, `250`, and `350`. |
+| `OPENAI_REALTIME_ALLOWED_ORIGINS`, `REALTIME_ALLOWED_ORIGINS` | No | Comma-separated browser origins allowed to open the backend Realtime WebSocket. Same-origin and local dev hosts are allowed automatically. |
+| `ATLAS_VOICE_PROVIDER` | No | Atlas Voice audio provider, default `openai`. Set to `doubao` to keep OpenAI Realtime for text/tools and synthesize speech with Doubao TTS. |
+| `DOUBAO_TTS_API_KEY` | No | Doubao TTS API key for the new Volcengine console. Alternative to app ID plus access token. |
+| `DOUBAO_TTS_APP_ID` / `DOUBAO_TTS_APPID`, `DOUBAO_TTS_ACCESS_KEY` / `DOUBAO_TTS_TOKEN` | No | Doubao TTS app credentials when not using `DOUBAO_TTS_API_KEY`. |
+| `DOUBAO_TTS_SPEAKER` | No | Doubao TTS speaker / voice type, default `zh_male_m191_uranus_bigtts` (Yunzhou 2.0 male). |
+| `DOUBAO_TTS_RESOURCE_ID` | No | Doubao TTS resource ID, default `seed-tts-2.0` for Doubao TTS 2.0 voices. |
+| `DOUBAO_TTS_SPEECH_RATE` | No | Doubao TTS speech rate from `-50` to `100`, default `0`. |
 | `OPENROUTER_MODEL`, `AI_MODEL` | No | Optional OpenRouter model override. `OPENROUTER_MODEL` takes precedence. |
 | `CN_AI_MODEL` | No | Optional fallback model used only when no AI/shared proxy is configured. |
 | `GOOGLE_API_KEY` | Yes | Backend Google Maps, Street View, and Static Maps access. |
@@ -125,6 +145,13 @@ Frontend variables live in `frontend/.env`.
 | `VITE_API_BASE_URL` | No | Historical config value; current browser API wrappers call same-origin `/api/v1`. |
 | `VITE_GOOGLE_MAPS_API_KEY` | Yes | Google Maps JavaScript API key for browser maps. |
 | `VITE_GOOGLE_MAPS_MAP_ID` | No | Optional Google Maps map ID for configured maps. |
+| `VITE_REALTIME_TRANSPORT` | No | Atlas Voice transport, default `backend-ws`; set to another value to use the WebRTC path. |
+| `VITE_REALTIME_TRANSCRIPTION_MODEL` | No | Browser session-update override for input transcription, default `gpt-4o-mini-transcribe`. |
+| `VITE_REALTIME_VOICE` | No | Browser session-update output voice, default `cedar`. |
+| `VITE_REALTIME_OUTPUT_SPEED` | No | Browser session-update output speed, default `1`. |
+| `VITE_REALTIME_VAD_TYPE`, `VITE_REALTIME_VAD_EAGERNESS` | No | Browser session-update turn detection tuning, default `semantic_vad` with `high` eagerness. |
+| `VITE_REALTIME_RESPONSE_WATCHDOG_MS` | No | Voice UI no-response notice timeout, default `9000`. |
+| `VITE_ATLAS_VOICE_PROVIDER` | No | Optional frontend override for the audio provider. Usually leave unset and let the backend `/api/v1/realtime/voice-config` drive it. |
 | `VITE_SENTRY_DSN` | No | Frontend Sentry DSN. |
 | `VITE_SENTRY_ENVIRONMENT` | No | Frontend Sentry environment. |
 | `VITE_VERSION` | No | Included in frontend Sentry release metadata. |
@@ -147,6 +174,7 @@ All standard JSON endpoints return a `{ "success": boolean, "data": ..., "error"
 
 - `GET /api/v1/locations/random`
 - `GET /api/v1/locations/lookup`
+- `GET /api/v1/locations/search` - resolves a concrete place/landmark query through Google Places/Geocoding, then loads nearby Street View.
 - `GET /api/v1/locations/:panoId/description`
 - `GET /api/v1/locations/:panoId/detailed-description`
 - `GET /api/v1/visits` - shared site-wide Atlas footprint history.

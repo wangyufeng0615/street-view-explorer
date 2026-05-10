@@ -147,6 +147,48 @@ export async function lookupLocation(
   }
 }
 
+// 根据具体地点/地标搜索并跳转到附近街景
+export async function searchLocation(query, language = null) {
+  const lang = language || getCurrentLanguage();
+  const trimmed = String(query || "").trim();
+
+  try {
+    const resp = await fetchWithTimeout(
+      `${API_V1}/locations/search?q=${encodeURIComponent(trimmed)}&lang=${lang}`,
+      {
+        method: "GET",
+        headers: getHeaders(),
+      },
+      20000,
+    );
+    const data = await resp.json();
+
+    if (data.success && data.data?.location) {
+      return {
+        success: true,
+        data: data.data.location,
+        place: data.data.place || null,
+        error: null,
+      };
+    }
+
+    return {
+      success: false,
+      data: null,
+      place: data.data?.place || null,
+      error: data.error || "搜索地点失败",
+    };
+  } catch (err) {
+    return {
+      success: false,
+      data: null,
+      place: null,
+      error:
+        err.name === "AbortError" ? "请求超时" : err.message || "网络请求失败",
+    };
+  }
+}
+
 // 获取位置的 AI 描述
 export async function getLocationDescription(
   panoId,
@@ -403,6 +445,43 @@ export async function getLocationDetailedDescription(
           : err.message || "获取详细介绍失败",
     };
   }
+}
+
+export async function createRealtimeClientSecret(language = null) {
+  const lang = language || getCurrentLanguage();
+
+  return requestJson(
+    `/realtime/client-secret?lang=${encodeURIComponent(lang)}`,
+    {
+      method: "GET",
+    },
+    15000,
+  );
+}
+
+export async function getRealtimeVoiceConfig() {
+  return requestJson(
+    "/realtime/voice-config",
+    {
+      method: "GET",
+    },
+    10000,
+  );
+}
+
+export async function synthesizeDoubaoTTSStream({ text, language = null, signal = null }) {
+  const lang = language || getCurrentLanguage();
+
+  return fetchWithTimeout(
+    `${API_V1}/realtime/doubao-tts`,
+    {
+      method: "POST",
+      headers: getHeaders(),
+      body: JSON.stringify({ text, language: lang }),
+      signal,
+    },
+    60000,
+  );
 }
 
 async function requestJson(path, options = {}, timeout = DEFAULT_TIMEOUT) {

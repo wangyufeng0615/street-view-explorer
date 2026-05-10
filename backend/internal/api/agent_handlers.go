@@ -23,10 +23,18 @@ type AgentHandlers struct {
 	limiter      repositories.RateLimiter
 	global       *ModeServices
 	googleAPIKey string
+	httpClient   *http.Client
 }
 
-func NewAgentHandlers(repo repositories.Repository, limiter repositories.RateLimiter, global *ModeServices, googleAPIKey string) *AgentHandlers {
-	return &AgentHandlers{repo: repo, limiter: limiter, global: global, googleAPIKey: googleAPIKey}
+func NewAgentHandlers(repo repositories.Repository, limiter repositories.RateLimiter, global *ModeServices, googleAPIKey string, httpClient ...*http.Client) *AgentHandlers {
+	client := &http.Client{Timeout: 15 * time.Second}
+	if len(httpClient) > 0 && httpClient[0] != nil {
+		client = httpClient[0]
+		if client.Timeout == 0 {
+			client = &http.Client{Transport: client.Transport, Timeout: 15 * time.Second}
+		}
+	}
+	return &AgentHandlers{repo: repo, limiter: limiter, global: global, googleAPIKey: googleAPIKey, httpClient: client}
 }
 
 // ==================== Token helpers ====================
@@ -611,7 +619,7 @@ func (ah *AgentHandlers) StreetViewImage(c *gin.Context) {
 		url.QueryEscape(panoID), headingNum, pitchNum, fovNum, ah.googleAPIKey,
 	)
 
-	resp, err := http.Get(svURL)
+	resp, err := ah.httpClient.Get(svURL)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"success": false, "error": "Failed to fetch street view image"})
 		return

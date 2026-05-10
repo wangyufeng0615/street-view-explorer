@@ -18,6 +18,7 @@ Go backend (Gin)
   +-- In-memory maps: online duel rooms and matchmaking queue
   +-- Google Maps APIs: Street View, Static Maps, geocoding, places
   +-- OpenRouter: AI descriptions and satellite-image guesses
+  +-- OpenAI Realtime: Atlas Voice live speech sessions
 ```
 
 The frontend uses a persistent anonymous `X-Session-ID`. The backend validates that header and creates one when missing. Preference state and online duel membership depend on that session identity. Visit writes keep the session for bookkeeping, but the Atlas footprint map reads a shared site-wide history.
@@ -26,7 +27,7 @@ The frontend uses a persistent anonymous `X-Session-ID`. The backend validates t
 
 The frontend is React 18 with Vite. `frontend/vite.config.js` sets:
 
-- dev server port `3000`;
+- dev server port `3100` by default;
 - `/api` proxy to `http://localhost:8080`;
 - production output directory `build`;
 - manual chunks for vendor, i18n, and Zustand;
@@ -42,6 +43,8 @@ Routes:
 - `/geo`, `/geo/online`, and `/geo/online/:roomId` are legacy redirects to the matching `/guess` routes.
 
 `AgentPage`, `LetterPage`, `GeoGamePage`, and `GeoBattlePage` are lazy loaded from `App.tsx`.
+
+Game feedback shared by solo and online geo modes lives in `frontend/src/hooks/useGameFeedback.js` and `frontend/src/components/GameFeedback.jsx`. It uses Web Audio for short local tones, stores sound toggles in `localStorage` (`geoGameSound` and `geoBattleSound`), and renders accessible `aria-live` feedback bubbles with the same player/opponent/target color language used by map pins.
 
 ## Backend
 
@@ -62,7 +65,9 @@ Key middleware:
 - request logging with special successful-agent request logging;
 - input validation for request size, `panoId`, and page query bounds;
 - session management through `X-Session-ID`;
-- SQLite-backed rate limiting when enabled, including tighter limits for random locations, geo AI guesses, and satellite image proxy calls.
+- SQLite-backed rate limiting when enabled, including tighter limits for random locations, geo AI guesses, satellite image proxy calls, and Atlas Voice Realtime session entrypoints.
+
+Atlas Voice uses `frontend/src/components/AtlasVoicePanel.jsx` on the home route. The default transport is a same-origin backend WebSocket proxy at `/api/v1/realtime/ws`, with a WebRTC path available through `VITE_REALTIME_TRANSPORT`. Atlas defaults to the `cedar` Realtime voice, and can be overridden with `OPENAI_REALTIME_VOICE` for backend-created sessions or `VITE_REALTIME_VOICE` for browser session updates. Turn detection defaults to `semantic_vad` with `high` eagerness for more responsive spoken turns; `server_vad` and its threshold/padding/silence values can be enabled through the Realtime VAD environment variables when a stricter latency tradeoff is desired. As an experimental switch, `ATLAS_VOICE_PROVIDER=doubao` keeps OpenAI Realtime responsible for microphone input, text generation, memory, and tool calls, but changes the session output modality to text and streams the completed Atlas reply through `/api/v1/realtime/doubao-tts`, which proxies Volcengine BigTTS V3 HTTP Chunked output as PCM deltas for the browser queue. The voice tool set is intentionally small: random exploration, theme exploration, concrete place/coordinate jumps, nearby wandering, camera direction, and reading the current place context. Concrete place jumps call `GET /api/v1/locations/search`, which resolves a landmark/address/business query through Google Places/Geocoding before loading nearby Street View. The backend Realtime WebSocket checks browser origins before proxying to OpenAI: same-origin and local dev hosts are allowed, production additions should be configured with `OPENAI_REALTIME_ALLOWED_ORIGINS`.
 
 ## Persistent Data
 
@@ -99,8 +104,9 @@ Round selection:
 Image and scoring:
 
 - Satellite images are fetched through `GET /api/v1/geo/satellite` to keep the Google Static Maps key on the backend path.
-- Both the satellite image proxy and AI guess endpoint accept zoom levels 2-14. Static images use Google Static Maps `size=640x480`, `scale=2`, and `maptype=satellite`.
+- Both the satellite image proxy and AI guess endpoint accept zoom levels 2-14. Static images use Google Static Maps `scale=2` and `maptype=satellite`; width and height default to `640x480`, but the frontend sends panel-aware dimensions clamped to 120-640 pixels per side.
 - Optional AI guessing calls `POST /api/v1/geo/ai-guess`. The frontend sends the current locked zoom and UI language; the backend fetches exactly that one satellite image and the AI prompt asks for the center point of the image only.
+- The satellite panel keeps a center pin visible. Zoom-out fetches the next static image before handing over to the same short reveal animation used by online duel.
 - Scoring uses exponential decay by zoom-outs and distance:
 
 ```text
@@ -152,12 +158,18 @@ Snapshot behavior:
 
 - The frontend polls room snapshots every 1.5 seconds while playing and every 2.5 seconds otherwise.
 - `server_time` is included so the browser can correct countdown drift.
-- A player can see the opponent guess only during `reveal` or `finished`.
+- A player can see the opponent guess and current-round score only during `reveal` or `finished`. If both players lock before the deadline, the service records the guesses but keeps the room in `playing` until the timer advances.
 - The target location is hidden until `reveal` or `finished`.
-- `GET /image` returns the current target at the player's current zoom, with `no-store`.
+- `GET /image` returns the current target at the player's current zoom, with `no-store`; it returns image-not-ready during `lobby`, `preparing`, and `countdown`.
 - During `reveal` and `finished`, image zoom is capped at 5.
 - Each player has independent zoom state. A zoom-out before locking increments only that player's `zoom_steps`.
 - Guess scoring matches the solo formula and uses the same zoom-aware distance tolerance. Skips and timeout-created guesses score 0.
+
+Frontend rendering notes:
+
+- The online satellite panel uses the same center-pin and zoom reveal pattern as the solo game. While a new image is loading, the previous image remains visible and map interactions are disabled to avoid flicker or stale clicks.
+- Result pins and labels use one stable language: green target, red current player, blue opponent, and purple Atlas only in solo AI mode.
+- Reveal panels show the scoring factors explicitly: base score, zoom penalty, tolerance, distance penalty, time remaining or no-time-penalty status, and final score.
 
 Leaving behavior:
 

@@ -4,12 +4,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import StreetView from './StreetView';
 import { loadGoogleMapsWhenVisible } from '../utils/googleMaps';
 
+const { stableTranslate } = vi.hoisted(() => ({
+    stableTranslate: (key) => key,
+}));
+
 vi.mock('../utils/googleMaps', () => ({
     loadGoogleMapsWhenVisible: vi.fn(),
 }));
 
 vi.mock('react-i18next', () => ({
-    useTranslation: () => ({ t: (key) => key }),
+    useTranslation: () => ({ t: stableTranslate }),
 }));
 
 class MockStreetViewPanorama {
@@ -170,5 +174,37 @@ describe('StreetView auto-rotation', () => {
         });
 
         expect(panorama.setPovCalls).toBe(callsBeforeBlur);
+    });
+
+    it('applies external heading changes to the panorama', async () => {
+        const onPovChanged = vi.fn();
+        const { rerender } = render(
+            <StreetView
+                latitude={4.48275}
+                longitude={-61.14854}
+                heading={0}
+                onPovChanged={onPovChanged}
+            />,
+        );
+
+        await advanceTimers(250);
+
+        expect(MockStreetViewPanorama.instances).toHaveLength(1);
+        const panorama = MockStreetViewPanorama.instances[0];
+
+        await act(async () => {
+            rerender(
+                <StreetView
+                    latitude={4.48275}
+                    longitude={-61.14854}
+                    heading={135}
+                    onPovChanged={onPovChanged}
+                />,
+            );
+            await Promise.resolve();
+        });
+
+        expect(panorama.getPov().heading).toBe(135);
+        expect(onPovChanged).toHaveBeenCalledWith(135);
     });
 });

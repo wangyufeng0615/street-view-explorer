@@ -1,0 +1,142 @@
+import { describe, expect, it } from "vitest";
+import {
+  MIC_AUDIO_CONSTRAINTS,
+  buildRealtimeTurnDetection,
+  buildVoiceContextSignature,
+  nextDoubaoSpeechQueue,
+  shouldDeferVoiceSessionUpdate,
+  shouldIgnoreAssistantEcho,
+} from "./atlasVoiceRuntime";
+
+describe("atlasVoiceRuntime", () => {
+  it("requests browser echo controls for voice input", () => {
+    expect(MIC_AUDIO_CONSTRAINTS).toEqual({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+    });
+  });
+
+  it("defaults Realtime VAD to a more responsive semantic setting", () => {
+    expect(buildRealtimeTurnDetection()).toEqual({
+      type: "semantic_vad",
+      eagerness: "high",
+      create_response: true,
+      interrupt_response: true,
+    });
+  });
+
+  it("can build a bounded server VAD override from environment values", () => {
+    expect(
+      buildRealtimeTurnDetection({
+        VITE_REALTIME_VAD_TYPE: "server_vad",
+        VITE_REALTIME_VAD_THRESHOLD: "1.5",
+        VITE_REALTIME_VAD_PREFIX_PADDING_MS: "180",
+        VITE_REALTIME_VAD_SILENCE_DURATION_MS: "280",
+      }),
+    ).toEqual({
+      type: "server_vad",
+      threshold: 1,
+      prefix_padding_ms: 180,
+      silence_duration_ms: 280,
+      create_response: true,
+      interrupt_response: true,
+    });
+  });
+
+  it("only changes context signature when relevant voice context changes", () => {
+    const base = buildVoiceContextSignature({
+      location: {
+        pano_id: "pano-1",
+        latitude: 45.123456,
+        longitude: 7.654321,
+      },
+      heading: 12.4,
+      description: "quiet road",
+    });
+
+    expect(
+      buildVoiceContextSignature({
+        location: {
+          pano_id: "pano-1",
+          latitude: 45.123459,
+          longitude: 7.654324,
+        },
+        heading: 12.49,
+        description: "quiet road",
+      }),
+    ).toBe(base);
+
+    expect(
+      buildVoiceContextSignature({
+        location: {
+          pano_id: "pano-2",
+          latitude: 45.123456,
+          longitude: 7.654321,
+        },
+        heading: 12.4,
+        description: "quiet road",
+      }),
+    ).not.toBe(base);
+  });
+
+  it("defers session updates only when context is pending and speech/tooling is active", () => {
+    expect(
+      shouldDeferVoiceSessionUpdate({
+        status: "speaking",
+        hasActiveSpeech: true,
+        contextSignature: "new",
+        sentContextSignature: "old",
+      }),
+    ).toBe(true);
+
+    expect(
+      shouldDeferVoiceSessionUpdate({
+        status: "connected",
+        hasActiveSpeech: false,
+        contextSignature: "same",
+        sentContextSignature: "same",
+      }),
+    ).toBe(false);
+
+    expect(
+      shouldDeferVoiceSessionUpdate({
+        status: "connected",
+        hasActiveSpeech: false,
+        contextSignature: "new",
+        sentContextSignature: "old",
+      }),
+    ).toBe(false);
+  });
+
+  it("guards against immediate speaker-to-mic echo without blocking later barge-in", () => {
+    expect(
+      shouldIgnoreAssistantEcho({
+        provider: "doubao",
+        hasActiveSpeech: true,
+        assistantSpeechStartedAtMs: 1000,
+        nowMs: 1300,
+      }),
+    ).toBe(true);
+
+    expect(
+      shouldIgnoreAssistantEcho({
+        provider: "doubao",
+        hasActiveSpeech: true,
+        assistantSpeechStartedAtMs: 1000,
+        nowMs: 1900,
+      }),
+    ).toBe(false);
+  });
+
+  it("keeps current speech but replaces stale queued Doubao replies", () => {
+    expect(
+      nextDoubaoSpeechQueue(
+        [{ id: 1, text: "old pending reply" }],
+        { id: 2, text: "new reply" },
+      ),
+    ).toEqual([{ id: 2, text: "new reply" }]);
+  });
+});

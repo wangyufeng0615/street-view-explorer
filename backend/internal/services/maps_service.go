@@ -126,7 +126,6 @@ func (s *MapsService) HTTPClient() *http.Client {
 	return s.getHTTPClient()
 }
 
-
 // 检查坐标是否有街景可用，并返回街景坐标
 // 使用兜底措施确保总是能找到可用的街景
 func (s *MapsService) HasStreetView(ctx context.Context, latitude, longitude float64, hasInterest bool) (bool, float64, float64, string) {
@@ -268,6 +267,79 @@ func (s *MapsService) GeocodeAddress(ctx context.Context, address string) (float
 	formattedAddr := resp[0].FormattedAddress
 
 	return lat, lng, formattedAddr, nil
+}
+
+func (s *MapsService) SearchPlace(ctx context.Context, query string, language string) (*PlaceCandidate, error) {
+	candidate, placeErr := s.findPlaceFromText(ctx, query, language)
+	if placeErr == nil {
+		return candidate, nil
+	}
+
+	candidate, textErr := s.textSearchPlace(ctx, query, language)
+	if textErr == nil {
+		return candidate, nil
+	}
+
+	lat, lng, formattedAddr, geocodeErr := s.GeocodeAddress(ctx, query)
+	if geocodeErr == nil {
+		return &PlaceCandidate{
+			Name:             query,
+			FormattedAddress: formattedAddr,
+			Latitude:         lat,
+			Longitude:        lng,
+		}, nil
+	}
+
+	return nil, fmt.Errorf("未找到地点: %s", query)
+}
+
+func (s *MapsService) findPlaceFromText(ctx context.Context, query string, language string) (*PlaceCandidate, error) {
+	req := &maps.FindPlaceFromTextRequest{
+		Input:     query,
+		InputType: maps.FindPlaceFromTextInputTypeTextQuery,
+		Fields: []maps.PlaceSearchFieldMask{
+			maps.PlaceSearchFieldMaskFormattedAddress,
+			maps.PlaceSearchFieldMaskGeometry,
+			maps.PlaceSearchFieldMaskName,
+			maps.PlaceSearchFieldMaskPlaceID,
+		},
+		Language: language,
+	}
+
+	resp, err := s.client.FindPlaceFromText(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	if len(resp.Candidates) == 0 {
+		return nil, fmt.Errorf("未找到地点: %s", query)
+	}
+	return placeSearchResultToCandidate(resp.Candidates[0]), nil
+}
+
+func (s *MapsService) textSearchPlace(ctx context.Context, query string, language string) (*PlaceCandidate, error) {
+	req := &maps.TextSearchRequest{
+		Query:    query,
+		Language: language,
+	}
+
+	resp, err := s.client.TextSearch(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	if len(resp.Results) == 0 {
+		return nil, fmt.Errorf("未找到地点: %s", query)
+	}
+	return placeSearchResultToCandidate(resp.Results[0]), nil
+}
+
+func placeSearchResultToCandidate(result maps.PlacesSearchResult) *PlaceCandidate {
+	return &PlaceCandidate{
+		Name:             result.Name,
+		FormattedAddress: result.FormattedAddress,
+		PlaceID:          result.PlaceID,
+		Latitude:         result.Geometry.Location.Lat,
+		Longitude:        result.Geometry.Location.Lng,
+	}
 }
 
 func (s *MapsService) GetLocationInfo(ctx context.Context, latitude, longitude float64, language string) (map[string]string, error) {

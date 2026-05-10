@@ -18,6 +18,15 @@ type LocationService struct {
 	maps      MapProvider
 }
 
+type PlaceResolution struct {
+	Query            string  `json:"query"`
+	Name             string  `json:"name,omitempty"`
+	FormattedAddress string  `json:"formatted_address,omitempty"`
+	PlaceID          string  `json:"place_id,omitempty"`
+	Latitude         float64 `json:"latitude"`
+	Longitude        float64 `json:"longitude"`
+}
+
 func NewLocationService(repo repositories.Repository, ai *AIService, maps MapProvider) *LocationService {
 	return &LocationService{
 		repo:      repo,
@@ -319,6 +328,64 @@ func (ls *LocationService) LookupLocation(lat, lng float64, language string) (*m
 	}
 
 	return &location, nil
+}
+
+// SearchLocation resolves a concrete place/landmark query and loads nearby Street View.
+func (ls *LocationService) SearchLocation(query, language string) (*models.Location, *PlaceResolution, error) {
+	trimmedQuery := strings.TrimSpace(query)
+	if trimmedQuery == "" {
+		return nil, nil, fmt.Errorf("缺少地点关键词")
+	}
+
+	ctx := context.Background()
+	candidate, err := ls.maps.SearchPlace(ctx, trimmedQuery, language)
+	if err != nil {
+		return nil, nil, err
+	}
+	if candidate == nil || math.IsNaN(candidate.Latitude) || math.IsNaN(candidate.Longitude) {
+		return nil, nil, fmt.Errorf("地点解析结果无效")
+	}
+
+	hasStreetView, validLat, validLng, panoId := ls.maps.FindNearbyStreetView(ctx, candidate.Latitude, candidate.Longitude)
+	if !hasStreetView {
+		return nil, &PlaceResolution{
+			Query:            trimmedQuery,
+			Name:             candidate.Name,
+			FormattedAddress: candidate.FormattedAddress,
+			PlaceID:          candidate.PlaceID,
+			Latitude:         candidate.Latitude,
+			Longitude:        candidate.Longitude,
+		}, fmt.Errorf("找到了地点，但附近没有可用街景")
+	}
+
+	locationInfo, err := ls.maps.GetLocationInfo(ctx, validLat, validLng, language)
+	if err != nil {
+		return nil, nil, fmt.Errorf("获取位置信息失败: %w", err)
+	}
+
+	location := models.Location{
+		PanoID:    panoId,
+		CreatedAt: time.Now(),
+		IsMock:    false,
+	}
+	location.Latitude = validLat
+	location.Longitude = validLng
+	location.Country = locationInfo["country"]
+	location.City = locationInfo["city"]
+	location.FormattedAddress = locationInfo["formatted_address"]
+
+	if err := ls.repo.SaveLocation(location); err != nil {
+		return nil, nil, fmt.Errorf("保存位置记录失败: %w", err)
+	}
+
+	return &location, &PlaceResolution{
+		Query:            trimmedQuery,
+		Name:             candidate.Name,
+		FormattedAddress: candidate.FormattedAddress,
+		PlaceID:          candidate.PlaceID,
+		Latitude:         candidate.Latitude,
+		Longitude:        candidate.Longitude,
+	}, nil
 }
 
 // RecordVisit 记录用户访问

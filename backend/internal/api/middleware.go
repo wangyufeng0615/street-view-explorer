@@ -33,12 +33,24 @@ func RateLimitMiddleware(rateLimiter repositories.RateLimiter) gin.HandlerFunc {
 		case "/api/v1/locations/random":
 			maxRequests = 120 // 每分钟120次，约2秒一次
 			window = 60 * time.Second
+		case "/api/v1/locations/search":
+			maxRequests = 45 // Google Places/Geocoding 查询，避免语音误触发刷接口
+			window = 60 * time.Second
 		case "/api/v1/geo/ai-guess":
 			maxRequests = 30 // AI 视觉猜测成本较高，限制自动刷接口
 			window = 60 * time.Second
 		case "/api/v1/geo/satellite",
 			"/api/v1/geo/online/rooms/:roomId/image":
 			maxRequests = 180 // 静态地图代理会消耗 Google Maps 配额
+			window = 60 * time.Second
+		case "/api/v1/realtime/client-secret",
+			"/api/v1/realtime/calls",
+			"/api/v1/realtime/ws",
+			"/api/v1/realtime/doubao-tts":
+			maxRequests = 20 // Realtime sessions can spend OpenAI audio quota quickly
+			window = 60 * time.Second
+		case "/api/v1/realtime/voice-config":
+			maxRequests = 120
 			window = 60 * time.Second
 		case "/api/v1/preferences/exploration":
 			// 探索偏好设置：正常不会频繁调用

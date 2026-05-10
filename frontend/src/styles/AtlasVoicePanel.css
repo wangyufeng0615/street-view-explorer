@@ -1,0 +1,122 @@
+.atlas-voice-panel {
+  position: fixed;
+  left: 20px;
+  bottom: 20px;
+  z-index: 930;
+  width: min(360px, calc(100vw - 40px));
+  color: #f8fafc;
+  background: rgba(17, 24, 39, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(16px);
+  font-family:
+    "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue",
+    Helvetica, Arial, sans-serif;
+  overflow: hidden;
+}
+
+.atlas-voice-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px;
+}
+
+.atlas-voice-title {
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.atlas-voice-status {
+  margin-top: 4px;
+  color: rgba(248, 250, 252, 0.72);
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.atlas-voice-button {
+  flex: 0 0 auto;
+  min-width: 72px;
+  height: 34px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  background: #f8fafc;
+  color: #111827;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    transform 0.16s ease,
+    background 0.16s ease,
+    border-color 0.16s ease;
+}
+
+.atlas-voice-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  background: #ffffff;
+}
+
+.atlas-voice-button:disabled {
+  cursor: wait;
+  color: rgba(17, 24, 39, 0.5);
+}
+
+.atlas-voice-panel--connected .atlas-voice-button,
+.atlas-voice-panel--listening .atlas-voice-button,
+.atlas-voice-panel--thinking .atlas-voice-button,
+.atlas-voice-panel--speaking .atlas-voice-button,
+.atlas-voice-panel--tool .atlas-voice-button {
+  background: #111827;
+  color: #f8fafc;
+  border-color: rgba(255, 255, 255, 0.24);
+}
+
+.atlas-voice-panel--listening {
+  border-color: rgba(45, 212, 191, 0.65);
+}
+
+.atlas-voice-panel--speaking,
+.atlas-voice-panel--tool {
+  border-color: rgba(251, 191, 36, 0.72);
+}
+
+.atlas-voice-log {
+  max-height: 128px;
+  overflow-y: auto;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 10px 12px 12px;
+}
+
+.atlas-voice-line {
+  font-size: 12px;
+  line-height: 1.45;
+  color: rgba(248, 250, 252, 0.86);
+}
+
+.atlas-voice-line + .atlas-voice-line {
+  margin-top: 8px;
+}
+
+.atlas-voice-line.user {
+  color: rgba(191, 219, 254, 0.95);
+}
+
+.atlas-voice-line.assistant {
+  color: rgba(254, 243, 199, 0.96);
+}
+
+.atlas-voice-line.error {
+  color: #fecaca;
+}
+
+@media (max-width: 760px) {
+  .atlas-voice-panel {
+    left: 12px;
+    right: 12px;
+    bottom: 12px;
+    width: auto;
+  }
+}
