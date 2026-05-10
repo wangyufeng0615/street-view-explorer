@@ -1403,8 +1403,6 @@ export default function AtlasVoicePanel() {
           break;
         case "response.output_item.done": {
           clearResponseWatchdog();
-          const text = extractAssistantText(event.item);
-          if (text) setLastAssistantText(text);
           if (event.item?.type === "function_call") {
             handleFunctionCall(event.item);
           }

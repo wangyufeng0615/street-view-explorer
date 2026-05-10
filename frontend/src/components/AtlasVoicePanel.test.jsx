@@ -236,5 +236,29 @@ describe("AtlasVoicePanel", () => {
       expect(socket.sent.some((event) => event.type === "response.create")).toBe(true),
     );
     expect(apiMocks.synthesizeDoubaoTTSStream).not.toHaveBeenCalled();
+    expect(
+      screen.queryByText("走，咱们再挪一段更往乡下走的路。"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not show assistant text before knowing whether a tool will run", async () => {
+    const socket = await startPanel();
+
+    await act(async () => {
+      socket.emitRealtime({
+        type: "response.output_item.done",
+        item: {
+          type: "message",
+          content: [
+            {
+              type: "output_text",
+              text: "好的，我带你过去。",
+            },
+          ],
+        },
+      });
+    });
+
+    expect(screen.queryByText("好的，我带你过去。")).not.toBeInTheDocument();
   });
 });
