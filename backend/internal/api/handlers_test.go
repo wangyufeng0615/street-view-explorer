@@ -84,6 +84,11 @@ func TestSanitizeDescription(t *testing.T) {
 			input: "正文内容。 (https://example.com/a_(b))",
 			want:  "正文内容。",
 		},
+		{
+			name:  "keeps bracketed narration when a later citation exists",
+			input: "[站在海风和红土之间，盯着北边那一片安静的地势]\n\n朋友，这里是普恩一带。([en.wikipedia.org](https://example.com/wiki/Poum))",
+			want:  "[站在海风和红土之间，盯着北边那一片安静的地势]\n\n朋友，这里是普恩一带。",
+		},
 	}
 
 	for _, tt := range tests {

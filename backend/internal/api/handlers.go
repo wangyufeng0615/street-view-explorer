@@ -97,7 +97,12 @@ func parseMarkdownLink(text string, start int) (string, int, bool) {
 		return "", start, false
 	}
 
-	labelEndOffset := strings.Index(text[start+1:], "](")
+	searchText := text[start+1:]
+	if lineEnd := strings.IndexAny(searchText, "\r\n"); lineEnd >= 0 {
+		searchText = searchText[:lineEnd]
+	}
+
+	labelEndOffset := strings.Index(searchText, "](")
 	if labelEndOffset < 0 {
 		return "", start, false
 	}
