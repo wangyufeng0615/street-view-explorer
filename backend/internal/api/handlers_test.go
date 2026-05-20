@@ -64,6 +64,26 @@ func TestSanitizeDescription(t *testing.T) {
 			input: "[Example](https://example.com)\n[Other](https://example.org)",
 			want:  "",
 		},
+		{
+			name:  "strips inline wrapped markdown citation after chinese sentence",
+			input: "这地方的气质，很大程度上是被海湾、小机场和岛上的法属行政体系一起塑出来的。([en.wikipedia.org](https://en.wikipedia.org/wiki/Grand_Case?utm_source=openai))",
+			want:  "这地方的气质，很大程度上是被海湾、小机场和岛上的法属行政体系一起塑出来的。",
+		},
+		{
+			name:  "strips inline wrapped markdown citation before punctuation",
+			input: "The village sits by the bay ([Wikipedia](https://example.com/a_(b))).",
+			want:  "The village sits by the bay.",
+		},
+		{
+			name:  "keeps non-source markdown labels as plain text",
+			input: "It points toward [Grand Case](https://en.wikipedia.org/wiki/Grand_Case).",
+			want:  "It points toward Grand Case.",
+		},
+		{
+			name:  "strips parenthetical raw urls",
+			input: "正文内容。 (https://example.com/a_(b))",
+			want:  "正文内容。",
+		},
 	}
 
 	for _, tt := range tests {

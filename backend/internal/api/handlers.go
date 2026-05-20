@@ -16,13 +16,17 @@ import (
 
 var (
 	markdownLinkLineRegex = regexp.MustCompile(`^\[([^\]]+)\]\((.+)\)$`)
+	bareURLRegex          = regexp.MustCompile(`https?://[^\s()]+(?:\([^)]*\)[^\s()]*)*`)
+	emptyParenthesesRegex = regexp.MustCompile(`[ \t]*\(\s*\)`)
+	inlineSpacesRegex     = regexp.MustCompile(`[ \t]{2,}`)
+	spaceBeforePunctRegex = regexp.MustCompile(`[ \t]+([。．.!?！？,，;；:：])`)
 	trailingSpacesRegex   = regexp.MustCompile(`[ \t]+\n`)
 	excessiveNewlines     = regexp.MustCompile(`\n{3,}`)
 )
 
 const maxVisitHistoryLimit = 5000
 
-// sanitizeDescription 移除模型偶发输出在结尾的 markdown 链接行，保留正文。
+// sanitizeDescription 移除模型偶发输出的 markdown/URL 引用，保留正文和单独的 citation chips。
 func sanitizeDescription(text string) string {
 	normalized := strings.ReplaceAll(text, "\r\n", "\n")
 	lines := strings.Split(normalized, "\n")
@@ -47,9 +51,95 @@ func sanitizeDescription(text string) string {
 	}
 
 	cleaned := strings.TrimSpace(strings.Join(lines[:end], "\n"))
+	cleaned = stripMarkdownLinksFromProse(cleaned)
+	cleaned = bareURLRegex.ReplaceAllString(cleaned, "")
+	cleaned = emptyParenthesesRegex.ReplaceAllString(cleaned, "")
+	cleaned = spaceBeforePunctRegex.ReplaceAllString(cleaned, "$1")
+	cleaned = inlineSpacesRegex.ReplaceAllString(cleaned, " ")
 	cleaned = trailingSpacesRegex.ReplaceAllString(cleaned, "\n")
 	cleaned = excessiveNewlines.ReplaceAllString(cleaned, "\n\n")
-	return cleaned
+	return strings.TrimSpace(cleaned)
+}
+
+func stripMarkdownLinksFromProse(text string) string {
+	var builder strings.Builder
+	builder.Grow(len(text))
+
+	for i := 0; i < len(text); {
+		if text[i] == '(' && i+1 < len(text) && text[i+1] == '[' {
+			_, linkEnd, ok := parseMarkdownLink(text, i+1)
+			if ok && linkEnd < len(text) && text[linkEnd] == ')' {
+				i = linkEnd + 1
+				continue
+			}
+		}
+
+		if text[i] == '[' {
+			label, linkEnd, ok := parseMarkdownLink(text, i)
+			if ok {
+				if !isSourceLinkLabel(label) {
+					builder.WriteString(strings.TrimSpace(label))
+				}
+				i = linkEnd
+				continue
+			}
+		}
+
+		builder.WriteByte(text[i])
+		i++
+	}
+
+	return builder.String()
+}
+
+func parseMarkdownLink(text string, start int) (string, int, bool) {
+	if start >= len(text) || text[start] != '[' {
+		return "", start, false
+	}
+
+	labelEndOffset := strings.Index(text[start+1:], "](")
+	if labelEndOffset < 0 {
+		return "", start, false
+	}
+	labelEnd := start + 1 + labelEndOffset
+	urlStart := labelEnd + 2
+	depth := 1
+
+	for i := urlStart; i < len(text); i++ {
+		switch text[i] {
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth == 0 {
+				return text[start+1 : labelEnd], i + 1, true
+			}
+		}
+	}
+
+	return "", start, false
+}
+
+func isSourceLinkLabel(label string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(label))
+	if normalized == "" {
+		return true
+	}
+	if strings.Contains(normalized, "://") {
+		return true
+	}
+	if strings.Contains(normalized, ".") && !strings.Contains(normalized, " ") {
+		return true
+	}
+
+	sourceWords := []string{"wikipedia", "source", "citation", "reference"}
+	for _, word := range sourceWords {
+		if strings.Contains(normalized, word) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // ModeServices groups the location and AI services.
