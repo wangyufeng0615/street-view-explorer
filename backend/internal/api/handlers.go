@@ -441,7 +441,7 @@ func (h *Handlers) SearchLocation(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{
 			"success": false,
-			"error":   err.Error(),
+			"error":   PublicErrorMessage(err),
 			"data": gin.H{
 				"place": place,
 			},
@@ -531,7 +531,7 @@ func (h *Handlers) SetExplorationPreference(c *gin.Context) {
 		}
 		c.JSON(http.StatusOK, gin.H{
 			"success": false,
-			"error":   err.Error(),
+			"error":   PublicErrorMessage(err),
 		})
 		return
 	}

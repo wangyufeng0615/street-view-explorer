@@ -182,7 +182,7 @@ func (h *RealtimeHandlers) CreateClientSecret(c *gin.Context) {
 		log.Printf("[ATLAS_VOICE] client_secret_error provider=%s model=%s err=%v", atlasVoiceProvider(), model, err)
 		c.JSON(http.StatusBadGateway, gin.H{
 			"success": false,
-			"error":   "Failed to reach OpenAI Realtime API: " + err.Error(),
+			"error":   "Failed to reach OpenAI Realtime API: " + PublicErrorMessage(err),
 		})
 		return
 	}
@@ -255,7 +255,7 @@ func (h *RealtimeHandlers) ProxyCallSDP(c *gin.Context) {
 
 	resp, err := h.httpClient.Do(req)
 	if err != nil {
-		c.String(http.StatusBadGateway, "Failed to reach OpenAI Realtime API: "+err.Error())
+		c.String(http.StatusBadGateway, "Failed to reach OpenAI Realtime API: "+PublicErrorMessage(err))
 		return
 	}
 	defer resp.Body.Close()
@@ -315,7 +315,7 @@ func (h *RealtimeHandlers) ConnectWebSocket(c *gin.Context) {
 	}
 	upstreamConn, resp, err := dialer.DialContext(c.Request.Context(), targetURL, headers)
 	if err != nil {
-		message := "Failed to reach OpenAI Realtime WebSocket: " + err.Error()
+		message := "Failed to reach OpenAI Realtime WebSocket: " + PublicErrorMessage(err)
 		if resp != nil && resp.Status != "" {
 			message = message + " (" + resp.Status + ")"
 		}

@@ -91,7 +91,7 @@ func (ah *AgentHandlers) CreateJourney(c *gin.Context) {
 
 	req.Token = strings.TrimSpace(req.Token)
 	if err := validateAgentToken(req.Token); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": PublicErrorMessage(err)})
 		return
 	}
 	if req.StartLat < -90 || req.StartLat > 90 || req.StartLng < -180 || req.StartLng > 180 {
@@ -125,7 +125,7 @@ func (ah *AgentHandlers) CreateJourney(c *gin.Context) {
 	}
 
 	if err := ah.repo.CreateJourney(journey); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": PublicErrorMessage(err)})
 		return
 	}
 
@@ -146,13 +146,13 @@ func (ah *AgentHandlers) ListJourneys(c *gin.Context) {
 		return
 	}
 	if err := validateAgentToken(token); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": PublicErrorMessage(err)})
 		return
 	}
 
 	journeys, err := ah.repo.GetJourneysByToken(token)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": PublicErrorMessage(err)})
 		return
 	}
 
@@ -178,13 +178,13 @@ func (ah *AgentHandlers) GetJourney(c *gin.Context) {
 		return
 	}
 	if err := validateAgentToken(token); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": PublicErrorMessage(err)})
 		return
 	}
 
 	journey, err := ah.repo.GetJourney(id)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": PublicErrorMessage(err)})
 		return
 	}
 	if journey == nil {
@@ -199,7 +199,7 @@ func (ah *AgentHandlers) GetJourney(c *gin.Context) {
 
 	stops, err := ah.repo.GetJourneyStops(id)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": PublicErrorMessage(err)})
 		return
 	}
 	if stops == nil {
@@ -227,7 +227,7 @@ func (ah *AgentHandlers) UpdateJourneyStatus(c *gin.Context) {
 		return
 	}
 	if err := validateAgentToken(token); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": PublicErrorMessage(err)})
 		return
 	}
 
@@ -249,7 +249,7 @@ func (ah *AgentHandlers) UpdateJourneyStatus(c *gin.Context) {
 		if strings.Contains(err.Error(), "不匹配") {
 			status = http.StatusForbidden
 		}
-		c.JSON(status, gin.H{"success": false, "error": err.Error()})
+		c.JSON(status, gin.H{"success": false, "error": PublicErrorMessage(err)})
 		return
 	}
 
@@ -264,7 +264,7 @@ func (ah *AgentHandlers) AgentExplore(c *gin.Context) {
 		return
 	}
 	if err := validateAgentToken(token); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": PublicErrorMessage(err)})
 		return
 	}
 
@@ -334,14 +334,14 @@ func (ah *AgentHandlers) SaveJourneyStop(c *gin.Context) {
 		return
 	}
 	if err := validateAgentToken(token); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": PublicErrorMessage(err)})
 		return
 	}
 
 	// Verify journey ownership
 	journey, err := ah.repo.GetJourney(id)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": PublicErrorMessage(err)})
 		return
 	}
 	if journey == nil {
@@ -401,7 +401,7 @@ func (ah *AgentHandlers) SaveJourneyStop(c *gin.Context) {
 	}
 
 	if err := ah.repo.SaveJourneyStop(stop); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": PublicErrorMessage(err)})
 		return
 	}
 
@@ -417,14 +417,14 @@ func (ah *AgentHandlers) GetJourneyStops(c *gin.Context) {
 		return
 	}
 	if err := validateAgentToken(token); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": PublicErrorMessage(err)})
 		return
 	}
 
 	// Verify ownership
 	journey, err := ah.repo.GetJourney(id)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": PublicErrorMessage(err)})
 		return
 	}
 	if journey == nil {
@@ -438,7 +438,7 @@ func (ah *AgentHandlers) GetJourneyStops(c *gin.Context) {
 
 	stops, err := ah.repo.GetJourneyStops(id)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": PublicErrorMessage(err)})
 		return
 	}
 	if stops == nil {
@@ -457,7 +457,7 @@ func (ah *AgentHandlers) SaveJourneyLetter(c *gin.Context) {
 		return
 	}
 	if err := validateAgentToken(token); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": PublicErrorMessage(err)})
 		return
 	}
 
@@ -484,7 +484,7 @@ func (ah *AgentHandlers) SaveJourneyLetter(c *gin.Context) {
 		if strings.Contains(err.Error(), "不匹配") {
 			status = http.StatusForbidden
 		}
-		c.JSON(status, gin.H{"success": false, "error": err.Error()})
+		c.JSON(status, gin.H{"success": false, "error": PublicErrorMessage(err)})
 		return
 	}
 
@@ -497,7 +497,7 @@ func (ah *AgentHandlers) GetPublicLetter(c *gin.Context) {
 
 	journey, err := ah.repo.GetJourney(id)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": PublicErrorMessage(err)})
 		return
 	}
 	if journey == nil || journey.Letter == "" {
@@ -555,7 +555,7 @@ func (ah *AgentHandlers) StreetViewImage(c *gin.Context) {
 	// Auth path: token (AI agents) or journey_id (public letter readers)
 	if token != "" {
 		if err := validateAgentToken(token); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": PublicErrorMessage(err)})
 			return
 		}
 	} else {

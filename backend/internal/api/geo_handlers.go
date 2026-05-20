@@ -100,7 +100,7 @@ func (gh *GeoHandlers) SatelliteImage(c *gin.Context) {
 	}
 	width, height, err := geoSatelliteImageSizeFromValues(c.Query("width"), c.Query("height"))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": PublicErrorMessage(err)})
 		return
 	}
 
@@ -212,7 +212,7 @@ func (gh *GeoHandlers) AIGuess(c *gin.Context) {
 	}
 	width, height, err := geoSatelliteImageSizeFromRequest(req.Width, req.Height)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": PublicErrorMessage(err)})
 		return
 	}
 

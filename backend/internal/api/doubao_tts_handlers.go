@@ -107,7 +107,7 @@ func (h *RealtimeHandlers) SynthesizeDoubaoTTS(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{
 			"success": false,
 			"code":    code,
-			"error":   err.Error(),
+			"error":   PublicErrorMessage(err),
 		})
 		return
 	}
@@ -158,7 +158,7 @@ func (h *RealtimeHandlers) SynthesizeDoubaoTTS(c *gin.Context) {
 		)
 		writeDoubaoTTSLine(c.Writer, gin.H{
 			"type":  "error",
-			"error": err.Error(),
+			"error": PublicErrorMessage(err),
 		})
 		return
 	}
