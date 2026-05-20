@@ -8,13 +8,68 @@ let sentryLoadPromise = null;
 let errorQueue = [];
 let Sentry = null;
 
+const sensitiveParamRegex = /(\b(?:key|api[_-]?key|apikey|token|access[_-]?token|secret|client[_-]?secret|password|dsn|authorization|app[_-]?id|appid|access[_-]?key)=)([^&\s"'<>]+)/gi;
+const sensitiveAuthorizationRegex = /(authorization[:=]\s*(?:bearer\s+)?)([^&\s"'<>]+)/gi;
+
+function getTracesSampleRate() {
+  const raw = import.meta.env.VITE_SENTRY_TRACES_SAMPLE_RATE;
+  if (raw !== undefined && raw !== '') {
+    const parsed = Number(raw);
+    if (!Number.isNaN(parsed)) {
+      return parsed;
+    }
+  }
+  return import.meta.env.PROD ? 0.1 : 1.0;
+}
+
+function isSensitiveKey(key) {
+  const normalized = String(key).toLowerCase().replace(/[-\s]/g, '_');
+  return ['authorization', 'cookie', 'key', 'password', 'secret', 'session', 'token', 'dsn']
+    .some((part) => normalized.includes(part));
+}
+
+function redactSensitiveString(value) {
+  if (typeof value !== 'string' || value === '') {
+    return value;
+  }
+
+  let redacted = value.replace(sensitiveAuthorizationRegex, '$1[redacted]');
+  redacted = redacted.replace(sensitiveParamRegex, '$1[redacted]');
+  [
+    import.meta.env.VITE_GOOGLE_MAPS_API_KEY,
+    import.meta.env.VITE_SENTRY_DSN,
+  ].forEach((secret) => {
+    if (secret && secret.length >= 6) {
+      redacted = redacted.split(secret).join('[redacted]');
+    }
+  });
+  return redacted;
+}
+
+function redactSensitiveValue(value) {
+  if (typeof value === 'string') {
+    return redactSensitiveString(value);
+  }
+  if (Array.isArray(value)) {
+    return value.map(redactSensitiveValue);
+  }
+  if (value && typeof value === 'object') {
+    const redacted = {};
+    Object.entries(value).forEach(([key, item]) => {
+      redacted[key] = isSensitiveKey(key) ? '[redacted]' : redactSensitiveValue(item);
+    });
+    return redacted;
+  }
+  return value;
+}
+
 // Store configuration
 const sentryConfig = {
   dsn: import.meta.env.VITE_SENTRY_DSN,
   environment: import.meta.env.VITE_SENTRY_ENVIRONMENT || import.meta.env.MODE,
   release: `my-streetview-project@${import.meta.env.VITE_VERSION || 'unknown'}`,
-  tracesSampleRate: 1.0,
-  sendDefaultPii: true,
+  tracesSampleRate: getTracesSampleRate(),
+  sendDefaultPii: false,
   _experiments: {
     enableLogs: true,
   },
@@ -43,17 +98,18 @@ async function loadSentry() {
         Sentry.consoleLoggingIntegration({ levels: ["error", "warn"] }),
       ],
       beforeSend: function(event) {
+        const sanitizedEvent = redactSensitiveValue(event);
         // Add frontend metadata
-        if (!event.contexts) {
-          event.contexts = {};
+        if (!sanitizedEvent.contexts) {
+          sanitizedEvent.contexts = {};
         }
-        event.contexts.app = {
+        sanitizedEvent.contexts.app = {
           name: "streetview-frontend",
           version: import.meta.env.VITE_VERSION || 'unknown',
           type: "react-spa"
         };
         
-        return event;
+        return sanitizedEvent;
       },
     });
 

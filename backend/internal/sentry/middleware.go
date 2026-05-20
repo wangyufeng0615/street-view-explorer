@@ -33,7 +33,6 @@ func Middleware(repanic bool) gin.HandlerFunc {
 		hub.Scope().SetRequest(c.Request)
 		hub.Scope().SetTag("http.method", c.Request.Method)
 		hub.Scope().SetTag("http.url", c.Request.URL.Path)
-		hub.Scope().SetTag("http.client_ip", c.ClientIP())
 		hub.Scope().SetTag("user_agent", c.Request.UserAgent())
 
 		// Add session ID if available
@@ -52,7 +51,6 @@ func Middleware(repanic bool) gin.HandlerFunc {
 					scope.SetContext("gin", sentry.Context{
 						"method":     c.Request.Method,
 						"path":       c.Request.URL.Path,
-						"client_ip":  c.ClientIP(),
 						"user_agent": c.Request.UserAgent(),
 					})
 					hub.RecoverWithContext(c.Request.Context(), err)
@@ -90,8 +88,7 @@ func Middleware(repanic bool) gin.HandlerFunc {
 					scope.SetContext("request", sentry.Context{
 						"method":     c.Request.Method,
 						"path":       c.Request.URL.Path,
-						"query":      c.Request.URL.Query(),
-						"client_ip":  c.ClientIP(),
+						"query":      RedactSensitiveString(c.Request.URL.RawQuery),
 						"user_agent": c.Request.UserAgent(),
 						"status":     c.Writer.Status(),
 					})
@@ -110,9 +107,28 @@ func Middleware(repanic bool) gin.HandlerFunc {
 				Data: map[string]interface{}{
 					"status_code": c.Writer.Status(),
 					"method":      c.Request.Method,
-					"url":         c.Request.URL.String(),
+					"url":         RedactSensitiveString(c.Request.URL.String()),
 				},
 			}, nil)
+		}
+
+		if c.Writer.Status() >= http.StatusInternalServerError && len(c.Errors) == 0 {
+			if reported, _ := c.Get(ErrorReportedKey); reported == true {
+				return
+			}
+			hub.WithScope(func(scope *sentry.Scope) {
+				scope.SetLevel(sentry.LevelError)
+				scope.SetTag("http.status_code", fmt.Sprintf("%d", c.Writer.Status()))
+				scope.SetContext("request", sentry.Context{
+					"method":     c.Request.Method,
+					"path":       c.Request.URL.Path,
+					"query":      RedactSensitiveString(c.Request.URL.RawQuery),
+					"user_agent": c.Request.UserAgent(),
+					"status":     c.Writer.Status(),
+				})
+				hub.CaptureMessage(fmt.Sprintf("HTTP %d response without attached error", c.Writer.Status()))
+			})
+			c.Set(ErrorReportedKey, true)
 		}
 	}
 }

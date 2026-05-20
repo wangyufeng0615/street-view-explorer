@@ -118,9 +118,14 @@ func (h *Handlers) GetRandomLocation(c *gin.Context) {
 		if countryCode != "" && strings.Contains(err.Error(), "不支持的国家代码") {
 			status = http.StatusBadRequest
 		}
+		CaptureHandlerError(c, err, status, map[string]interface{}{
+			"operation":    "get_random_location",
+			"language":     language,
+			"country_code": countryCode,
+		})
 		c.JSON(status, gin.H{
 			"success": false,
-			"error":   err.Error(),
+			"error":   PublicErrorMessage(err),
 		})
 		return
 	}
@@ -129,9 +134,14 @@ func (h *Handlers) GetRandomLocation(c *gin.Context) {
 	source := c.DefaultQuery("source", "")
 	if source != "geo_game" {
 		if err := svc.LocationService.RecordVisit(sessionID, loc, models.VisitSourceRandom); err != nil {
+			CaptureHandlerError(c, err, http.StatusInternalServerError, map[string]interface{}{
+				"operation": "record_random_visit",
+				"pano_id":   loc.PanoID,
+				"source":    models.VisitSourceRandom,
+			})
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"success": false,
-				"error":   err.Error(),
+				"error":   PublicErrorMessage(err),
 			})
 			return
 		}
@@ -163,9 +173,14 @@ func (h *Handlers) GetLocationDescription(c *gin.Context) {
 
 	loc, err := svc.LocationService.GetLocation(panoID)
 	if err != nil {
+		CaptureHandlerError(c, err, http.StatusInternalServerError, map[string]interface{}{
+			"operation": "get_location_for_description",
+			"pano_id":   panoID,
+			"language":  language,
+		})
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
-			"error":   err.Error(),
+			"error":   PublicErrorMessage(err),
 		})
 		return
 	}
@@ -188,10 +203,16 @@ func (h *Handlers) GetLocationDescription(c *gin.Context) {
 			"duration": duration.String(),
 			"status":   statusCode,
 		})
+		CaptureHandlerError(c, err, statusCode, map[string]interface{}{
+			"operation": "get_description",
+			"pano_id":   panoID,
+			"language":  language,
+			"duration":  duration.String(),
+		})
 
 		c.JSON(statusCode, gin.H{
 			"success":  false,
-			"error":    err.Error(),
+			"error":    PublicErrorMessage(err),
 			"duration": duration.String(),
 		})
 		return
@@ -246,9 +267,14 @@ func (h *Handlers) GetLocationDetailedDescription(c *gin.Context) {
 
 	loc, err := svc.LocationService.GetLocation(panoID)
 	if err != nil {
+		CaptureHandlerError(c, err, http.StatusInternalServerError, map[string]interface{}{
+			"operation": "get_location_for_detailed_description",
+			"pano_id":   panoID,
+			"language":  language,
+		})
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
-			"error":   err.Error(),
+			"error":   PublicErrorMessage(err),
 		})
 		return
 	}
@@ -274,10 +300,16 @@ func (h *Handlers) GetLocationDetailedDescription(c *gin.Context) {
 			"duration": time.Since(startTime).String(),
 			"status":   statusCode,
 		})
+		CaptureHandlerError(c, err, statusCode, map[string]interface{}{
+			"operation": "get_detailed_description",
+			"pano_id":   panoID,
+			"language":  language,
+			"duration":  duration.String(),
+		})
 
 		c.JSON(statusCode, gin.H{
 			"success":  false,
-			"error":    errorMsg,
+			"error":    PublicErrorMessage(err),
 			"duration": duration.String(),
 		})
 		return
@@ -346,9 +378,15 @@ func (h *Handlers) LookupLocation(c *gin.Context) {
 	svc := h.servicesForMode(c)
 	loc, err := svc.LocationService.LookupLocation(lat, lng, language)
 	if err != nil {
+		CaptureHandlerError(c, err, http.StatusInternalServerError, map[string]interface{}{
+			"operation": "lookup_location",
+			"latitude":  lat,
+			"longitude": lng,
+			"language":  language,
+		})
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
-			"error":   err.Error(),
+			"error":   PublicErrorMessage(err),
 		})
 		return
 	}
@@ -357,9 +395,14 @@ func (h *Handlers) LookupLocation(c *gin.Context) {
 	if sessionID != "" {
 		source := normalizeVisitSource(c.DefaultQuery("source", models.VisitSourceLookup))
 		if err := svc.LocationService.RecordVisit(sessionID, *loc, source); err != nil {
+			CaptureHandlerError(c, err, http.StatusInternalServerError, map[string]interface{}{
+				"operation": "record_lookup_visit",
+				"pano_id":   loc.PanoID,
+				"source":    source,
+			})
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"success": false,
-				"error":   err.Error(),
+				"error":   PublicErrorMessage(err),
 			})
 			return
 		}
@@ -409,9 +452,14 @@ func (h *Handlers) SearchLocation(c *gin.Context) {
 	sessionID := h.getOptionalSessionID(c)
 	if sessionID != "" {
 		if err := svc.LocationService.RecordVisit(sessionID, *loc, models.VisitSourceLookup); err != nil {
+			CaptureHandlerError(c, err, http.StatusInternalServerError, map[string]interface{}{
+				"operation": "record_search_visit",
+				"pano_id":   loc.PanoID,
+				"source":    models.VisitSourceLookup,
+			})
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"success": false,
-				"error":   err.Error(),
+				"error":   PublicErrorMessage(err),
 			})
 			return
 		}
@@ -531,11 +579,15 @@ func (h *Handlers) DeleteExplorationPreference(c *gin.Context) {
 		if language == "en" {
 			errorMsg = "Failed to delete exploration preference"
 		}
+		CaptureHandlerError(c, err, http.StatusInternalServerError, map[string]interface{}{
+			"operation": "delete_exploration_preference",
+			"language":  language,
+		})
 
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
 			"error":   errorMsg,
-			"detail":  err.Error(),
+			"detail":  PublicErrorMessage(err),
 		})
 		return
 	}
@@ -564,9 +616,14 @@ func (h *Handlers) GetVisitHistory(c *gin.Context) {
 
 	visits, totalVisits, uniquePlaces, err := svc.LocationService.GetGlobalVisitHistory(limit, offset)
 	if err != nil {
+		CaptureHandlerError(c, err, http.StatusInternalServerError, map[string]interface{}{
+			"operation": "get_visit_history",
+			"limit":     limit,
+			"offset":    offset,
+		})
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
-			"error":   err.Error(),
+			"error":   PublicErrorMessage(err),
 		})
 		return
 	}

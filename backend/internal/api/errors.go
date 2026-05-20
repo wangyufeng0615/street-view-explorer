@@ -8,6 +8,7 @@ import (
 	"github.com/getsentry/sentry-go"
 	sentrygin "github.com/getsentry/sentry-go/gin"
 	"github.com/gin-gonic/gin"
+	mysentry "github.com/my-streetview-project/backend/internal/sentry"
 )
 
 // ErrorResponse 定义统一的错误响应结构
@@ -27,6 +28,50 @@ func NewErrorResponse(code, message string) *ErrorResponse {
 		Code:    code,
 		Message: message,
 	}
+}
+
+func PublicErrorMessage(err error) string {
+	if err == nil {
+		return ""
+	}
+	return mysentry.RedactSensitiveString(err.Error())
+}
+
+func CaptureHandlerError(c *gin.Context, err error, status int, contexts map[string]interface{}) {
+	if err == nil || status < http.StatusInternalServerError {
+		return
+	}
+
+	hub := sentrygin.GetHubFromContext(c)
+	if hub == nil {
+		if h, exists := c.Get("sentry"); exists {
+			if typedHub, ok := h.(*sentry.Hub); ok {
+				hub = typedHub
+			}
+		}
+	}
+	if hub == nil {
+		return
+	}
+
+	hub.WithScope(func(scope *sentry.Scope) {
+		scope.SetLevel(sentry.LevelError)
+		scope.SetTag("http.status_code", fmt.Sprintf("%d", status))
+		scope.SetContext("request", sentry.Context{
+			"method":     c.Request.Method,
+			"path":       c.Request.URL.Path,
+			"query":      mysentry.RedactSensitiveString(c.Request.URL.RawQuery),
+			"user_agent": c.Request.UserAgent(),
+			"status":     status,
+		})
+		for key, value := range contexts {
+			scope.SetContext(key, sentry.Context{
+				"data": mysentry.RedactSensitiveValue(value),
+			})
+		}
+		hub.CaptureException(fmt.Errorf("%s", mysentry.RedactSensitiveString(err.Error())))
+	})
+	c.Set(mysentry.ErrorReportedKey, true)
 }
 
 // 预定义错误类型
