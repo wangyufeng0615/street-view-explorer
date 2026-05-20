@@ -111,7 +111,7 @@ describe("atlasVoiceRuntime", () => {
     ).toBe(false);
   });
 
-  it("guards against immediate speaker-to-mic echo without blocking later barge-in", () => {
+  it("guards against speaker-to-mic echo while assistant audio is active", () => {
     expect(
       shouldIgnoreAssistantEcho({
         provider: "doubao",
@@ -125,6 +125,26 @@ describe("atlasVoiceRuntime", () => {
       shouldIgnoreAssistantEcho({
         provider: "doubao",
         hasActiveSpeech: true,
+        assistantSpeechStartedAtMs: 1000,
+        nowMs: 1900,
+      }),
+    ).toBe(true);
+  });
+
+  it("keeps a short echo tail after assistant playback ends", () => {
+    expect(
+      shouldIgnoreAssistantEcho({
+        provider: "doubao",
+        hasActiveSpeech: false,
+        echoTailActive: true,
+      }),
+    ).toBe(true);
+
+    expect(
+      shouldIgnoreAssistantEcho({
+        provider: "doubao",
+        hasActiveSpeech: false,
+        echoTailActive: false,
         assistantSpeechStartedAtMs: 1000,
         nowMs: 1900,
       }),

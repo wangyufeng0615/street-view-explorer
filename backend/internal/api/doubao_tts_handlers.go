@@ -149,7 +149,7 @@ func (h *RealtimeHandlers) SynthesizeDoubaoTTS(c *gin.Context) {
 	c.Header("X-Accel-Buffering", "no")
 	c.Status(http.StatusOK)
 
-	if err := h.streamDoubaoTTS(c, config, text, request.Language); err != nil {
+	if err := h.streamDoubaoTTS(c, config, text, request.Language, startedAt, charCount); err != nil {
 		log.Printf(
 			"[ATLAS_VOICE] tts_error provider=doubao chars=%d duration=%s err=%v",
 			charCount,
@@ -165,7 +165,14 @@ func (h *RealtimeHandlers) SynthesizeDoubaoTTS(c *gin.Context) {
 	log.Printf("[ATLAS_VOICE] tts_done provider=doubao chars=%d duration=%s", charCount, time.Since(startedAt).Round(time.Millisecond))
 }
 
-func (h *RealtimeHandlers) streamDoubaoTTS(c *gin.Context, config doubaoTTSConfig, text string, language string) error {
+func (h *RealtimeHandlers) streamDoubaoTTS(
+	c *gin.Context,
+	config doubaoTTSConfig,
+	text string,
+	language string,
+	startedAt time.Time,
+	charCount int,
+) error {
 	requestID := uuid.NewString()
 	additionsJSON, err := json.Marshal(doubaoTTSAdditions{
 		DisableMarkdownFilter: true,
@@ -249,6 +256,7 @@ func (h *RealtimeHandlers) streamDoubaoTTS(c *gin.Context, config doubaoTTSConfi
 		"log_id":      resp.Header.Get("X-Tt-Logid"),
 	})
 
+	firstAudioLogged := false
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 2*1024*1024)
 	for scanner.Scan() {
@@ -264,6 +272,15 @@ func (h *RealtimeHandlers) streamDoubaoTTS(c *gin.Context, config doubaoTTSConfi
 
 		audioBase64 := rawJSONString(chunk.Data)
 		if audioBase64 != "" {
+			if !firstAudioLogged {
+				firstAudioLogged = true
+				log.Printf(
+					"[ATLAS_VOICE] tts_first_audio provider=doubao chars=%d since_start=%s log_id=%s",
+					charCount,
+					time.Since(startedAt).Round(time.Millisecond),
+					resp.Header.Get("X-Tt-Logid"),
+				)
+			}
 			writeDoubaoTTSLine(c.Writer, gin.H{
 				"type":        "audio_delta",
 				"delta":       audioBase64,

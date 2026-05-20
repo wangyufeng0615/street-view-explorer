@@ -39,6 +39,11 @@ const REALTIME_RESPONSE_WATCHDOG_MS = Math.max(
   Number.parseInt(import.meta.env.VITE_REALTIME_RESPONSE_WATCHDOG_MS || "9000", 10) ||
     9000,
 );
+const ASSISTANT_ECHO_TAIL_MS = Math.max(
+  0,
+  Number.parseInt(import.meta.env.VITE_ASSISTANT_ECHO_TAIL_MS || "450", 10) ||
+    450,
+);
 const VOICE_PROVIDER_OVERRIDE =
   import.meta.env.VITE_ATLAS_VOICE_PROVIDER ||
   import.meta.env.VITE_REALTIME_AUDIO_PROVIDER ||
@@ -476,6 +481,7 @@ export default function AtlasVoicePanel() {
   const currentContextSignatureRef = useRef("");
   const sentContextSignatureRef = useRef("");
   const assistantSpeechStartedAtRef = useRef(null);
+  const assistantSpeechEndedAtRef = useRef(null);
   const speechIdleTimerRef = useRef(null);
   const responseWatchdogTimerRef = useRef(null);
   const scheduleSpeechIdleCheckRef = useRef(null);
@@ -534,6 +540,10 @@ export default function AtlasVoicePanel() {
     const audioContext = audioContextRef.current;
     const activeAudio = activeAssistantAudioRef.current;
     const now = audioContext?.currentTime || 0;
+    const hadAssistantAudio =
+      assistantAudioSourcesRef.current.size > 0 ||
+      Boolean(activeAudio) ||
+      audioPlaybackTimeRef.current > now + 0.05;
     let audioEndMs = 0;
 
     if (activeAudio?.startedAt !== null && Number.isFinite(activeAudio?.startedAt)) {
@@ -557,6 +567,7 @@ export default function AtlasVoicePanel() {
     assistantAudioSourcesRef.current.clear();
     activeAssistantAudioRef.current = null;
     assistantSpeechStartedAtRef.current = null;
+    assistantSpeechEndedAtRef.current = hadAssistantAudio ? performance.now() : null;
     audioPlaybackTimeRef.current = now;
 
     return { activeAudio, audioEndMs };
@@ -685,6 +696,27 @@ export default function AtlasVoicePanel() {
     );
   }, []);
 
+  const hasAudibleAssistantSpeech = useCallback(() => {
+    const audioContext = audioContextRef.current;
+    const now = audioContext?.currentTime || 0;
+    return (
+      assistantAudioSourcesRef.current.size > 0 ||
+      audioPlaybackTimeRef.current > now + 0.05
+    );
+  }, []);
+
+  const isAssistantEchoTailActive = useCallback(() => {
+    if (!assistantSpeechEndedAtRef.current) return false;
+    return performance.now() - assistantSpeechEndedAtRef.current < ASSISTANT_ECHO_TAIL_MS;
+  }, []);
+
+  const shouldSuppressMicForAssistantEcho = useCallback(() => {
+    return (
+      voiceConfigRef.current?.provider === "doubao" &&
+      (hasAudibleAssistantSpeech() || isAssistantEchoTailActive())
+    );
+  }, [hasAudibleAssistantSpeech, isAssistantEchoTailActive]);
+
   const flushDeferredSessionUpdate = useCallback(() => {
     if (!deferredSessionUpdateRef.current || hasActiveAssistantSpeech()) {
       return;
@@ -766,6 +798,7 @@ export default function AtlasVoicePanel() {
     currentContextSignatureRef.current = "";
     sentContextSignatureRef.current = "";
     assistantSpeechStartedAtRef.current = null;
+    assistantSpeechEndedAtRef.current = null;
     if (speechIdleTimerRef.current) {
       window.clearTimeout(speechIdleTimerRef.current);
       speechIdleTimerRef.current = null;
@@ -851,6 +884,7 @@ export default function AtlasVoicePanel() {
 
       processor.onaudioprocess = (event) => {
         if (!socket || socket.readyState !== WebSocket.OPEN) return;
+        if (shouldSuppressMicForAssistantEcho()) return;
         const input = event.inputBuffer.getChannelData(0);
         const resampled = resampleAudio(
           input,
@@ -871,7 +905,7 @@ export default function AtlasVoicePanel() {
       audioProcessorRef.current = processor;
       audioSilenceRef.current = silence;
     },
-    [getAudioContext],
+    [getAudioContext, shouldSuppressMicForAssistantEcho],
   );
 
   const playAudioDelta = useCallback(
@@ -920,6 +954,7 @@ export default function AtlasVoicePanel() {
 
       if (playbackWasIdle) {
         assistantSpeechStartedAtRef.current = performance.now();
+        assistantSpeechEndedAtRef.current = null;
       }
       assistantAudioSourcesRef.current.add(source);
       source.onended = () => {
@@ -935,6 +970,7 @@ export default function AtlasVoicePanel() {
         ) {
           activeAssistantAudioRef.current = null;
           assistantSpeechStartedAtRef.current = null;
+          assistantSpeechEndedAtRef.current = performance.now();
           scheduleSpeechIdleCheck();
         }
       };
@@ -1356,7 +1392,8 @@ export default function AtlasVoicePanel() {
             if (
               shouldIgnoreAssistantEcho({
                 provider: voiceConfigRef.current.provider,
-                hasActiveSpeech: hasActiveAssistantSpeech(),
+                hasActiveSpeech: hasAudibleAssistantSpeech(),
+                echoTailActive: isAssistantEchoTailActive(),
                 assistantSpeechStartedAtMs: assistantSpeechStartedAtRef.current,
                 nowMs: performance.now(),
               })
@@ -1452,7 +1489,9 @@ export default function AtlasVoicePanel() {
       clearResponseWatchdog,
       copy.openaiError,
       handleFunctionCall,
+      hasAudibleAssistantSpeech,
       hasActiveAssistantSpeech,
+      isAssistantEchoTailActive,
       playAudioDelta,
       rememberLine,
       speakWithDoubao,

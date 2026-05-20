@@ -77,11 +77,13 @@ export function shouldDeferVoiceSessionUpdate({
 export function shouldIgnoreAssistantEcho({
   provider,
   hasActiveSpeech,
+  echoTailActive = false,
   assistantSpeechStartedAtMs,
   nowMs,
   guardMs = 650,
 }) {
-  if (provider !== "doubao" || !hasActiveSpeech) return false;
+  if (provider !== "doubao") return false;
+  if (hasActiveSpeech || echoTailActive) return true;
   if (!Number.isFinite(assistantSpeechStartedAtMs)) return false;
   return nowMs - assistantSpeechStartedAtMs >= 0 &&
     nowMs - assistantSpeechStartedAtMs < guardMs;
