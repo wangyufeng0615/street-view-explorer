@@ -113,6 +113,18 @@ if [[ "$after_commit" != "$EXPECTED_COMMIT" ]]; then
   exit 2
 fi
 
+release="streetview@${after_commit:0:7}"
+if [[ -f backend/.env ]]; then
+  if grep -q '^SENTRY_RELEASE=' backend/.env; then
+    sed -i "s|^SENTRY_RELEASE=.*|SENTRY_RELEASE=${release}|" backend/.env
+  else
+    printf '\nSENTRY_RELEASE=%s\n' "$release" >> backend/.env
+  fi
+  log "set SENTRY_RELEASE=$release"
+else
+  log "backend/.env not found; SENTRY_RELEASE was not updated"
+fi
+
 deploy_started_at="$(timestamp)"
 log "starting make deploy; this can take a while on the VPS"
 run make deploy
