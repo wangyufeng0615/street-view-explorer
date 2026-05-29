@@ -202,7 +202,7 @@ func (r *SQLiteRepository) GetLocationByPanoID(panoID string) (*models.Location,
 		&isMock, &loc.CreatedAt,
 	)
 	if err == sql.ErrNoRows {
-		return nil, fmt.Errorf("位置不存在: %s", panoID)
+		return nil, fmt.Errorf("%w: %s", ErrLocationNotFound, panoID)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("获取位置信息失败: %w", err)

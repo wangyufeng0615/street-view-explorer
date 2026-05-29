@@ -14,6 +14,8 @@ Fill at least:
 - `backend/.env`: `AI_API_KEY`, `GOOGLE_API_KEY`.
 - `frontend/.env`: `VITE_GOOGLE_MAPS_API_KEY`.
 
+Local development is fixed at `http://127.0.0.1:3100` for the Vite frontend and `http://127.0.0.1:8080` for the backend. `make dev` and `make dev-start` set `SERVER_ADDRESS=127.0.0.1:8080`, `VITE_DEV_PORT=3100`, and proxy-related environment variables from `LOCAL_PROXY_URL` (`http://127.0.0.1:10086` by default).
+
 For Atlas Voice local testing, also set `OPENAI_API_KEY` or `REALTIME_API_KEY` in `backend/.env`. Optional voice knobs are `OPENAI_REALTIME_MODEL`, `OPENAI_REALTIME_VOICE` (default `cedar`), `OPENAI_REALTIME_TRANSCRIPTION_MODEL`, `OPENAI_REALTIME_VAD_TYPE`, `OPENAI_REALTIME_VAD_EAGERNESS`, and `OPENAI_REALTIME_ALLOWED_ORIGINS`. Atlas defaults to `semantic_vad` with `high` eagerness so spoken turns close quickly. The browser session update can also override `VITE_REALTIME_VOICE`, `VITE_REALTIME_OUTPUT_SPEED`, `VITE_REALTIME_VAD_TYPE`, `VITE_REALTIME_VAD_EAGERNESS`, and `VITE_REALTIME_RESPONSE_WATCHDOG_MS`.
 
 To try Doubao as the speech output while keeping OpenAI Realtime for input, tools, and text generation, set `ATLAS_VOICE_PROVIDER=doubao` or pass `--voice-provider doubao`. The backend then asks OpenAI for text output and streams that text through Volcengine BigTTS (`DOUBAO_TTS_RESOURCE_ID`, default `seed-tts-2.0` for TTS 2.0 voices). Configure either `DOUBAO_TTS_API_KEY`, or `DOUBAO_TTS_APP_ID`/`DOUBAO_TTS_APPID` plus `DOUBAO_TTS_ACCESS_KEY`/`DOUBAO_TTS_TOKEN`; optional tuning includes `DOUBAO_TTS_SPEAKER` (default `zh_male_m191_uranus_bigtts`, Yunzhou 2.0 male) and `DOUBAO_TTS_SPEECH_RATE`.
@@ -69,6 +71,15 @@ curl -i -H 'Origin: http://127.0.0.1:3100' \
 ```
 
 Expected without a valid WebSocket handshake is a non-101 response, but it should not be a cross-origin rejection for local dev. A browser origin outside same-origin, localhost, or `OPENAI_REALTIME_ALLOWED_ORIGINS` should be rejected before it can proxy to OpenAI.
+
+Atlas Voice backend smoke:
+
+```bash
+curl -s http://localhost:8080/api/v1/realtime/voice-config
+curl -s 'http://localhost:8080/api/v1/realtime/client-secret?lang=zh'
+```
+
+The first response should show `success: true`. The second requires `OPENAI_API_KEY` or `REALTIME_API_KEY`; failures there usually mean missing credentials, blocked egress, or proxy misconfiguration.
 
 End-to-end local smoke:
 
@@ -192,7 +203,10 @@ PROXY_URL=http://127.0.0.1:10086
 PROXY_TYPE=http
 AI_PROXY_URL=http://127.0.0.1:10086
 MAPS_PROXY_URL=http://127.0.0.1:10086
+DOUBAO_TTS_PROXY_URL=http://127.0.0.1:10086
 ```
+
+OpenAI Realtime uses `AI_PROXY_URL` or `PROXY_URL`. Doubao TTS uses `DOUBAO_TTS_PROXY_URL` first, then falls back to the same Realtime proxy path. `make dev` and `make dev-start` set the shared proxy variables automatically for local development.
 
 Use `--skip-proxy-check` only when the proxy health check itself is unreliable but the proxy path is known to work.
 
@@ -200,9 +214,18 @@ Use `--skip-proxy-check` only when the proxy health check itself is unreliable b
 
 ### Frontend cannot reach API
 
-- In development, confirm Vite is running on port 3000 and backend on 8080.
+- In development, confirm Vite is running on port 3100 and backend on 8080.
 - Check `frontend/vite.config.js`: `/api` is proxied to `http://localhost:8080`.
 - Browser API wrappers use same-origin `/api/v1`; changing `VITE_API_BASE_URL` alone will not reroute calls.
+
+### Atlas Voice stays connecting
+
+- Confirm backend is actually listening on `127.0.0.1:8080`; a live Vite server on `3100` can still show proxy errors if backend died.
+- Check `logs/dev/frontend.log` for `/api/v1/realtime/ws` or `/api/v1/realtime/client-secret` proxy failures such as `ECONNREFUSED`.
+- Check `logs/dev/backend.log` for `[ATLAS_VOICE]` lines. `client_secret_error` points to credentials, upstream status, or proxy egress; `ws_connect_error` points to WebSocket egress or Realtime URL/model issues.
+- Verify `curl -s http://localhost:8080/api/v1/realtime/voice-config` and `curl -s 'http://localhost:8080/api/v1/realtime/client-secret?lang=zh'`.
+- For local proxy-restricted networks, start through `make dev` / `make dev-start`, or set `AI_PROXY_URL` / `PROXY_URL` before launching backend manually.
+- If `ATLAS_VOICE_PROVIDER=doubao`, make sure `/voice-config` reports `doubao_configured: true`; otherwise the UI keeps text output and reports the missing TTS credentials instead of playing speech.
 
 ### Google Maps or satellite images fail
 
@@ -247,7 +270,10 @@ Use `--skip-proxy-check` only when the proxy health check itself is unreliable b
 
 - SQLite-backed rate limiting is enabled by default.
 - `/api/v1/locations/random` has a per-IP limit of 120 requests per minute.
+- `/api/v1/locations/search` has a per-IP limit of 45 requests per minute.
 - `/api/v1/geo/ai-guess` has a per-IP limit of 30 requests per minute.
 - `/api/v1/geo/satellite` and `/api/v1/geo/online/rooms/:roomId/image` have a per-IP limit of 180 requests per minute.
+- `/api/v1/realtime/client-secret`, `/api/v1/realtime/calls`, `/api/v1/realtime/ws`, and `/api/v1/realtime/doubao-tts` have a per-IP limit of 20 requests per minute.
+- `/api/v1/realtime/voice-config` has a per-IP limit of 120 requests per minute.
 - `/api/v1/preferences/exploration` has tighter per-IP and per-session limits.
 - Set `RATE_LIMIT_ENABLED=false` only for local debugging.

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"math"
 	"net/http"
 	"regexp"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/my-streetview-project/backend/internal/models"
+	"github.com/my-streetview-project/backend/internal/repositories"
 	"github.com/my-streetview-project/backend/internal/services"
 	"github.com/my-streetview-project/backend/internal/utils"
 )
@@ -268,6 +270,13 @@ func (h *Handlers) GetLocationDescription(c *gin.Context) {
 
 	loc, err := svc.LocationService.GetLocation(panoID)
 	if err != nil {
+		if errors.Is(err, repositories.ErrLocationNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{
+				"success": false,
+				"error":   PublicErrorMessage(err),
+			})
+			return
+		}
 		CaptureHandlerError(c, err, http.StatusInternalServerError, map[string]interface{}{
 			"operation": "get_location_for_description",
 			"pano_id":   panoID,
@@ -362,6 +371,13 @@ func (h *Handlers) GetLocationDetailedDescription(c *gin.Context) {
 
 	loc, err := svc.LocationService.GetLocation(panoID)
 	if err != nil {
+		if errors.Is(err, repositories.ErrLocationNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{
+				"success": false,
+				"error":   PublicErrorMessage(err),
+			})
+			return
+		}
 		CaptureHandlerError(c, err, http.StatusInternalServerError, map[string]interface{}{
 			"operation": "get_location_for_detailed_description",
 			"pano_id":   panoID,

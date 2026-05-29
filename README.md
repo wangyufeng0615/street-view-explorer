@@ -14,6 +14,7 @@ An interactive map application for exploring random Google Street View locations
 - AI-generated short and detailed descriptions through OpenRouter.
 - Visit history, shared site-wide footprint map, and regional or custom exploration preferences.
 - Bilingual UI in English and Chinese.
+- Atlas Voice on the home route, with OpenAI Realtime input/tools, interruptible spoken turns, concrete place search, nearby wandering, and optional Doubao TTS output.
 - Odyssey agent journey flow where an external AI can create journeys, save stops, and publish illustrated letters.
 - Solo "Guess Where" game using satellite imagery, curated city entries, random backend locations, optional AI opponent, center-pin zoom reveals, score decay with zoom-aware distance tolerance, and lightweight sound/bubble feedback.
 - Online 1v1 geography duel with private room codes, quick matchmaking, 100-second synchronized rounds, server-authoritative scoring, consistent color-coded pins, score-factor breakdowns, and reconnect-safe polling.
@@ -40,13 +41,13 @@ cp frontend/.env.example frontend/.env
 make dev
 ```
 
-The Vite frontend runs at [http://localhost:3000](http://localhost:3000) and proxies `/api` to the Go backend at `http://localhost:8080`.
+The Vite frontend runs at [http://127.0.0.1:3100](http://127.0.0.1:3100) and proxies `/api` to the Go backend at `http://localhost:8080`. `make dev` and `make dev-start` also inject the local outbound proxy defaults from `LOCAL_PROXY_URL` for backend AI, Realtime, Doubao TTS, and Maps calls.
 
 You can also run each side separately:
 
 ```bash
 cd backend && go run cmd/server/main.go
-cd frontend && yarn install && yarn dev
+cd frontend && yarn install && VITE_DEV_PORT=3100 yarn dev --host 127.0.0.1 --port 3100 --strictPort
 ```
 
 Useful long-running dev helpers:
@@ -62,7 +63,7 @@ make dev-stop     # stop background dev processes
 
 ```bash
 cd frontend
-yarn dev          # Vite dev server on port 3000
+yarn dev          # Vite dev server, defaulting to port 3100 through VITE_DEV_PORT/vite.config.js
 yarn build        # production build into frontend/build
 yarn preview      # preview production build
 yarn test         # Vitest test run
@@ -111,6 +112,7 @@ Backend variables live in `backend/.env`.
 | `AI_API_KEY` | Yes | OpenRouter key used by AI services. |
 | `OPENAI_API_KEY` or `REALTIME_API_KEY` | No | OpenAI key for Atlas Voice / Realtime. Required only when voice is enabled. |
 | `OPENAI_REALTIME_MODEL` | No | Realtime voice model, default `gpt-realtime-2`. |
+| `OPENAI_REALTIME_API_BASE`, `OPENAI_REALTIME_WS_URL` | No | Optional Realtime API base or explicit WebSocket URL override. Normally leave unset. |
 | `OPENAI_REALTIME_VOICE` | No | Realtime output voice, default `cedar`. |
 | `OPENAI_REALTIME_TRANSCRIPTION_MODEL` | No | Input transcription model, default `gpt-4o-mini-transcribe`. |
 | `OPENAI_REALTIME_VAD_TYPE`, `OPENAI_REALTIME_VAD_EAGERNESS` | No | Realtime turn detection tuning, default `semantic_vad` with `high` eagerness for faster voice replies. |
@@ -121,7 +123,9 @@ Backend variables live in `backend/.env`.
 | `DOUBAO_TTS_APP_ID` / `DOUBAO_TTS_APPID`, `DOUBAO_TTS_ACCESS_KEY` / `DOUBAO_TTS_TOKEN` | No | Doubao TTS app credentials when not using `DOUBAO_TTS_API_KEY`. |
 | `DOUBAO_TTS_SPEAKER` | No | Doubao TTS speaker / voice type, default `zh_male_m191_uranus_bigtts` (Yunzhou 2.0 male). |
 | `DOUBAO_TTS_RESOURCE_ID` | No | Doubao TTS resource ID, default `seed-tts-2.0` for Doubao TTS 2.0 voices. |
-| `DOUBAO_TTS_SPEECH_RATE` | No | Doubao TTS speech rate from `-50` to `100`, default `0`. |
+| `DOUBAO_TTS_FORMAT`, `DOUBAO_TTS_SAMPLE_RATE` | No | Doubao TTS stream format and sample rate. Atlas currently expects `pcm` and defaults to `24000`. |
+| `DOUBAO_TTS_SPEECH_RATE`, `DOUBAO_TTS_LOUDNESS_RATE`, `DOUBAO_TTS_EMOTION`, `DOUBAO_TTS_EMOTION_SCALE` | No | Optional Doubao speech tuning. |
+| `DOUBAO_TTS_PROXY_URL` | No | Doubao-specific outbound proxy. Falls back to `AI_PROXY_URL` or `PROXY_URL`. |
 | `OPENROUTER_MODEL`, `AI_MODEL` | No | Optional OpenRouter model override. `OPENROUTER_MODEL` takes precedence. |
 | `CN_AI_MODEL` | No | Optional fallback model used only when no AI/shared proxy is configured. |
 | `GOOGLE_API_KEY` | Yes | Backend Google Maps, Street View, and Static Maps access. |
@@ -150,8 +154,10 @@ Frontend variables live in `frontend/.env`.
 | `VITE_REALTIME_VOICE` | No | Browser session-update output voice, default `cedar`. |
 | `VITE_REALTIME_OUTPUT_SPEED` | No | Browser session-update output speed, default `1`. |
 | `VITE_REALTIME_VAD_TYPE`, `VITE_REALTIME_VAD_EAGERNESS` | No | Browser session-update turn detection tuning, default `semantic_vad` with `high` eagerness. |
+| `VITE_REALTIME_VAD_THRESHOLD`, `VITE_REALTIME_VAD_PREFIX_PADDING_MS`, `VITE_REALTIME_VAD_SILENCE_DURATION_MS` | No | Browser `server_vad` tuning when `VITE_REALTIME_VAD_TYPE=server_vad`. |
 | `VITE_REALTIME_RESPONSE_WATCHDOG_MS` | No | Voice UI no-response notice timeout, default `9000`. |
 | `VITE_ATLAS_VOICE_PROVIDER` | No | Optional frontend override for the audio provider. Usually leave unset and let the backend `/api/v1/realtime/voice-config` drive it. |
+| `VITE_REALTIME_AUDIO_PROVIDER` | No | Backward-compatible alias for the frontend voice provider override. |
 | `VITE_SENTRY_DSN` | No | Frontend Sentry DSN. |
 | `VITE_SENTRY_ENVIRONMENT` | No | Frontend Sentry environment. |
 | `VITE_VERSION` | No | Included in frontend Sentry release metadata. |
@@ -194,6 +200,14 @@ All standard JSON endpoints return a `{ "success": boolean, "data": ..., "error"
 - `GET /api/v1/agent/journeys/:id/stops`
 - `POST /api/v1/agent/journeys/:id/letter`
 
+### Atlas Voice / Realtime
+
+- `GET /api/v1/realtime/voice-config` - returns the active speech provider and Doubao TTS readiness.
+- `GET /api/v1/realtime/client-secret` - creates a short-lived OpenAI Realtime session for the WebRTC path.
+- `POST /api/v1/realtime/calls` - proxies WebRTC SDP offers to OpenAI Realtime.
+- `GET /api/v1/realtime/ws` - same-origin WebSocket relay for the default voice transport.
+- `POST /api/v1/realtime/doubao-tts` - streams Doubao TTS PCM chunks as NDJSON when `ATLAS_VOICE_PROVIDER=doubao`.
+
 ### Geo Game and Online Duel
 
 - `GET /api/v1/geo/satellite`
@@ -221,14 +235,15 @@ See [docs/architecture.md](docs/architecture.md) for the state model and data fl
 ```text
 frontend/
   src/
-    components/      reusable UI and map components
+    components/      reusable UI, map components, and AtlasVoicePanel
     pages/           HomePage, AgentPage, LetterPage, GeoGamePage, GeoBattlePage
     services/        browser API wrappers
     store/           Zustand application store
-    utils/           maps, session, scoring, and geography utilities
+    utils/           maps, session, scoring, voice runtime, and geography utilities
 backend/
   cmd/server/        backend entrypoint
   internal/api/      Gin handlers, routes, middleware
+  internal/atlas/    shared Atlas persona and Realtime instructions
   internal/services/ location, AI, maps, and online duel services
   internal/repositories/ SQLite repository and migrations
   internal/models/   API and domain models

@@ -1,6 +1,7 @@
 package repositories
 
 import (
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -14,6 +15,21 @@ type testSQLiteConfig struct {
 
 func (c testSQLiteConfig) SQLitePath() string {
 	return c.path
+}
+
+func TestGetLocationByPanoIDNotFound(t *testing.T) {
+	repo, err := NewSQLiteRepository(testSQLiteConfig{
+		path: filepath.Join(t.TempDir(), "location-not-found.db"),
+	})
+	if err != nil {
+		t.Fatalf("NewSQLiteRepository() error = %v", err)
+	}
+	defer repo.Close()
+
+	_, err = repo.GetLocationByPanoID("does.not.exist")
+	if !errors.Is(err, ErrLocationNotFound) {
+		t.Fatalf("GetLocationByPanoID() error = %v, want ErrLocationNotFound", err)
+	}
 }
 
 func TestGetVisitHistoryReturnsVisitAndUniqueCounts(t *testing.T) {

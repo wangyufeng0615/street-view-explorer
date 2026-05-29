@@ -208,8 +208,10 @@ func main() {
 		})
 	})
 
-	// Add Sentry test endpoint
-	r.GET("/test/sentry", mysentry.TestSentry())
+	// Add Sentry test endpoint outside production, or when explicitly enabled.
+	if os.Getenv("GO_ENV") != "production" || os.Getenv("SENTRY_TEST_ENDPOINT_ENABLED") == "true" {
+		r.GET("/test/sentry", mysentry.TestSentry())
+	}
 
 	// 设置路由
 	handlers := api.NewHandlers(locationService, aiService)

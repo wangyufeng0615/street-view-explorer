@@ -67,7 +67,21 @@ Key middleware:
 - session management through `X-Session-ID`;
 - SQLite-backed rate limiting when enabled, including tighter limits for random locations, geo AI guesses, satellite image proxy calls, and Atlas Voice Realtime session entrypoints.
 
-Atlas Voice uses `frontend/src/components/AtlasVoicePanel.jsx` on the home route. The default transport is a same-origin backend WebSocket proxy at `/api/v1/realtime/ws`, with a WebRTC path available through `VITE_REALTIME_TRANSPORT`. Atlas defaults to the `cedar` Realtime voice, and can be overridden with `OPENAI_REALTIME_VOICE` for backend-created sessions or `VITE_REALTIME_VOICE` for browser session updates. Turn detection defaults to `semantic_vad` with `high` eagerness for more responsive spoken turns; `server_vad` and its threshold/padding/silence values can be enabled through the Realtime VAD environment variables when a stricter latency tradeoff is desired. As an experimental switch, `ATLAS_VOICE_PROVIDER=doubao` keeps OpenAI Realtime responsible for microphone input, text generation, memory, and tool calls, but changes the session output modality to text and streams the completed Atlas reply through `/api/v1/realtime/doubao-tts`, which proxies Volcengine BigTTS V3 HTTP Chunked output as PCM deltas for the browser queue. The voice tool set is intentionally small: random exploration, theme exploration, concrete place/coordinate jumps, nearby wandering, camera direction, and reading the current place context. Concrete place jumps call `GET /api/v1/locations/search`, which resolves a landmark/address/business query through Google Places/Geocoding before loading nearby Street View. The backend Realtime WebSocket checks browser origins before proxying to OpenAI: same-origin and local dev hosts are allowed, production additions should be configured with `OPENAI_REALTIME_ALLOWED_ORIGINS`.
+Atlas Voice uses `frontend/src/components/AtlasVoicePanel.jsx` on the home route. The default transport is a same-origin backend WebSocket proxy at `/api/v1/realtime/ws`, with a WebRTC path available through `VITE_REALTIME_TRANSPORT`. Atlas defaults to the `cedar` Realtime voice, and can be overridden with `OPENAI_REALTIME_VOICE` for backend-created sessions or `VITE_REALTIME_VOICE` for browser session updates. Turn detection defaults to `semantic_vad` with `high` eagerness for more responsive spoken turns; `server_vad` and its threshold/padding/silence values can be enabled through the Realtime VAD environment variables when a stricter latency tradeoff is desired. As an experimental switch, `ATLAS_VOICE_PROVIDER=doubao` keeps OpenAI Realtime responsible for microphone input, text generation, session memory, and tool calls, but changes the session output modality to text and streams the completed Atlas reply through `/api/v1/realtime/doubao-tts`, which proxies Volcengine BigTTS V3 HTTP Chunked output as PCM deltas for the browser queue. The voice tool set is intentionally small: random exploration, theme exploration, concrete place/coordinate jumps, nearby wandering, camera direction, and reading the current place context. Concrete place jumps call `GET /api/v1/locations/search`, which resolves a landmark/address/business query through Google Places/Geocoding before loading nearby Street View. The backend Realtime WebSocket checks browser origins before proxying to OpenAI: same-origin and local dev hosts are allowed, production additions should be configured with `OPENAI_REALTIME_ALLOWED_ORIGINS`.
+
+Realtime route surface:
+
+- `GET /api/v1/realtime/voice-config` returns the active voice provider plus Doubao TTS readiness and stream shape.
+- `GET /api/v1/realtime/client-secret` creates short-lived OpenAI Realtime sessions for the WebRTC path.
+- `POST /api/v1/realtime/calls` proxies WebRTC SDP offers to OpenAI Realtime.
+- `GET /api/v1/realtime/ws` is the default WebSocket relay. Vite enables `ws: true`, and production Nginx has a dedicated upgrade location with long read/write timeouts.
+- `POST /api/v1/realtime/doubao-tts` accepts final Atlas text and returns newline-delimited PCM chunks when Doubao output is enabled.
+
+Outbound network path:
+
+- OpenAI Realtime HTTP/WebSocket calls use `AI_PROXY_URL`, then `PROXY_URL`, then standard environment proxy variables.
+- Doubao TTS calls use `DOUBAO_TTS_PROXY_URL` first, then the same Realtime proxy fallback.
+- `make dev` and `make dev-start` set the local proxy variables for backend and frontend processes; production should use explicit environment variables in the deployment target.
 
 ## Persistent Data
 

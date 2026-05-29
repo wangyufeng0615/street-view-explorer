@@ -4,7 +4,9 @@ import {
   buildRealtimeTurnDetection,
   buildVoiceContextSignature,
   nextDoubaoSpeechQueue,
+  realtimeAudioMaxBufferedBytes,
   shouldDeferVoiceSessionUpdate,
+  shouldDropRealtimeAudioFrame,
   shouldIgnoreAssistantEcho,
 } from "./atlasVoiceRuntime";
 
@@ -26,6 +28,27 @@ describe("atlasVoiceRuntime", () => {
       create_response: true,
       interrupt_response: true,
     });
+  });
+
+  it("bounds realtime audio backpressure settings", () => {
+    expect(realtimeAudioMaxBufferedBytes()).toBe(128 * 1024);
+    expect(
+      realtimeAudioMaxBufferedBytes({
+        VITE_REALTIME_AUDIO_MAX_BUFFERED_BYTES: "4096",
+      }),
+    ).toBe(16 * 1024);
+    expect(
+      shouldDropRealtimeAudioFrame({
+        bufferedAmount: 200_000,
+        maxBufferedBytes: 128 * 1024,
+      }),
+    ).toBe(true);
+    expect(
+      shouldDropRealtimeAudioFrame({
+        bufferedAmount: 32_000,
+        maxBufferedBytes: 128 * 1024,
+      }),
+    ).toBe(false);
   });
 
   it("can build a bounded server VAD override from environment values", () => {
@@ -64,10 +87,22 @@ describe("atlasVoiceRuntime", () => {
           latitude: 45.123459,
           longitude: 7.654324,
         },
-        heading: 12.49,
+        heading: 17.49,
         description: "quiet road",
       }),
     ).toBe(base);
+
+    expect(
+      buildVoiceContextSignature({
+        location: {
+          pano_id: "pano-1",
+          latitude: 45.123459,
+          longitude: 7.654324,
+        },
+        heading: 24,
+        description: "quiet road",
+      }),
+    ).not.toBe(base);
 
     expect(
       buildVoiceContextSignature({

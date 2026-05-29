@@ -22,8 +22,8 @@ function getHeaders() {
 
 // 带超时的 fetch
 async function fetchWithTimeout(url, options, timeout = DEFAULT_TIMEOUT) {
-  // If an external signal is provided in options and it's already aborted, throw immediately.
-  if (options.signal instanceof AbortSignal && options.signal.aborted) {
+  const externalSignal = options.signal instanceof AbortSignal ? options.signal : null;
+  if (externalSignal?.aborted) {
     const abortError = new DOMException(
       "The operation was aborted.",
       "AbortError",
@@ -31,32 +31,28 @@ async function fetchWithTimeout(url, options, timeout = DEFAULT_TIMEOUT) {
     throw abortError;
   }
 
-  // If an external signal is provided, use it and bypass internal timeout logic.
-  if (options.signal instanceof AbortSignal) {
-    try {
-      const response = await fetch(url, options);
-      return response;
-    } catch (err) {
-      if (err.name === "AbortError") {
-        throw err;
-      }
-      throw err;
-    }
-  } else {
-    // No external signal, manage timeout internally.
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeout);
+  const controller = new AbortController();
+  let timeoutId = null;
+  let abortFromExternal = null;
 
-    try {
-      const response = await fetch(url, {
-        ...options,
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
-      return response;
-    } catch (err) {
-      clearTimeout(timeoutId);
-      throw err;
+  if (externalSignal) {
+    abortFromExternal = () => controller.abort();
+    externalSignal.addEventListener("abort", abortFromExternal, { once: true });
+  }
+  if (timeout > 0) {
+    timeoutId = setTimeout(() => controller.abort(), timeout);
+  }
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    return response;
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+    if (externalSignal && abortFromExternal) {
+      externalSignal.removeEventListener("abort", abortFromExternal);
     }
   }
 }

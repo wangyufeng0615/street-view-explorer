@@ -41,19 +41,20 @@ go run cmd/server/main.go --openai-proxy http://127.0.0.1:10086 --maps-proxy htt
 
 ```text
 frontend/src/
-├── components/     # StreetView, GlobalMap, PreviewMap, Sidebar, TopBar, GameFeedback 等
+├── components/     # StreetView, GlobalMap, PreviewMap, Sidebar, TopBar, AtlasVoicePanel, GameFeedback 等
 ├── pages/          # HomePage, AgentPage, LetterPage, GeoGamePage, GeoBattlePage
 ├── hooks/          # useLocationData, useExplorationMode, useKeyboardNavigation, useGameFeedback 等
 ├── store/          # Zustand 状态管理
 ├── services/       # api.js，同源 /api/v1 包装
 ├── locales/        # en/zh 翻译
 ├── data/           # geoDatabase.js，单人猜地理题库
-├── utils/          # googleMaps, session, geoGameUtils, addressUtils
+├── utils/          # googleMaps, session, geoGameUtils, atlasVoiceRuntime, atlasPersona, addressUtils
 └── styles/         # 页面 CSS
 
 backend/
 ├── cmd/server/        # main.go
-├── internal/api/      # routes.go, handlers, middleware, geo online handlers
+├── internal/api/      # routes.go, handlers, middleware, geo online/realtime/tts handlers
+├── internal/atlas/    # Atlas persona 与 Realtime instructions
 ├── internal/services/ # location, ai, maps, geo battle service
 ├── internal/repositories/ # SQLite repository + migrate
 ├── internal/models/   # location, journey, geo battle DTO
@@ -69,8 +70,10 @@ backend/
 - 浏览器请求通过 `X-Session-ID` 维持匿名会话；缺失时后端会生成新 session，并写回响应头。
 - SQLite 使用 `modernc.org/sqlite`，WAL 模式，schema 在 `internal/repositories/sqliterepo.go` 的 `migrate()` 自动创建。
 - Docker Compose 中后端数据库挂载在 `sqlite_data` volume，开发默认在 `backend/data/streetview.db`。
+- 本地开发固定前端端口是 `127.0.0.1:3100`；`make dev` / `make dev-start` 会把 `LOCAL_PROXY_URL` 注入为 `PROXY_URL`、`AI_PROXY_URL`、`MAPS_PROXY_URL` 以及大小写 HTTP(S)/ALL 代理环境变量。
 - Vite 构建输出目录是 `frontend/build`，Nginx Dockerfile 会复制这个目录。
 - `frontend/src/services/api.js` 当前使用同源 `/api/v1`，`VITE_API_BASE_URL` 是历史配置字段，不要假设它会改变请求根路径。
+- Atlas Voice 默认走 `backend-ws`：浏览器连 `/api/v1/realtime/ws`，后端用 `OPENAI_API_KEY` 或 `REALTIME_API_KEY` 连 OpenAI Realtime。所有本地外部请求都应走 `AI_PROXY_URL` / `PROXY_URL`，豆包 TTS 可额外用 `DOUBAO_TTS_PROXY_URL`。
 - `CORSMiddleware()` 存在但 `main.go` 当前没有注册；部署态 CORS 主要由 `nginx/conf.d/default.conf` 处理。
 
 ## UI 路由
@@ -108,6 +111,14 @@ backend/
 - `POST /api/v1/agent/journeys/:id/stops`
 - `GET /api/v1/agent/journeys/:id/stops`
 - `POST /api/v1/agent/journeys/:id/letter`
+
+### Atlas Voice / Realtime
+
+- `GET /api/v1/realtime/voice-config` - 返回当前语音提供方和豆包 TTS 配置状态。
+- `GET /api/v1/realtime/client-secret` - 为 WebRTC 路径创建 OpenAI Realtime 临时 session。
+- `POST /api/v1/realtime/calls` - 代理 WebRTC SDP 到 OpenAI Realtime。
+- `GET /api/v1/realtime/ws` - 默认语音路径，同源 WebSocket relay，Vite 和 Nginx 都需要支持 upgrade。
+- `POST /api/v1/realtime/doubao-tts` - `ATLAS_VOICE_PROVIDER=doubao` 时把 Atlas 文本回复转成豆包 PCM NDJSON 音频流。
 
 ### Geo Game
 
@@ -161,10 +172,20 @@ backend/
 - 双人对战计分和单人局一致，也使用随拉远次数增长的动态容错半径；跳过或超时本轮为 0 分。
 - finished 或 lobby 阶段离开会移除玩家；playing 等中途离开会直接结束房间。
 
+## Atlas Voice 实现要点
+
+- 前端入口是 `frontend/src/components/AtlasVoicePanel.jsx`，只挂在首页；运行时工具和 VAD 配置在 `frontend/src/utils/atlasVoiceRuntime.js`，共享 persona 在 `frontend/src/utils/atlasPersona.js` 和 `backend/internal/atlas/persona.go`。
+- 默认传输是 `VITE_REALTIME_TRANSPORT=backend-ws`：浏览器连同源 `/api/v1/realtime/ws`，后端再连 OpenAI Realtime。WebRTC 兼容路径会先拿 `/client-secret`，再走 `/calls`。
+- 默认 Realtime 模型是 `gpt-realtime-2`，输出音色 `cedar`，转写模型 `gpt-4o-mini-transcribe`，turn detection 是 `semantic_vad` + `high`，支持被用户打断。
+- 工具集合刻意小：`explore_random`、`explore_interest`、`go_to_place`、`wander_nearby`、`look_direction`、`read_current_place`。具体地标/地址/店名要走 `go_to_place`，它会调用 `GET /api/v1/locations/search`。
+- `ATLAS_VOICE_PROVIDER=doubao` 时 OpenAI Realtime 只负责听写、文本、记忆和工具调用，后端 `/doubao-tts` 负责把最终文本转成 PCM 流。前端会排队播放并用短窗口忽略豆包外放回灌。
+- 后端 Realtime WebSocket origin 校验允许同源、本地 `localhost/127.0.0.1/::1`，生产额外域名用 `OPENAI_REALTIME_ALLOWED_ORIGINS` / `REALTIME_ALLOWED_ORIGINS`。
+
 ## 安全与日志注意
 
-- `RateLimitMiddleware()` 默认开启；`/api/v1/geo/ai-guess` 是每 IP 每分钟 30 次，`/api/v1/geo/satellite` 和 `/api/v1/geo/online/rooms/:roomId/image` 是每 IP 每分钟 180 次。
+- `RateLimitMiddleware()` 默认开启；`/api/v1/locations/search` 是每 IP 每分钟 45 次；`/api/v1/geo/ai-guess` 是每 IP 每分钟 30 次；`/api/v1/geo/satellite` 和 `/api/v1/geo/online/rooms/:roomId/image` 是每 IP 每分钟 180 次；Realtime session / WebSocket / Doubao TTS 入口是每 IP 每分钟 20 次，`/api/v1/realtime/voice-config` 是 120 次。
 - Google Static Maps 请求失败日志会隐藏 `GOOGLE_API_KEY`；不要把旧本地日志或生产日志原样外发，尤其是 2026-05-03 之前生成的地图错误日志。
+- Realtime 日志以 `[ATLAS_VOICE]` 开头，包含时延、provider、VAD 摘要和工具输出摘要；不要记录或外发 `OPENAI_API_KEY`、`REALTIME_API_KEY`、`DOUBAO_TTS_API_KEY`、`DOUBAO_TTS_TOKEN`。
 - 分支发布时先 push 当前分支，再用 `make deploy-remote REMOTE_BRANCH=$(git branch --show-current)`，保持本地、origin、VPS 三边一致；远端有 tracked dirty 文件时部署脚本会拒绝继续。
 - 生产部署后至少确认 `docker compose ps`、后端 `/health`、nginx `/nginx_status`，再用一个非法 zoom 请求确认新后端已生效。
 
@@ -182,11 +203,11 @@ backend/
 - `RATE_LIMIT_ENABLED`，默认 `true`
 - `PROXY_URL` / `AI_PROXY_URL` / `MAPS_PROXY_URL`
 - `OPENAI_API_KEY` / `REALTIME_API_KEY`，Atlas Voice 语音功能需要其一
-- `OPENAI_REALTIME_MODEL` / `OPENAI_REALTIME_VOICE`（默认 `cedar`）/ `OPENAI_REALTIME_TRANSCRIPTION_MODEL`
+- `OPENAI_REALTIME_MODEL` / `OPENAI_REALTIME_API_BASE` / `OPENAI_REALTIME_WS_URL` / `OPENAI_REALTIME_VOICE`（默认 `cedar`）/ `OPENAI_REALTIME_TRANSCRIPTION_MODEL`
 - `OPENAI_REALTIME_ALLOWED_ORIGINS` / `REALTIME_ALLOWED_ORIGINS`，额外允许的语音 WebSocket 浏览器来源
 - `ATLAS_VOICE_PROVIDER`，默认 `openai`；设为 `doubao` 时 OpenAI Realtime 只负责听写、文本回复和工具调用，音频由豆包 TTS 输出
 - `DOUBAO_TTS_API_KEY`，或 `DOUBAO_TTS_APP_ID`/`DOUBAO_TTS_APPID` + `DOUBAO_TTS_ACCESS_KEY`/`DOUBAO_TTS_TOKEN`；豆包语音合成凭据
-- `DOUBAO_TTS_SPEAKER`（默认 `zh_male_m191_uranus_bigtts`，云舟 2.0 男声）/ `DOUBAO_TTS_RESOURCE_ID`（默认 `seed-tts-2.0`）/ `DOUBAO_TTS_SPEECH_RATE`
+- `DOUBAO_TTS_SPEAKER`（默认 `zh_male_m191_uranus_bigtts`，云舟 2.0 男声）/ `DOUBAO_TTS_RESOURCE_ID`（默认 `seed-tts-2.0`）/ `DOUBAO_TTS_FORMAT`（必须是 `pcm`）/ `DOUBAO_TTS_SAMPLE_RATE` / `DOUBAO_TTS_SPEECH_RATE` / `DOUBAO_TTS_PROXY_URL`
 - `SENTRY_DSN` / `SENTRY_ENABLED` / `GO_ENV`
 
 前端必须配置：
@@ -200,7 +221,8 @@ backend/
 - `VITE_REALTIME_TRANSCRIPTION_MODEL`
 - `VITE_REALTIME_VOICE`，默认 `cedar`
 - `VITE_REALTIME_OUTPUT_SPEED`，默认 `1`
-- `VITE_ATLAS_VOICE_PROVIDER`，可选前端覆盖；通常留空，由后端 `/api/v1/realtime/voice-config` 决定
+- `VITE_REALTIME_VAD_TYPE` / `VITE_REALTIME_VAD_EAGERNESS` / `VITE_REALTIME_VAD_THRESHOLD` / `VITE_REALTIME_VAD_PREFIX_PADDING_MS` / `VITE_REALTIME_VAD_SILENCE_DURATION_MS`
+- `VITE_ATLAS_VOICE_PROVIDER` / `VITE_REALTIME_AUDIO_PROVIDER`，可选前端覆盖；通常留空，由后端 `/api/v1/realtime/voice-config` 决定
 - `VITE_SENTRY_DSN`
 - `VITE_VERSION`
 

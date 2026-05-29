@@ -6,6 +6,25 @@ export const MIC_AUDIO_CONSTRAINTS = Object.freeze({
   },
 });
 
+const DEFAULT_REALTIME_AUDIO_MAX_BUFFERED_BYTES = 128 * 1024;
+
+export function realtimeAudioMaxBufferedBytes(env = {}) {
+  return Math.max(
+    16 * 1024,
+    parseEnvInteger(
+      env.VITE_REALTIME_AUDIO_MAX_BUFFERED_BYTES,
+      DEFAULT_REALTIME_AUDIO_MAX_BUFFERED_BYTES,
+    ),
+  );
+}
+
+export function shouldDropRealtimeAudioFrame({
+  bufferedAmount = 0,
+  maxBufferedBytes = DEFAULT_REALTIME_AUDIO_MAX_BUFFERED_BYTES,
+} = {}) {
+  return Number(bufferedAmount || 0) > Number(maxBufferedBytes || 0);
+}
+
 export function buildRealtimeTurnDetection(env = {}) {
   const type = String(env.VITE_REALTIME_VAD_TYPE || "semantic_vad")
     .trim()
@@ -45,7 +64,7 @@ export function buildRealtimeTurnDetection(env = {}) {
 export function buildVoiceContextSignature(context = {}) {
   const location = context.location || null;
   const description = String(context.description || "");
-  const heading = Number(context.heading || 0);
+  const heading = quantizedHeading(context.heading || 0);
 
   return JSON.stringify({
     panoId: location?.pano_id || location?.panoId || "",
@@ -55,11 +74,18 @@ export function buildVoiceContextSignature(context = {}) {
     lng: Number.isFinite(Number(location?.longitude))
       ? Number(location.longitude).toFixed(5)
       : "",
-    heading: Math.round(heading),
+    heading,
     description: description
       ? `${description.length}:${description.slice(0, 160)}`
       : "",
   });
+}
+
+function quantizedHeading(heading) {
+  const numeric = Number(heading);
+  if (!Number.isFinite(numeric)) return 0;
+  const quantized = Math.round(numeric / 15) * 15;
+  return ((quantized % 360) + 360) % 360;
 }
 
 export function shouldDeferVoiceSessionUpdate({

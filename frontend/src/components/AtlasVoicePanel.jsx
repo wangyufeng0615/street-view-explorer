@@ -19,7 +19,9 @@ import {
   buildRealtimeTurnDetection,
   buildVoiceContextSignature,
   nextDoubaoSpeechQueue,
+  realtimeAudioMaxBufferedBytes,
   shouldDeferVoiceSessionUpdate,
+  shouldDropRealtimeAudioFrame,
   shouldIgnoreAssistantEcho,
 } from "../utils/atlasVoiceRuntime";
 import "../styles/AtlasVoicePanel.css";
@@ -28,6 +30,8 @@ const REALTIME_CALLS_URL = "/api/v1/realtime/calls";
 const REALTIME_WS_PATH = "/api/v1/realtime/ws";
 const REALTIME_TRANSPORT = import.meta.env.VITE_REALTIME_TRANSPORT || "backend-ws";
 const REALTIME_AUDIO_SAMPLE_RATE = 24000;
+const REALTIME_AUDIO_MAX_BUFFERED_BYTES =
+  realtimeAudioMaxBufferedBytes(import.meta.env);
 const REALTIME_TRANSCRIPTION_MODEL =
   import.meta.env.VITE_REALTIME_TRANSCRIPTION_MODEL || "gpt-4o-mini-transcribe";
 const REALTIME_VOICE = import.meta.env.VITE_REALTIME_VOICE || "cedar";
@@ -885,6 +889,14 @@ export default function AtlasVoicePanel() {
       processor.onaudioprocess = (event) => {
         if (!socket || socket.readyState !== WebSocket.OPEN) return;
         if (shouldSuppressMicForAssistantEcho()) return;
+        if (
+          shouldDropRealtimeAudioFrame({
+            bufferedAmount: socket.bufferedAmount,
+            maxBufferedBytes: REALTIME_AUDIO_MAX_BUFFERED_BYTES,
+          })
+        ) {
+          return;
+        }
         const input = event.inputBuffer.getChannelData(0);
         const resampled = resampleAudio(
           input,

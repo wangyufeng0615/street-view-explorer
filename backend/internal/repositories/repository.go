@@ -1,10 +1,13 @@
 package repositories
 
 import (
+	"errors"
 	"time"
 
 	"github.com/my-streetview-project/backend/internal/models"
 )
+
+var ErrLocationNotFound = errors.New("位置不存在")
 
 // Repository 数据存储接口
 type Repository interface {

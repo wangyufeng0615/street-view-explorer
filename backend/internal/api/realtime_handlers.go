@@ -374,6 +374,13 @@ type realtimeWSTrace struct {
 	toolOutputSentAt  time.Time
 	functionCallID    string
 	functionName      string
+	functionCalls     map[string]realtimeWSFunctionCallTrace
+}
+
+type realtimeWSFunctionCallTrace struct {
+	Turn int
+	Name string
+	At   time.Time
 }
 
 type realtimeWSObservedEvent struct {
@@ -404,7 +411,9 @@ type realtimeWSContent struct {
 }
 
 func newRealtimeWSTrace() *realtimeWSTrace {
-	return &realtimeWSTrace{}
+	return &realtimeWSTrace{
+		functionCalls: make(map[string]realtimeWSFunctionCallTrace),
+	}
 }
 
 func (t *realtimeWSTrace) observe(direction string, payload []byte) {
@@ -473,6 +482,7 @@ func (t *realtimeWSTrace) observeOpenAIEvent(event realtimeWSObservedEvent, now 
 			t.functionCallAt = now
 			t.functionCallID = event.Item.CallID
 			t.functionName = event.Item.Name
+			t.rememberFunctionCall(event.Item.CallID, event.Item.Name, now)
 			log.Printf(
 				"[ATLAS_VOICE] function_call_done turn=%d name=%s since_speech_stopped=%s since_response_created=%s",
 				t.turn,
@@ -502,13 +512,22 @@ func (t *realtimeWSTrace) observeBrowserEvent(event realtimeWSObservedEvent, now
 	case "conversation.item.create":
 		if event.Item.Type == "function_call_output" {
 			t.toolOutputSentAt = now
+			turn := t.turn
+			functionName := t.functionName
+			functionCallAt := t.functionCallAt
+			if callTrace, ok := t.functionCalls[event.Item.CallID]; ok {
+				turn = callTrace.Turn
+				functionName = callTrace.Name
+				functionCallAt = callTrace.At
+				delete(t.functionCalls, event.Item.CallID)
+			}
 			success, action := realtimeFunctionOutputSummary(event.Item.Output)
 			log.Printf(
 				"[ATLAS_VOICE] tool_output_sent turn=%d call_id=%s function=%s since_function_call=%s success=%s action=%s",
-				t.turn,
+				turn,
 				event.Item.CallID,
-				t.functionName,
-				durationSince(t.functionCallAt, now),
+				functionName,
+				durationSince(functionCallAt, now),
 				success,
 				action,
 			)
@@ -519,6 +538,24 @@ func (t *realtimeWSTrace) observeBrowserEvent(event realtimeWSObservedEvent, now
 			t.turn,
 			durationSince(t.toolOutputSentAt, now),
 		)
+	}
+}
+
+func (t *realtimeWSTrace) rememberFunctionCall(callID string, name string, now time.Time) {
+	if callID == "" {
+		return
+	}
+	if len(t.functionCalls) > 64 {
+		for existingID, callTrace := range t.functionCalls {
+			if now.Sub(callTrace.At) > 2*time.Minute {
+				delete(t.functionCalls, existingID)
+			}
+		}
+	}
+	t.functionCalls[callID] = realtimeWSFunctionCallTrace{
+		Turn: t.turn,
+		Name: name,
+		At:   now,
 	}
 }
 
