@@ -20,7 +20,7 @@ import (
 
 const (
 	defaultAPIEndpoint     = "https://openrouter.ai/api/v1/chat/completions"
-	defaultModel           = "openai/gpt-5.4-mini"
+	defaultModel           = "anthropic/claude-haiku-4.5"
 	maxRetries             = 2
 	retryBaseDelay         = 500 * time.Millisecond
 	timeout                = 15 * time.Second
@@ -602,7 +602,7 @@ func (c *client) GenerateDetailedLocationDescription(latitude, longitude float64
 			"- Geography and environment: terrain, climate, natural features\n"+
 			"- How this place connects to and matters within its broader region\n\n"+
 			"You have real-time web search results at your disposal — use them thoroughly. Cross-reference sources for historical dates, demographic data, economic figures, and recent local developments. Go deeper than surface-level knowledge.\n\n"+
-			"Write as Atlas — warm, witty, talking to a friend. Every sentence should carry actual information. 3-5 paragraphs.\n"+
+			"Write as Atlas — warm, playful, talking to a friend. Every sentence should carry actual information. 4-6 short paragraphs, 2-3 sentences each; never one long wall of text. You may drop one or two bracket lines with a quick inner thought between paragraphs (e.g. [翻资料的时候被这段历史惊到了]).\n"+
 			"CRITICAL: pure plain text only, absolutely no markdown formatting (no asterisks, no bold, no headers, no bullet points).\n"+
 			"The app renders citations separately, so keep links, URL fragments, source lists, and trailing reference blocks out of the response body. End on a clean sentence about the place.\n"+
 			"If a specific claim is uncertain and unsupported by search results, keep it modest rather than inventing details.\n\n"+
