@@ -11,7 +11,6 @@ import React, {
 import { useTranslation } from "react-i18next";
 import TopBar from "../components/TopBar";
 import Sidebar from "../components/Sidebar";
-import AtlasVoicePanel from "../components/AtlasVoicePanel";
 import "../styles/animations.css";
 import "../styles/HomePage.css";
 import "../styles/responsive.css";
@@ -329,8 +328,6 @@ export default function HomePage() {
           descRetries={descRetries}
           onRetryDescription={handleRetryDescription}
         />
-
-        <AtlasVoicePanel />
       </div>
 
       {/* 全局加载动画 - lazy loaded */}

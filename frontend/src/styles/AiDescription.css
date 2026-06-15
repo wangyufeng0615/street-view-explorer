@@ -1,56 +1,120 @@
+/* Atlas 解读 —— 旅行手记风格：暖纸、墨色衬线、脚注式出处 */
+
 .ai-description {
-    padding: 20px 18px 18px;
-    margin: 0;
-    background: linear-gradient(135deg, rgba(248, 250, 252, 0.95), rgba(241, 245, 249, 0.9));
-    border-radius: 16px;
-    border: 1px solid rgba(226, 232, 240, 0.8);
-    box-shadow: 
-        0 4px 16px rgba(0, 0, 0, 0.06),
-        0 1px 4px rgba(0, 0, 0, 0.04);
+    --atlas-paper-hi: #fdfaf2;
+    --atlas-paper-lo: #f6efe0;
+    --atlas-ink: #352a1b;
+    --atlas-ink-soft: #84715a;
+    --atlas-accent: #a8502a;
+    --atlas-accent-deep: #8c3f1f;
+    --atlas-rule: rgba(163, 131, 84, 0.36);
+    --atlas-rule-soft: rgba(163, 131, 84, 0.22);
+
     position: relative;
-    backdrop-filter: blur(8px);
-    transition: all 0.3s ease;
+    padding: 0;
+    margin: 0;
+    background:
+        radial-gradient(at 16% 0%, rgba(212, 174, 116, 0.12), transparent 54%),
+        radial-gradient(at 100% 100%, rgba(168, 80, 42, 0.06), transparent 46%),
+        linear-gradient(180deg, var(--atlas-paper-hi), var(--atlas-paper-lo));
+    border: 1px solid var(--atlas-rule);
+    border-radius: 6px;
+    box-shadow:
+        0 1px 2px rgba(92, 64, 22, 0.07),
+        0 10px 24px rgba(92, 64, 22, 0.06);
+    overflow: hidden;
+    transition:
+        border-color 0.18s ease,
+        box-shadow 0.18s ease;
+}
+
+/* 纸面颗粒 */
+.ai-description::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.045'/%3E%3C/svg%3E");
+    pointer-events: none;
 }
 
 .ai-description:hover {
-    background: linear-gradient(135deg, rgba(248, 250, 252, 0.98), rgba(241, 245, 249, 0.95));
-    box-shadow: 
-        0 6px 20px rgba(0, 0, 0, 0.08),
-        0 2px 6px rgba(0, 0, 0, 0.06);
+    border-color: rgba(140, 105, 56, 0.5);
+    box-shadow:
+        0 1px 2px rgba(92, 64, 22, 0.08),
+        0 12px 28px rgba(92, 64, 22, 0.08);
 }
 
-.ai-loading-container {
-    padding: 16px 0 12px;
+/* —— 卡头：刊头式双细线 —— */
+
+.ai-description-header {
+    position: relative;
     display: flex;
     align-items: center;
-    justify-content: flex-start;
-    gap: 12px;
+    justify-content: space-between;
+    gap: 10px;
+    min-height: 38px;
+    padding: 8px 14px 7px;
+    border-bottom: 1px solid var(--atlas-rule);
 }
 
-.loading-message {
-    color: #64748b;
-    font-size: 14px;
-    font-weight: 500;
-    letter-spacing: 0.2px;
-    line-height: 1.5;
-    animation: fadeInOut 2s ease-in-out infinite;
+.ai-description-header::after {
+    content: "";
+    position: absolute;
+    left: 14px;
+    right: 14px;
+    bottom: 2px;
+    height: 1px;
+    background: var(--atlas-rule-soft);
 }
+
+.ai-description-title {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    flex-shrink: 0;
+    white-space: nowrap;
+    color: var(--atlas-ink);
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.2;
+    letter-spacing: 0.05em;
+    font-family:
+        "Source Han Serif SC",
+        "Songti SC",
+        Georgia,
+        "PingFang SC",
+        serif;
+}
+
+.ai-description-glyph {
+    flex-shrink: 0;
+    color: var(--atlas-accent);
+}
+
+.ai-description-voice {
+    flex: 0 1 auto;
+    min-width: 0;
+}
+
+.ai-description-body {
+    padding: 12px 14px 13px;
+}
+
+/* —— 正文 —— */
 
 .ai-content {
-    line-height: 1.85;
-    color: #2d3748;
-    font-size: 14.5px;
-    font-weight: 400;
-    letter-spacing: 0.2px;
-    text-align: justify;
-    text-justify: inter-ideograph;
-    word-spacing: 0.5px;
     margin: 0;
     padding: 0;
+    color: var(--atlas-ink);
+    font-size: 13.5px;
+    font-weight: 400;
+    line-height: 1.66;
+    letter-spacing: 0.01em;
+    text-align: left;
     font-family:
-        "Georgia",
-        "Noto Serif SC",
         "Source Han Serif SC",
+        "Songti SC",
+        Georgia,
         "PingFang SC",
         "Hiragino Sans GB",
         "Microsoft YaHei",
@@ -60,348 +124,399 @@
     -moz-osx-font-smoothing: grayscale;
 }
 
-/* 中文段落优化 */
 .ai-content:lang(zh) {
-    line-height: 1.9;
-    font-size: 15px;
-    letter-spacing: 0.5px;
+    line-height: 1.72;
+    text-align: justify;
 }
 
-/* 英文段落优化 */
 .ai-content:lang(en) {
-    line-height: 1.8;
-    font-size: 14.5px;
-    word-spacing: 0.5px;
+    line-height: 1.62;
 }
 
-.ai-error {
-    color: #ef4444;
-    font-size: 14px;
-    font-weight: 500;
-    line-height: 1.6;
-    padding: 12px 16px;
-    background: rgba(254, 242, 242, 0.8);
-    border: 1px solid rgba(252, 165, 165, 0.3);
-    border-radius: 12px;
-    margin: 0;
+.ai-paragraph {
+    margin: 0 0 8px;
 }
 
-.ai-no-data {
-    color: #6b7280;
-    font-size: 14px;
+.ai-paragraph:last-of-type {
+    margin-bottom: 0;
+}
+
+/* 首段首字：行内轻微放大提色 */
+.ai-content > .ai-paragraph:first-of-type::first-letter {
+    font-size: 1.45em;
+    line-height: 1;
+    font-weight: 600;
+    color: var(--atlas-accent-deep);
+}
+
+/* [场景白描/心理活动]：旁注式斜体，可出现在文中任意位置 */
+.ai-scene-note {
+    margin: 0 0 10px;
+    padding-left: 10px;
+    border-left: 2px solid rgba(168, 80, 42, 0.4);
+    color: var(--atlas-ink-soft);
     font-style: italic;
-    font-weight: 400;
+    font-size: 12.5px;
     line-height: 1.6;
-    text-align: center;
-    padding: 8px 0;
-    opacity: 0.8;
 }
 
-/* 添加一个装饰性的左边框 */
-.ai-description::before {
-    content: '';
-    position: absolute;
-    left: 0;
-    top: 20%;
-    bottom: 20%;
-    width: 3px;
-    background: linear-gradient(
-        to bottom,
-        transparent,
-        rgba(99, 102, 241, 0.3) 30%,
-        rgba(139, 92, 246, 0.3) 70%,
-        transparent
-    );
-    border-radius: 0 2px 2px 0;
+.ai-paragraph + .ai-scene-note {
+    margin-top: 10px;
 }
 
-/* 思考图标样式 */
+/* —— 加载 / 错误 / 空态 —— */
+
+.ai-loading-container {
+    padding: 6px 0 2px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 9px;
+}
+
+.loading-message {
+    color: var(--atlas-ink-soft);
+    font-size: 13px;
+    font-style: italic;
+    line-height: 1.45;
+    font-family:
+        "Source Han Serif SC",
+        "Songti SC",
+        Georgia,
+        "PingFang SC",
+        serif;
+    animation: fadeInOut 2s ease-in-out infinite;
+}
+
 .thinking-icon {
-    width: 20px;
-    height: 20px;
-    background: linear-gradient(135deg, rgba(99, 102, 241, 0.8), rgba(139, 92, 246, 0.8));
-    border-radius: 50%;
+    width: 22px;
+    height: 22px;
     display: flex;
     align-items: center;
     justify-content: center;
-    color: white;
     flex-shrink: 0;
-    animation: thinkingPulse 2s ease-in-out infinite;
-    box-shadow: 0 2px 8px rgba(99, 102, 241, 0.2);
+    color: var(--atlas-accent);
+    background: rgba(168, 80, 42, 0.08);
+    border: 1px solid rgba(168, 80, 42, 0.22);
+    border-radius: 50%;
 }
 
-/* 思考动画 */
-@keyframes thinkingPulse {
-    0%, 100% { 
-        transform: scale(1);
-        opacity: 0.8;
-    }
-    50% { 
-        transform: scale(1.1);
-        opacity: 1;
-    }
+/* 罗盘指针来回找北 */
+.compass-needle {
+    transform-origin: 12px 12px;
+    animation: compassSeek 2.2s ease-in-out infinite;
 }
 
-/* 加载动画优化 */
+@keyframes compassSeek {
+    0%, 100% { transform: rotate(-32deg); }
+    50% { transform: rotate(46deg); }
+}
+
 @keyframes fadeInOut {
-    0%, 100% { 
-        opacity: 0.6; 
+    0%, 100% {
+        opacity: 0.55;
         transform: translateY(0);
     }
-    50% { 
-        opacity: 1; 
+    50% {
+        opacity: 1;
         transform: translateY(-1px);
     }
 }
 
-/* 响应式设计 */
-@media (max-width: 768px) {
-    .ai-description {
-        padding: 16px 14px;
-        border-radius: 12px;
-    }
-    
-    .ai-content {
-        font-size: 13.5px;
-        line-height: 1.7;
-    }
-    
-    .ai-content:lang(zh) {
-        font-size: 14px;
-        line-height: 1.75;
-    }
+.ai-error {
+    padding: 9px 11px;
+    background: rgba(190, 70, 44, 0.06);
+    border: 1px dashed rgba(190, 70, 44, 0.4);
+    border-radius: 4px;
 }
 
-/* AI内容容器 */
+.ai-error-message {
+    color: #a03c22;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.5;
+    margin-bottom: 8px;
+}
+
+.ai-retry-button {
+    background: var(--atlas-accent);
+    color: #fdfaf2;
+    border: none;
+    padding: 5px 12px;
+    border-radius: 3px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background 0.16s ease;
+}
+
+.ai-retry-button:hover {
+    background: var(--atlas-accent-deep);
+}
+
+.ai-no-data {
+    color: var(--atlas-ink-soft);
+    font-size: 13px;
+    font-style: italic;
+    line-height: 1.45;
+    text-align: center;
+    padding: 4px 0;
+    opacity: 0.85;
+}
+
 .ai-content-container {
     display: flex;
     flex-direction: column;
     gap: 0;
 }
 
-/* "为我介绍更多"按钮容器 */
+/* —— "再多讲讲"：邮戳风 —— */
+
 .tell-me-more-container {
-    margin-top: 16px;
+    margin-top: 10px;
     display: flex;
-    justify-content: center;
+    justify-content: flex-start;
     align-items: center;
 }
 
-/* "为我介绍更多"按钮样式 */
 .tell-me-more-button {
-    background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(139, 92, 246, 0.1));
-    border: 1.5px solid rgba(99, 102, 241, 0.3);
-    color: #6366f1;
-    padding: 10px 18px;
-    border-radius: 12px;
-    font-size: 13px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.3s ease;
-    display: flex;
+    display: inline-flex;
     align-items: center;
-    gap: 8px;
-    font-family: inherit;
-    letter-spacing: 0.2px;
-    backdrop-filter: blur(4px);
+    gap: 6px;
+    padding: 5px 13px 5px 10px;
+    background: transparent;
+    border: 1px dashed rgba(168, 80, 42, 0.55);
+    border-radius: 3px;
+    color: var(--atlas-accent);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    font-family:
+        "Source Han Serif SC",
+        "Songti SC",
+        Georgia,
+        "PingFang SC",
+        serif;
+    transition:
+        background 0.16s ease,
+        border-color 0.16s ease,
+        color 0.16s ease,
+        transform 0.16s ease;
 }
 
 .tell-me-more-button:hover:not(:disabled) {
-    background: linear-gradient(135deg, rgba(99, 102, 241, 0.15), rgba(139, 92, 246, 0.15));
-    border-color: rgba(99, 102, 241, 0.5);
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.2);
+    background: rgba(168, 80, 42, 0.08);
+    border-color: rgba(168, 80, 42, 0.8);
+    color: var(--atlas-accent-deep);
+    transform: rotate(-0.6deg);
 }
 
 .tell-me-more-button:disabled {
-    opacity: 0.6;
+    opacity: 0.55;
     cursor: not-allowed;
     transform: none;
-    box-shadow: none;
 }
 
 .tell-me-more-button .button-icon {
-    font-size: 14px;
     display: flex;
     align-items: center;
+    color: inherit;
+    opacity: 0.85;
 }
 
 .tell-me-more-button .button-text {
     white-space: nowrap;
 }
 
-/* 详细介绍加载容器 */
+/* —— 深度解读 —— */
+
 .detailed-loading-container {
-    margin-top: 20px;
-    padding: 16px;
-    background: rgba(99, 102, 241, 0.05);
-    border-radius: 12px;
-    border: 1px solid rgba(99, 102, 241, 0.15);
+    margin-top: 10px;
+    padding: 8px 10px;
+    background: rgba(168, 80, 42, 0.05);
+    border: 1px solid rgba(168, 80, 42, 0.16);
+    border-radius: 4px;
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 9px;
 }
 
-/* 详细介绍错误容器 */
 .detailed-error-container {
-    margin-top: 20px;
-    padding: 16px;
-    background: rgba(239, 68, 68, 0.05);
-    border: 1px solid rgba(239, 68, 68, 0.2);
-    border-radius: 12px;
+    margin-top: 10px;
+    padding: 8px 10px;
+    background: rgba(190, 70, 44, 0.06);
+    border: 1px dashed rgba(190, 70, 44, 0.4);
+    border-radius: 4px;
 }
 
 .detailed-error-container .error-message {
-    color: #ef4444;
-    font-size: 14px;
-    margin-bottom: 12px;
-    line-height: 1.5;
+    color: #a03c22;
+    font-size: 13px;
+    margin-bottom: 8px;
+    line-height: 1.45;
 }
 
 .retry-detailed-button {
-    background: #ef4444;
-    color: white;
+    background: var(--atlas-accent);
+    color: #fdfaf2;
     border: none;
-    padding: 8px 16px;
-    border-radius: 8px;
-    font-size: 13px;
-    font-weight: 500;
+    padding: 5px 12px;
+    border-radius: 3px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: background 0.16s ease;
     font-family: inherit;
 }
 
 .retry-detailed-button:hover:not(:disabled) {
-    background: #dc2626;
-    transform: translateY(-1px);
+    background: var(--atlas-accent-deep);
 }
 
 .retry-detailed-button:disabled {
-    opacity: 0.6;
+    opacity: 0.55;
     cursor: not-allowed;
-    transform: none;
 }
 
-/* 详细介绍容器 */
 .detailed-description {
-    margin-top: 24px;
-    border-top: 2px solid rgba(99, 102, 241, 0.1);
-    padding-top: 20px;
+    margin-top: 14px;
 }
 
-/* 详细介绍标题 */
-.detailed-description-header {
-    margin-bottom: 16px;
-}
-
+/* 书籍式分节线：—— 标题 —— */
 .detailed-title {
-    font-size: 15px;
-    font-weight: 600;
-    color: #6366f1;
     display: flex;
     align-items: center;
-    gap: 8px;
-    letter-spacing: 0.3px;
-    padding-bottom: 8px;
-}
-
-/* 详细介绍内容 */
-.detailed-content {
-    line-height: 1.85;
-    color: #2d3748;
-    font-size: 14.5px;
-    font-weight: 400;
-    letter-spacing: 0.2px;
-    text-align: justify;
-    text-justify: inter-ideograph;
-    word-spacing: 0.5px;
-    margin: 0;
-    padding: 0;
+    gap: 9px;
+    margin-bottom: 9px;
+    color: var(--atlas-accent-deep);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    white-space: nowrap;
     font-family:
-        "Georgia",
-        "Noto Serif SC",
         "Source Han Serif SC",
+        "Songti SC",
+        Georgia,
         "PingFang SC",
-        "Hiragino Sans GB",
-        "Microsoft YaHei",
         serif;
-    text-rendering: optimizeLegibility;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
 }
 
-/* 详细内容中英文优化 */
-.detailed-content:lang(zh) {
-    line-height: 1.9;
-    font-size: 15px;
-    letter-spacing: 0.5px;
+.detailed-title::before,
+.detailed-title::after {
+    content: "";
+    height: 1px;
+    flex: 1;
+    background: var(--atlas-rule-soft);
 }
 
-.detailed-content:lang(en) {
-    line-height: 1.8;
-    font-size: 14.5px;
-    word-spacing: 0.5px;
+/* 深度解读正文不再重复首字放大 */
+.detailed-description .ai-paragraph:first-of-type::first-letter {
+    font-size: inherit;
+    line-height: inherit;
+    font-weight: inherit;
+    color: inherit;
 }
 
-/* 响应式设计 - 详细介绍部分 */
+/* —— 出处脚注 —— */
+
+.citations-container {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: 12px;
+    row-gap: 3px;
+    margin-top: 10px;
+    padding-top: 7px;
+    border-top: 1px dashed var(--atlas-rule);
+}
+
+.citations-label {
+    color: var(--atlas-ink-soft);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+}
+
+.citation-link {
+    color: #7c5c38;
+    font-size: 11.5px;
+    line-height: 1.5;
+    text-decoration: underline dotted rgba(124, 92, 56, 0.5);
+    text-underline-offset: 2.5px;
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    transition: color 0.15s ease;
+}
+
+.citation-link sup {
+    color: var(--atlas-accent);
+    font-size: 9px;
+    font-weight: 700;
+    margin-right: 2px;
+}
+
+.citation-link:hover {
+    color: var(--atlas-accent-deep);
+    text-decoration-style: solid;
+}
+
+/* —— 移动端 —— */
+
 @media (max-width: 768px) {
+    .ai-description {
+        border-radius: 5px;
+    }
+
+    .ai-description-header {
+        min-height: 30px;
+        padding: 7px 11px 6px;
+        gap: 8px;
+    }
+
+    .ai-description-header::after {
+        left: 11px;
+        right: 11px;
+    }
+
+    .ai-description-body {
+        padding: 10px 11px 11px;
+    }
+
+    .ai-content {
+        font-size: 13px;
+    }
+
+    .ai-content:lang(zh) {
+        line-height: 1.66;
+    }
+
+    .ai-scene-note {
+        font-size: 12px;
+        margin-bottom: 8px;
+    }
+
     .tell-me-more-button {
-        padding: 8px 14px;
+        padding: 5px 10px;
         font-size: 12px;
     }
-    
-    .detailed-content {
-        font-size: 13px;
-        line-height: 1.75;
-    }
-    
-    .detailed-content:lang(zh) {
-        font-size: 13.5px;
-        line-height: 1.8;
-    }
-    
+
     .detailed-title {
-        font-size: 14px;
+        font-size: 11.5px;
     }
 
     .citations-container {
-        gap: 4px;
+        column-gap: 10px;
     }
 
     .citation-link {
         font-size: 11px;
-        padding: 2px 8px;
+        max-width: 150px;
     }
 }
-
-/* 参考资料链接 */
-.citations-container {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    margin-top: 14px;
-    padding-top: 10px;
-    border-top: 1px solid rgba(99, 102, 241, 0.08);
-}
-
-.citation-link {
-    display: inline-block;
-    font-size: 11.5px;
-    line-height: 1.4;
-    color: #6366f1;
-    background: rgba(99, 102, 241, 0.06);
-    padding: 3px 10px;
-    border-radius: 12px;
-    text-decoration: none;
-    max-width: 200px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    transition: background 0.15s, color 0.15s;
-}
-
-.citation-link:hover {
-    background: rgba(99, 102, 241, 0.14);
-    color: #4f46e5;
-}
-

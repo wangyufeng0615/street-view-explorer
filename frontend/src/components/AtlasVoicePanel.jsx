@@ -118,6 +118,30 @@ const TEXT = {
   },
 };
 
+const MicGlyph = () => (
+  <svg
+    width="11"
+    height="11"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2.2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <rect x="9" y="2.5" width="6" height="11.5" rx="3" />
+    <path d="M5 11.5a7 7 0 0 0 14 0" />
+    <line x1="12" y1="18.5" x2="12" y2="21.5" />
+  </svg>
+);
+
+const StopGlyph = () => (
+  <svg width="9" height="9" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
+    <rect x="1.5" y="1.5" width="9" height="9" rx="2" />
+  </svg>
+);
+
 const TOOL_DEFINITIONS = [
   {
     type: "function",
@@ -1646,25 +1670,31 @@ export default function AtlasVoicePanel() {
 
   const isActive = status !== "idle";
   const statusLabel = copy[status] || copy.idle;
+  const hasVoiceLog = Boolean(lastUserText || lastAssistantText || error);
 
   return (
-    <div className={`atlas-voice-panel atlas-voice-panel--${status}`}>
-      <div className="atlas-voice-header">
-        <div>
-          <div className="atlas-voice-title">{copy.title}</div>
-          {isActive && <div className="atlas-voice-status">{statusLabel}</div>}
-        </div>
-        <button
-          className="atlas-voice-button"
-          onClick={isActive ? stopVoice : startVoice}
-          disabled={status === "connecting"}
-          type="button"
-        >
-          {isActive ? copy.stop : copy.start}
-        </button>
-      </div>
+    <div
+      className={`atlas-voice-panel atlas-voice-panel--${status}${
+        hasVoiceLog ? " atlas-voice-panel--with-log" : ""
+      }`}
+    >
+      <button
+        className="atlas-voice-button"
+        onClick={isActive ? stopVoice : startVoice}
+        disabled={status === "connecting"}
+        type="button"
+        aria-label={isActive ? copy.stop : copy.start}
+        title={isActive ? copy.stop : copy.start}
+      >
+        <span className="atlas-voice-glyph" aria-hidden="true">
+          {isActive ? <StopGlyph /> : <MicGlyph />}
+        </span>
+        <span className="atlas-voice-label">
+          {isActive ? statusLabel : copy.title}
+        </span>
+      </button>
 
-      {(lastUserText || lastAssistantText || error) && (
+      {hasVoiceLog && (
         <div className="atlas-voice-log" aria-live="polite">
           {lastUserText && <div className="atlas-voice-line user">{lastUserText}</div>}
           {lastAssistantText && (

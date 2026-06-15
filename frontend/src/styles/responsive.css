@@ -23,7 +23,8 @@
 @media (max-width: 768px) {
   .new-sidebar {
     width: 100vw !important;
-    height: 40vh !important;
+    height: 44vh !important;
+    height: 44dvh !important;
     top: auto !important;
     bottom: 0 !important;
     border-left: none !important;
@@ -33,7 +34,25 @@
 
   .street-view-wrapper {
     right: 0 !important; /* 手机端侧边栏在底部，不需要右边距 */
-    bottom: 40vh !important; /* 为底部侧边栏留出空间 */
+    bottom: 44vh !important; /* 为底部侧边栏留出空间 */
+    bottom: 44dvh !important;
+  }
+
+  .sidebar-scroll {
+    padding: 8px 10px calc(8px + env(safe-area-inset-bottom)) !important;
+  }
+
+  .sidebar-section {
+    margin-bottom: 6px !important;
+  }
+
+  .sidebar-map-container {
+    height: clamp(76px, 11dvh, 96px) !important;
+    border-radius: 4px !important;
+  }
+
+  .sidebar-ai-container {
+    min-height: 96px !important;
   }
 
   .top-bar {
@@ -176,7 +195,17 @@
 
   .street-view-wrapper {
     top: var(--top-bar-height, 60px) !important;
-    bottom: 40vh !important;
+    bottom: 46vh !important;
+    bottom: 46dvh !important;
+  }
+
+  .new-sidebar {
+    height: 46vh !important;
+    height: 46dvh !important;
+  }
+
+  .sidebar-map-container {
+    height: clamp(66px, 10dvh, 84px) !important;
   }
 }
 

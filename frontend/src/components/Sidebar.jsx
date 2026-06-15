@@ -1,6 +1,7 @@
 import React, { memo, useRef, useEffect, lazy, Suspense } from "react";
 import { useTranslation } from "react-i18next";
 import AiDescription from "./AiDescription";
+import AtlasVoicePanel from "./AtlasVoicePanel";
 import "../styles/Sidebar.css";
 
 const GlobalMap = lazy(() => import("./GlobalMap"));
@@ -41,8 +42,11 @@ const Sidebar = memo(function Sidebar({
         className="sidebar-scroll force-scrollbar"
       >
         {/* 世界地图区域 */}
-        <div style={styles.section}>
-          <div style={styles.mapContainer}>
+        <div
+          style={styles.section}
+          className="sidebar-section sidebar-section--global-map"
+        >
+          <div style={styles.mapContainer} className="sidebar-map-container">
             {location ? (
               <Suspense fallback={<div style={styles.mapPlaceholder}>{t("loading_location")}</div>}>
                 <GlobalMap
@@ -57,8 +61,11 @@ const Sidebar = memo(function Sidebar({
         </div>
 
         {/* 局部地图区域 */}
-        <div style={styles.section}>
-          <div style={styles.mapContainer}>
+        <div
+          style={styles.section}
+          className="sidebar-section sidebar-section--preview-map"
+        >
+          <div style={styles.mapContainer} className="sidebar-map-container">
             {location && (
               <Suspense fallback={null}>
                 <PreviewMap
@@ -72,9 +79,13 @@ const Sidebar = memo(function Sidebar({
         </div>
 
         {/* AI解读区域 */}
-        <div style={styles.section}>
-          <div style={styles.aiContainer}>
+        <div
+          style={styles.section}
+          className="sidebar-section sidebar-section--ai"
+        >
+          <div style={styles.aiContainer} className="sidebar-ai-container">
             <AiDescription
+              voiceControl={<AtlasVoicePanel />}
               isLoading={isLoadingDesc}
               error={descError}
               description={description}
@@ -111,17 +122,17 @@ const styles = {
     flex: 1,
     overflowY: "scroll",
     overflowX: "hidden",
-    padding: "16px",
+    padding: "10px",
     WebkitOverflowScrolling: "touch",
   },
   section: {
-    marginBottom: "16px",
+    marginBottom: "7px",
   },
   mapContainer: {
     height: "200px",
-    borderRadius: "8px",
+    borderRadius: "4px",
     overflow: "hidden",
-    border: "1px solid rgba(0, 0, 0, 0.1)",
+    border: "1px solid rgba(148, 163, 184, 0.35)",
     backgroundColor: "#f8f9fa",
   },
   aiContainer: {
