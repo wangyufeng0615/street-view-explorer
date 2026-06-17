@@ -114,19 +114,24 @@ const CitationLinks = memo(function CitationLinks({ citations, label }) {
   return (
     <div className="citations-container">
       <span className="citations-label">{label}</span>
-      {citations.map((cite, i) => (
-        <a
-          key={i}
-          className="citation-link"
-          href={cite.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          title={cite.url}
-        >
-          <sup>{i + 1}</sup>
-          {cite.title || new URL(cite.url).hostname}
-        </a>
-      ))}
+      <ol className="citations-list">
+        {citations.map((cite, i) => (
+          <li key={i} className="citation-item">
+            <a
+              className="citation-link"
+              href={cite.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={cite.url}
+            >
+              <span className="citation-index">{i + 1}</span>
+              <span className="citation-title">
+                {cite.title || new URL(cite.url).hostname}
+              </span>
+            </a>
+          </li>
+        ))}
+      </ol>
     </div>
   );
 });
@@ -180,7 +185,7 @@ const AiDescription = memo(
       [i18n.language, panoId],
     );
     const isChinese = (i18n.resolvedLanguage || i18n.language || "").startsWith("zh");
-    const sectionTitle = isChinese ? "Atlas 解读" : "Atlas Notes";
+    const sectionTitle = isChinese ? "Atlas 说…" : "Atlas says...";
     const citationsLabel = isChinese ? "出处" : "Sources";
 
     const handleTellMeMore = useCallback(async () => {

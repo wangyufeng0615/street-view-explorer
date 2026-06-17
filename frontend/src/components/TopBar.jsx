@@ -194,7 +194,7 @@ const TopBar = memo(function TopBar({
               className="hover-scale"
               onClick={() => setShowDropdown(!showDropdown)}
             >
-              ⋯
+              {t("more")}
             </button>
 
             {showDropdown && (
@@ -443,6 +443,7 @@ const styles = {
     fontSize: "14px",
     transition: "all 0.2s ease",
     fontFamily: "inherit",
+    whiteSpace: "nowrap",
   },
   dropdown: {
     position: "absolute",
