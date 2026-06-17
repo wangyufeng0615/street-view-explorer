@@ -125,8 +125,7 @@ export default function HomePage() {
     handlePreferenceChange,
   } = useExplorationMode(lastRefreshTimeRef, loadingRef);
 
-  const { heading, setHeading, handleCopyEmail, toastMessage, showToast } =
-    useUIHandlers();
+  const { heading, setHeading, toastMessage, showToast } = useUIHandlers();
 
   const [showFootprint, setShowFootprint] = useState(false);
 
@@ -298,7 +297,6 @@ export default function HomePage() {
         explorationMode={explorationMode}
         explorationInterest={explorationInterest}
         onModeChange={handleModeChange}
-        onCopyEmail={handleCopyEmail}
         onPreferenceChange={handlePreferenceChange}
         isSavingPreference={isSavingPreference}
         preferenceError={preferenceError}

@@ -10,6 +10,9 @@ import { formatAddress } from "../utils/addressUtils";
 import { EXPLORATION_MODES } from "../hooks/useExplorationMode";
 import { hardResetGoogleMapsPromise } from "../utils/googleMaps";
 
+const CONTACT_EMAIL = "alanwang424@gmail.com";
+const WECHAT_ID = "807103724";
+
 const TopBar = memo(function TopBar({
   location,
   isLoading,
@@ -17,7 +20,6 @@ const TopBar = memo(function TopBar({
   explorationMode,
   explorationInterest,
   onModeChange,
-  onCopyEmail,
   onPreferenceChange,
   isSavingPreference,
   preferenceError,
@@ -88,11 +90,6 @@ const TopBar = memo(function TopBar({
     if (!isLoading) {
       onExplore();
     }
-  };
-
-  const handleContactClick = () => {
-    onCopyEmail();
-    setShowDropdown(false);
   };
 
   const handleModeClick = (mode) => {
@@ -263,12 +260,19 @@ const TopBar = memo(function TopBar({
                   </div>
                 </div>
 
-                <button
-                  style={styles.dropdownButton}
-                  onClick={handleContactClick}
-                >
-                  📧 {t("contact_info")}
-                </button>
+                <div style={styles.dropdownDivider} />
+
+                <div style={styles.contactBlock} aria-label={t("contact_info")}>
+                  <span style={styles.dropdownLabel}>{t("contact_info")}</span>
+                  <div style={styles.contactRow}>
+                    <span style={styles.contactLabel}>{t("contact.wechat")}</span>
+                    <span style={styles.contactValue}>{WECHAT_ID}</span>
+                  </div>
+                  <div style={styles.contactRow}>
+                    <span style={styles.contactLabel}>{t("contact.email")}</span>
+                    <span style={styles.contactValue}>{CONTACT_EMAIL}</span>
+                  </div>
+                </div>
               </div>
             )}
           </div>
@@ -455,7 +459,7 @@ const styles = {
     boxShadow: "0 4px 16px rgba(0, 0, 0, 0.15)",
     border: "1px solid rgba(0, 0, 0, 0.1)",
     padding: "8px",
-    minWidth: "160px",
+    minWidth: "220px",
     zIndex: 1001,
   },
   dropdownDivider: {
@@ -514,6 +518,32 @@ const styles = {
     color: "#333",
     transition: "all 0.2s ease",
     textAlign: "left",
+  },
+  contactBlock: {
+    padding: "7px 10px 4px",
+    color: "#333",
+  },
+  contactRow: {
+    display: "flex",
+    alignItems: "baseline",
+    justifyContent: "space-between",
+    gap: "12px",
+    fontSize: "12px",
+    lineHeight: 1.6,
+    whiteSpace: "nowrap",
+  },
+  contactLabel: {
+    flex: "0 0 auto",
+    color: "#666",
+  },
+  contactValue: {
+    flex: "0 1 auto",
+    minWidth: 0,
+    color: "#333",
+    fontWeight: 500,
+    textAlign: "right",
+    overflowWrap: "anywhere",
+    whiteSpace: "normal",
   },
   goButton: {
     padding: "8px 32px",
