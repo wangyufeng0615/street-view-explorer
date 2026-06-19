@@ -79,6 +79,7 @@ backend/
 ## UI 路由
 
 - `/` - 随机街景探索首页。
+- `/footprints` - 可直接访问的 Atlas 足迹地图。
 - `/agent` - Odyssey，给外部 AI 复制旅行 skill 和旅程入口。
 - `/agent/letter/:id` - 公开旅程来信。
 - `/guess` - 单人卫星图猜地理。

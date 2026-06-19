@@ -23,7 +23,7 @@ function getUniqueVisits(visits) {
 }
 
 function openVisitInNewTab(lat, lng) {
-  const url = new URL(window.location.href);
+  const url = new URL("/", window.location.origin);
   url.searchParams.set("lat", lat.toFixed(6));
   url.searchParams.set("lng", lng.toFixed(6));
   window.open(url.toString(), "_blank", "noopener,noreferrer");

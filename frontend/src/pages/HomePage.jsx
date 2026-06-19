@@ -1,5 +1,4 @@
 import React, {
-  useState,
   useEffect,
   useCallback,
   useMemo,
@@ -9,6 +8,7 @@ import React, {
   Suspense,
 } from "react";
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router-dom";
 import TopBar from "../components/TopBar";
 import Sidebar from "../components/Sidebar";
 import "../styles/animations.css";
@@ -86,8 +86,17 @@ function updateURL(lat, lng) {
   window.history.replaceState(null, "", url.toString());
 }
 
-export default function HomePage() {
+function getCurrentRouteTarget(pathname) {
+  return {
+    pathname,
+    search: window.location.search,
+    hash: window.location.hash,
+  };
+}
+
+export default function HomePage({ showFootprintFromRoute = false }) {
   const { i18n } = useTranslation();
+  const navigate = useNavigate();
   const loadLocationFromURL = useStore((state) => state.loadLocationFromURL);
   const urlLocationRef = useRef(getLocationFromURL());
   const hasLoadedInitialLocationRef = useRef(false);
@@ -127,8 +136,6 @@ export default function HomePage() {
 
   const { heading, setHeading, toastMessage, showToast } = useUIHandlers();
 
-  const [showFootprint, setShowFootprint] = useState(false);
-
   // 使用键盘导航钩子
   useKeyboardNavigation(loadRandomLocation, isLoading, loadingRef);
 
@@ -150,6 +157,14 @@ export default function HomePage() {
   const handleExplore = useCallback(() => {
     loadRandomLocation();
   }, [loadRandomLocation]);
+
+  const handleOpenFootprint = useCallback(() => {
+    navigate(getCurrentRouteTarget("/footprints"));
+  }, [navigate]);
+
+  const handleCloseFootprint = useCallback(() => {
+    navigate(getCurrentRouteTarget("/"));
+  }, [navigate]);
 
   // Debounced location description loading
   useEffect(() => {
@@ -300,7 +315,7 @@ export default function HomePage() {
         onPreferenceChange={handlePreferenceChange}
         isSavingPreference={isSavingPreference}
         preferenceError={preferenceError}
-        onOpenFootprint={() => setShowFootprint(true)}
+        onOpenFootprint={handleOpenFootprint}
       />
 
       {/* 主要内容区域 */}
@@ -341,9 +356,9 @@ export default function HomePage() {
       </Suspense>
 
       {/* 全球足迹地图 */}
-      {showFootprint && (
+      {showFootprintFromRoute && (
         <Suspense fallback={null}>
-          <FootprintMap onClose={() => setShowFootprint(false)} />
+          <FootprintMap onClose={handleCloseFootprint} />
         </Suspense>
       )}
     </div>

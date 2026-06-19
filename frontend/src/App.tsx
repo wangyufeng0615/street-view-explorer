@@ -65,6 +65,7 @@ function App() {
       >
         <Routes>
           <Route path="/" element={<HomePage />} />
+          <Route path="/footprints" element={<HomePage showFootprintFromRoute />} />
           <Route
             path="/agent"
             element={

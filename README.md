@@ -165,6 +165,7 @@ Frontend variables live in `frontend/.env`.
 ## User Routes
 
 - `/` - random Street View explorer.
+- `/footprints` - shareable Atlas footprint map overlay.
 - `/agent` - Odyssey setup and instructions for an external AI traveler.
 - `/agent/letter/:id` - public Odyssey letter.
 - `/guess` - solo satellite guessing game.

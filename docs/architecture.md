@@ -36,6 +36,7 @@ The frontend is React 18 with Vite. `frontend/vite.config.js` sets:
 Routes:
 
 - `/` uses `HomePage` for random Street View exploration.
+- `/footprints` uses `HomePage` with the Atlas footprint map open.
 - `/agent` uses `AgentPage` for Odyssey journey setup.
 - `/agent/letter/:id` uses `LetterPage` for public letters.
 - `/guess` uses `GeoGamePage` for solo satellite guessing.
