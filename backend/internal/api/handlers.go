@@ -487,17 +487,25 @@ func (h *Handlers) LookupLocation(c *gin.Context) {
 	}
 
 	svc := h.servicesForMode(c)
-	loc, err := svc.LocationService.LookupLocation(lat, lng, language)
-	if err != nil {
-		CaptureHandlerError(c, err, http.StatusInternalServerError, map[string]interface{}{
+	scope := strings.TrimSpace(c.DefaultQuery("scope", "nearby"))
+	var loc *models.Location
+	var lookupErr error
+	if scope == "nearest" {
+		loc, lookupErr = svc.LocationService.LookupNearestLocation(lat, lng, language)
+	} else {
+		loc, lookupErr = svc.LocationService.LookupLocation(lat, lng, language)
+	}
+	if lookupErr != nil {
+		CaptureHandlerError(c, lookupErr, http.StatusInternalServerError, map[string]interface{}{
 			"operation": "lookup_location",
 			"latitude":  lat,
 			"longitude": lng,
 			"language":  language,
+			"scope":     scope,
 		})
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
-			"error":   PublicErrorMessage(err),
+			"error":   PublicErrorMessage(lookupErr),
 		})
 		return
 	}
@@ -789,6 +797,8 @@ func normalizeVisitSource(source string) string {
 	switch strings.TrimSpace(source) {
 	case models.VisitSourceShared:
 		return models.VisitSourceShared
+	case models.VisitSourceMapPick:
+		return models.VisitSourceMapPick
 	default:
 		return models.VisitSourceLookup
 	}

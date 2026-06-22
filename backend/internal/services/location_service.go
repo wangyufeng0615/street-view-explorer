@@ -330,6 +330,38 @@ func (ls *LocationService) LookupLocation(lat, lng float64, language string) (*m
 	return &location, nil
 }
 
+// LookupNearestLocation 根据坐标查找最近的可用街景并创建位置记录。
+func (ls *LocationService) LookupNearestLocation(lat, lng float64, language string) (*models.Location, error) {
+	ctx := context.Background()
+
+	hasStreetView, validLat, validLng, panoId := ls.maps.FindNearestStreetView(ctx, lat, lng)
+	if !hasStreetView {
+		return nil, fmt.Errorf("没有找到可用街景")
+	}
+
+	locationInfo, err := ls.maps.GetLocationInfo(ctx, validLat, validLng, language)
+	if err != nil {
+		return nil, fmt.Errorf("获取位置信息失败: %w", err)
+	}
+
+	location := models.Location{
+		PanoID:    panoId,
+		CreatedAt: time.Now(),
+		IsMock:    false,
+	}
+	location.Latitude = validLat
+	location.Longitude = validLng
+	location.Country = locationInfo["country"]
+	location.City = locationInfo["city"]
+	location.FormattedAddress = locationInfo["formatted_address"]
+
+	if err := ls.repo.SaveLocation(location); err != nil {
+		return nil, fmt.Errorf("保存位置记录失败: %w", err)
+	}
+
+	return &location, nil
+}
+
 // SearchLocation resolves a concrete place/landmark query and loads nearby Street View.
 func (ls *LocationService) SearchLocation(query, language string) (*models.Location, *PlaceResolution, error) {
 	trimmedQuery := strings.TrimSpace(query)

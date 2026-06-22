@@ -30,6 +30,7 @@ const useStore = create(
             location: null,
             locationError: null,
             isLocationLoading: true,
+            isMapLocationLoading: false,
             lastRefreshTime: Date.now() - RATE_LIMIT_MS,
 
             // ===== Description相关状态 =====
@@ -179,6 +180,69 @@ const useStore = create(
                 } finally {
                     set({
                         isLocationLoading: false,
+                        isLoadingLocation: false
+                    });
+                }
+            },
+
+            // Map pick Location Actions
+            loadLocationFromMapPick: async (lat, lng) => {
+                const state = get();
+                if (state.isLoadingLocation) {
+                    return {
+                        success: false,
+                        error: i18n.t('mapPicker.busy')
+                    };
+                }
+
+                set({
+                    isLoadingLocation: true,
+                    isMapLocationLoading: true
+                });
+
+                try {
+                    const currentLanguage = getActiveLanguage();
+                    const resp = await lookupLocation(lat, lng, currentLanguage, 'map_pick', 'nearest');
+
+                    if (resp.success && resp.data) {
+                        const locLat = Number(resp.data.latitude);
+                        const locLng = Number(resp.data.longitude);
+
+                        if (!isNaN(locLat) && !isNaN(locLng)) {
+                            const locationData = {
+                                ...resp.data,
+                                latitude: locLat,
+                                longitude: locLng
+                            };
+
+                            set({
+                                location: locationData,
+                                currentLocationRef: locationData,
+                                locationError: null,
+                                description: null,
+                                descriptionCitations: null,
+                                descriptionError: null
+                            });
+
+                            return {
+                                success: true,
+                                data: locationData
+                            };
+                        }
+
+                        throw new Error('无效的坐标数据');
+                    }
+
+                    throw new Error(resp.error || '查找位置失败');
+                } catch (error) {
+                    console.error('从地图查找位置失败:', error);
+                    return {
+                        success: false,
+                        error: error.message || '查找位置失败，请重试'
+                    };
+                } finally {
+                    set({
+                        isMapLocationLoading: false,
                         isLoadingLocation: false
                     });
                 }

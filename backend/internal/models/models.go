@@ -24,9 +24,10 @@ type Region struct {
 }
 
 const (
-	VisitSourceRandom = "random"
-	VisitSourceLookup = "lookup"
-	VisitSourceShared = "shared"
+	VisitSourceRandom  = "random"
+	VisitSourceLookup  = "lookup"
+	VisitSourceShared  = "shared"
+	VisitSourceMapPick = "map_pick"
 )
 
 // VisitRecord 访问记录

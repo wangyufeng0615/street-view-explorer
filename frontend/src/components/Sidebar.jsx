@@ -16,6 +16,9 @@ const Sidebar = memo(function Sidebar({
   descError,
   descRetries,
   onRetryDescription,
+  onMapLocationPick,
+  isMapPickLoading,
+  mapPickStatus,
 }) {
   const { t } = useTranslation();
   const scrollContainerRef = useRef(null);
@@ -52,6 +55,19 @@ const Sidebar = memo(function Sidebar({
                 <GlobalMap
                   latitude={location.latitude}
                   longitude={location.longitude}
+                  mapId="global"
+                  onLocationPick={onMapLocationPick}
+                  isPickingLocation={isMapPickLoading}
+                  pickStatus={
+                    mapPickStatus?.mapId === "global"
+                      ? mapPickStatus.status
+                      : "idle"
+                  }
+                  pickMessage={
+                    mapPickStatus?.mapId === "global"
+                      ? mapPickStatus.message
+                      : ""
+                  }
                 />
               </Suspense>
             ) : (
@@ -72,6 +88,19 @@ const Sidebar = memo(function Sidebar({
                   latitude={location.latitude}
                   longitude={location.longitude}
                   heading={heading}
+                  mapId="preview"
+                  onLocationPick={onMapLocationPick}
+                  isPickingLocation={isMapPickLoading}
+                  pickStatus={
+                    mapPickStatus?.mapId === "preview"
+                      ? mapPickStatus.status
+                      : "idle"
+                  }
+                  pickMessage={
+                    mapPickStatus?.mapId === "preview"
+                      ? mapPickStatus.message
+                      : ""
+                  }
                 />
               </Suspense>
             )}

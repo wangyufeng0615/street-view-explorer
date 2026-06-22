@@ -13,6 +13,7 @@ LOCAL_FRONTEND_PORT ?= 3100
 LOCAL_PROXY_URL ?= http://127.0.0.1:10086
 LOCAL_NO_PROXY ?= 127.0.0.1,localhost,::1
 DEV_PROXY_ENV := HTTP_PROXY=$(LOCAL_PROXY_URL) HTTPS_PROXY=$(LOCAL_PROXY_URL) ALL_PROXY=$(LOCAL_PROXY_URL) http_proxy=$(LOCAL_PROXY_URL) https_proxy=$(LOCAL_PROXY_URL) all_proxy=$(LOCAL_PROXY_URL) PROXY_URL=$(LOCAL_PROXY_URL) AI_PROXY_URL=$(LOCAL_PROXY_URL) MAPS_PROXY_URL=$(LOCAL_PROXY_URL) NO_PROXY=$(LOCAL_NO_PROXY) no_proxy=$(LOCAL_NO_PROXY)
+FRONTEND_DEV_ENV := $(DEV_PROXY_ENV) VITE_API_PROXY_TARGET=http://$(LOCAL_BACKEND_ADDRESS)
 REMOTE_HOST ?= kr
 REMOTE_DIR ?= /root/street-view-explorer
 REMOTE_BRANCH ?= main
@@ -26,7 +27,7 @@ HEALTH_TIMEOUT ?= 240
 dev:
 	@trap 'kill 0' INT TERM; \
 	(cd backend && env $(DEV_PROXY_ENV) SERVER_ADDRESS=$(LOCAL_BACKEND_ADDRESS) go run cmd/server/main.go 2>&1 | sed 's/^/[BE] /') & \
-	(cd frontend && env $(DEV_PROXY_ENV) VITE_DEV_PORT=$(LOCAL_FRONTEND_PORT) yarn dev --host $(LOCAL_FRONTEND_HOST) --port $(LOCAL_FRONTEND_PORT) --strictPort 2>&1 | sed 's/^/[FE] /') & \
+	(cd frontend && env $(FRONTEND_DEV_ENV) VITE_DEV_PORT=$(LOCAL_FRONTEND_PORT) yarn dev --host $(LOCAL_FRONTEND_HOST) --port $(LOCAL_FRONTEND_PORT) --strictPort 2>&1 | sed 's/^/[FE] /') & \
 	wait
 
 dev-open:
@@ -122,6 +123,6 @@ frontend-dev:
 	else \
 		rm -f "$(FRONTEND_PID)"; \
 		echo "启动 Frontend..."; \
-		(cd frontend && { nohup env $(DEV_PROXY_ENV) VITE_DEV_PORT=$(LOCAL_FRONTEND_PORT) yarn dev --host $(LOCAL_FRONTEND_HOST) --port $(LOCAL_FRONTEND_PORT) --strictPort > "$(FRONTEND_LOG)" 2>&1 & echo $$! > "$(FRONTEND_PID)"; }); \
+		(cd frontend && { nohup env $(FRONTEND_DEV_ENV) VITE_DEV_PORT=$(LOCAL_FRONTEND_PORT) yarn dev --host $(LOCAL_FRONTEND_HOST) --port $(LOCAL_FRONTEND_PORT) --strictPort > "$(FRONTEND_LOG)" 2>&1 & echo $$! > "$(FRONTEND_PID)"; }); \
 		echo "Frontend 已启动 (PID: $$(cat "$(FRONTEND_PID)"))"; \
 	fi

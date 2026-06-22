@@ -107,12 +107,20 @@ export async function lookupLocation(
   lng,
   language = null,
   source = "lookup",
+  scope = "nearby",
 ) {
   const lang = language || getCurrentLanguage();
+  const params = new URLSearchParams({
+    lat: String(lat),
+    lng: String(lng),
+    lang,
+    source,
+    scope,
+  });
 
   try {
     const resp = await fetchWithTimeout(
-      `${API_V1}/locations/lookup?lat=${lat}&lng=${lng}&lang=${lang}&source=${encodeURIComponent(source)}`,
+      `${API_V1}/locations/lookup?${params.toString()}`,
       {
         method: "GET",
         headers: getHeaders(),

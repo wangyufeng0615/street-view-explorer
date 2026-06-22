@@ -3,6 +3,7 @@ import React, {
   useCallback,
   useMemo,
   useRef,
+  useState,
   memo,
   lazy,
   Suspense,
@@ -95,11 +96,21 @@ function getCurrentRouteTarget(pathname) {
 }
 
 export default function HomePage({ showFootprintFromRoute = false }) {
-  const { i18n } = useTranslation();
+  const { i18n, t } = useTranslation();
   const navigate = useNavigate();
   const loadLocationFromURL = useStore((state) => state.loadLocationFromURL);
+  const loadLocationFromMapPick = useStore(
+    (state) => state.loadLocationFromMapPick,
+  );
+  const isMapLocationLoading = useStore((state) => state.isMapLocationLoading);
   const urlLocationRef = useRef(getLocationFromURL());
   const hasLoadedInitialLocationRef = useRef(false);
+  const mapPickResetTimerRef = useRef(null);
+  const [mapPickStatus, setMapPickStatus] = useState({
+    status: "idle",
+    mapId: null,
+    message: "",
+  });
   const activeLanguage = i18n.resolvedLanguage || i18n.language || "en";
   const isLanguageReady = i18n.isInitialized && Boolean(activeLanguage);
 
@@ -165,6 +176,72 @@ export default function HomePage({ showFootprintFromRoute = false }) {
   const handleCloseFootprint = useCallback(() => {
     navigate(getCurrentRouteTarget("/"));
   }, [navigate]);
+
+  const clearMapPickResetTimer = useCallback(() => {
+    if (mapPickResetTimerRef.current) {
+      clearTimeout(mapPickResetTimerRef.current);
+      mapPickResetTimerRef.current = null;
+    }
+  }, []);
+
+  const resetMapPickStatusSoon = useCallback(
+    (delay = 2200) => {
+      clearMapPickResetTimer();
+      mapPickResetTimerRef.current = setTimeout(() => {
+        setMapPickStatus({
+          status: "idle",
+          mapId: null,
+          message: "",
+        });
+      }, delay);
+    },
+    [clearMapPickResetTimer],
+  );
+
+  const handleMapLocationPick = useCallback(
+    async ({ lat, lng, mapId }) => {
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+        return;
+      }
+
+      clearMapPickResetTimer();
+      setMapPickStatus({
+        status: "loading",
+        mapId,
+        message: t("mapPicker.finding"),
+      });
+
+      const result = await loadLocationFromMapPick(lat, lng);
+      if (result?.success) {
+        setMapPickStatus({
+          status: "success",
+          mapId,
+          message: t("mapPicker.ready"),
+        });
+        resetMapPickStatusSoon(1500);
+        return;
+      }
+
+      setMapPickStatus({
+        status: "error",
+        mapId,
+        message: result?.error || t("mapPicker.failed"),
+      });
+      resetMapPickStatusSoon(3600);
+    },
+    [
+      clearMapPickResetTimer,
+      loadLocationFromMapPick,
+      resetMapPickStatusSoon,
+      t,
+    ],
+  );
+
+  useEffect(() => {
+    return () => {
+      clearMapPickResetTimer();
+    };
+  }, [clearMapPickResetTimer]);
 
   // Debounced location description loading
   useEffect(() => {
@@ -340,6 +417,9 @@ export default function HomePage({ showFootprintFromRoute = false }) {
           descError={descError}
           descRetries={descRetries}
           onRetryDescription={handleRetryDescription}
+          onMapLocationPick={handleMapLocationPick}
+          isMapPickLoading={isMapLocationLoading}
+          mapPickStatus={mapPickStatus}
         />
       </div>
 

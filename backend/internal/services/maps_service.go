@@ -145,6 +145,23 @@ func (s *MapsService) FindNearbyStreetView(ctx context.Context, latitude, longit
 	return s.findStreetView(ctx, latitude, longitude, searchRadii, false)
 }
 
+// FindNearestStreetView 从近到远查找街景，尽量返回点击点附近最近的可用全景图。
+func (s *MapsService) FindNearestStreetView(ctx context.Context, latitude, longitude float64) (bool, float64, float64, string) {
+	searchRadii := []int{
+		100,
+		500,
+		1000,
+		5000,
+		10000,
+		50000,
+		200000,
+		1000000,
+		5000000,
+		20037500,
+	}
+	return s.findStreetView(ctx, latitude, longitude, searchRadii, false)
+}
+
 func (s *MapsService) findStreetView(ctx context.Context, latitude, longitude float64, searchRadii []int, allowGlobalFallback bool) (bool, float64, float64, string) {
 	for _, radius := range searchRadii {
 		streetViewURL := fmt.Sprintf(

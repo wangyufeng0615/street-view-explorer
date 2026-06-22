@@ -39,11 +39,21 @@
   }
 
   .sidebar-scroll {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+    align-items: start !important;
+    column-gap: 8px !important;
+    row-gap: 6px !important;
     padding: 8px 10px calc(8px + env(safe-area-inset-bottom)) !important;
   }
 
   .sidebar-section {
-    margin-bottom: 6px !important;
+    min-width: 0 !important;
+    margin-bottom: 0 !important;
+  }
+
+  .sidebar-section--ai {
+    grid-column: 1 / -1 !important;
   }
 
   .sidebar-map-container {
