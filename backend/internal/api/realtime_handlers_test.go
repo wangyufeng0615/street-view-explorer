@@ -156,3 +156,16 @@ func TestDoubaoTTSConfigReadsAppIDAndTokenAliases(t *testing.T) {
 		t.Fatalf("AccessKey = %q", config.AccessKey)
 	}
 }
+
+func TestDoubaoTTSConfigRejectsAudioGenerationResource(t *testing.T) {
+	t.Setenv("DOUBAO_TTS_API_KEY", "test-api-key")
+	t.Setenv("DOUBAO_TTS_RESOURCE_ID", "doubao-seed-audio-1-0")
+
+	config := doubaoTTSConfigFromEnv()
+	if err := config.validate(); err == nil {
+		t.Fatal("expected audio generation resource to be rejected")
+	}
+	if warning := doubaoTTSResourceWarning(config.ResourceID); warning == "" {
+		t.Fatal("expected resource warning")
+	}
+}

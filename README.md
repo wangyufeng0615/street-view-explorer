@@ -111,7 +111,7 @@ Backend variables live in `backend/.env`.
 | `SQLITE_PATH` | No | SQLite database path, default `data/streetview.db`. |
 | `AI_API_KEY` | Yes | OpenRouter key used by AI services. |
 | `OPENAI_API_KEY` or `REALTIME_API_KEY` | No | OpenAI key for Atlas Voice / Realtime. Required only when voice is enabled. |
-| `OPENAI_REALTIME_MODEL` | No | Realtime voice model, default `gpt-realtime-2`. |
+| `OPENAI_REALTIME_MODEL` | No | Realtime voice model, default `gpt-realtime-2.1`. |
 | `OPENAI_REALTIME_API_BASE`, `OPENAI_REALTIME_WS_URL` | No | Optional Realtime API base or explicit WebSocket URL override. Normally leave unset. |
 | `OPENAI_REALTIME_VOICE` | No | Realtime output voice, default `cedar`. |
 | `OPENAI_REALTIME_TRANSCRIPTION_MODEL` | No | Input transcription model, default `gpt-4o-mini-transcribe`. |

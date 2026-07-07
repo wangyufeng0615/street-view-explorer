@@ -31,11 +31,13 @@ const (
 )
 
 type realtimeVoiceConfigResponse struct {
-	Provider         string `json:"provider"`
-	DoubaoConfigured bool   `json:"doubao_configured"`
-	DoubaoSpeaker    string `json:"doubao_speaker,omitempty"`
-	DoubaoFormat     string `json:"doubao_format,omitempty"`
-	DoubaoSampleRate int    `json:"doubao_sample_rate,omitempty"`
+	Provider              string `json:"provider"`
+	DoubaoConfigured      bool   `json:"doubao_configured"`
+	DoubaoSpeaker         string `json:"doubao_speaker,omitempty"`
+	DoubaoResourceID      string `json:"doubao_resource_id,omitempty"`
+	DoubaoResourceWarning string `json:"doubao_resource_warning,omitempty"`
+	DoubaoFormat          string `json:"doubao_format,omitempty"`
+	DoubaoSampleRate      int    `json:"doubao_sample_rate,omitempty"`
 }
 
 type doubaoTTSRequest struct {
@@ -87,11 +89,13 @@ func (h *RealtimeHandlers) GetVoiceConfig(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data": realtimeVoiceConfigResponse{
-			Provider:         atlasVoiceProvider(),
-			DoubaoConfigured: config.configured(),
-			DoubaoSpeaker:    config.Speaker,
-			DoubaoFormat:     config.Format,
-			DoubaoSampleRate: config.SampleRate,
+			Provider:              atlasVoiceProvider(),
+			DoubaoConfigured:      config.configured(),
+			DoubaoSpeaker:         config.Speaker,
+			DoubaoResourceID:      config.ResourceID,
+			DoubaoResourceWarning: doubaoTTSResourceWarning(config.ResourceID),
+			DoubaoFormat:          config.Format,
+			DoubaoSampleRate:      config.SampleRate,
 		},
 	})
 }
@@ -356,10 +360,21 @@ func (c doubaoTTSConfig) validate() error {
 	if !c.configured() {
 		return errors.New("Doubao TTS is not configured. Set DOUBAO_TTS_API_KEY, or DOUBAO_TTS_APP_ID plus DOUBAO_TTS_ACCESS_KEY/DOUBAO_TTS_TOKEN")
 	}
+	if warning := doubaoTTSResourceWarning(c.ResourceID); warning != "" {
+		return errors.New(warning)
+	}
 	if c.Format != "pcm" {
 		return errors.New("Atlas Doubao voice currently supports pcm output only")
 	}
 	return nil
+}
+
+func doubaoTTSResourceWarning(resourceID string) string {
+	resource := strings.ToLower(strings.TrimSpace(resourceID))
+	if resource == "doubao-seed-audio-1-0" || strings.HasPrefix(resource, "doubao-seed-audio-") {
+		return "doubao-seed-audio-1-0 is an audio generation model, not a Doubao TTS 2.0 resource. Do not use it as DOUBAO_TTS_RESOURCE_ID for the current /realtime/doubao-tts path."
+	}
+	return ""
 }
 
 func doubaoTTSConfigFromEnv() doubaoTTSConfig {

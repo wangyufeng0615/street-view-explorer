@@ -22,7 +22,7 @@ import (
 )
 
 const (
-	defaultRealtimeModel              = "gpt-realtime-2"
+	defaultRealtimeModel              = "gpt-realtime-2.1"
 	defaultRealtimeVoice              = "marin"
 	defaultRealtimeTranscriptionModel = "gpt-4o-mini-transcribe"
 )
