@@ -156,39 +156,31 @@
 
 /* —— 加载 / 错误 / 空态 —— */
 
-.ai-loading-container {
-    padding: 6px 0 2px;
+.atlas-thinking-indicator {
     display: flex;
     align-items: center;
-    justify-content: flex-start;
     gap: 9px;
+    min-height: 54px;
+    padding: 10px 2px;
+    color: var(--atlas-ink);
 }
 
-.loading-message {
-    color: var(--atlas-ink-soft);
-    font-size: 13px;
-    font-style: italic;
-    line-height: 1.45;
-    font-family:
-        "Source Han Serif SC",
-        "Songti SC",
-        Georgia,
-        "PingFang SC",
-        serif;
-    animation: fadeInOut 2s ease-in-out infinite;
-}
-
-.thinking-icon {
-    width: 22px;
-    height: 22px;
+.atlas-thinking-mark {
+    width: 27px;
+    height: 27px;
     display: flex;
     align-items: center;
     justify-content: center;
-    flex-shrink: 0;
-    color: var(--atlas-accent);
-    background: rgba(168, 80, 42, 0.08);
-    border: 1px solid rgba(168, 80, 42, 0.22);
+    color: var(--atlas-accent-deep);
+    border: 1px solid rgba(168, 80, 42, 0.34);
     border-radius: 50%;
+    flex: 0 0 auto;
+    animation: atlasThinkingBreathe 2.2s ease-in-out infinite;
+}
+
+.atlas-thinking-mark svg {
+    width: 14px;
+    height: 14px;
 }
 
 /* 罗盘指针来回找北 */
@@ -197,20 +189,43 @@
     animation: compassSeek 2.2s ease-in-out infinite;
 }
 
+.atlas-thinking-title {
+    color: var(--atlas-ink-soft);
+    font-size: 13px;
+    font-weight: 500;
+    font-style: italic;
+    line-height: 1.4;
+    letter-spacing: 0.02em;
+    font-family:
+        "Source Han Serif SC",
+        "Songti SC",
+        Georgia,
+        "PingFang SC",
+        serif;
+    animation: atlasThinkingText 2.2s ease-in-out infinite;
+}
+
+.atlas-thinking-indicator--detailed {
+    min-height: 48px;
+    margin-top: 10px;
+    padding: 9px 2px 4px;
+    border-top: 1px solid var(--atlas-rule-soft);
+    scroll-margin-block: 12px;
+}
+
 @keyframes compassSeek {
     0%, 100% { transform: rotate(-32deg); }
     50% { transform: rotate(46deg); }
 }
 
-@keyframes fadeInOut {
-    0%, 100% {
-        opacity: 0.55;
-        transform: translateY(0);
-    }
-    50% {
-        opacity: 1;
-        transform: translateY(-1px);
-    }
+@keyframes atlasThinkingBreathe {
+    0%, 100% { opacity: 0.55; transform: scale(0.96); }
+    50% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes atlasThinkingText {
+    0%, 100% { opacity: 0.58; }
+    50% { opacity: 0.92; }
 }
 
 .ai-error {
@@ -322,17 +337,6 @@
 }
 
 /* —— 深度解读 —— */
-
-.detailed-loading-container {
-    margin-top: 10px;
-    padding: 8px 10px;
-    background: rgba(168, 80, 42, 0.05);
-    border: 1px solid rgba(168, 80, 42, 0.16);
-    border-radius: 4px;
-    display: flex;
-    align-items: center;
-    gap: 9px;
-}
 
 .detailed-error-container {
     margin-top: 10px;
@@ -504,6 +508,20 @@
         padding: 10px 11px 11px;
     }
 
+    .atlas-thinking-indicator {
+        min-height: 46px;
+        padding: 8px 1px;
+    }
+
+    .atlas-thinking-title {
+        font-size: 12.5px;
+    }
+
+    .atlas-thinking-indicator--detailed {
+        min-height: 44px;
+        padding-bottom: 2px;
+    }
+
     .ai-content {
         font-size: 13px;
     }
@@ -537,5 +555,13 @@
     .citation-link {
         font-size: 11px;
         max-width: 150px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .atlas-thinking-mark,
+    .atlas-thinking-title,
+    .compass-needle {
+        animation: none !important;
     }
 }

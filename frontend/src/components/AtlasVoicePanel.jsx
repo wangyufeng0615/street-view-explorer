@@ -1,9 +1,16 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useTranslation } from "react-i18next";
 import {
   createRealtimeClientSecret,
   deleteExplorationPreference,
   getRealtimeVoiceConfig,
+  getStreetViewFrameDataURL,
   searchLocation,
   setExplorationPreference,
   synthesizeDoubaoTTSStream,
@@ -17,9 +24,12 @@ import {
 import {
   MIC_AUDIO_CONSTRAINTS,
   buildRealtimeTurnDetection,
+  buildRealtimeSceneContextEvent,
+  buildStreetViewSceneSignature,
   buildVoiceContextSignature,
   nextDoubaoSpeechQueue,
   realtimeAudioMaxBufferedBytes,
+  resolveStreetViewScene,
   shouldDeferVoiceSessionUpdate,
   shouldDropRealtimeAudioFrame,
   shouldIgnoreAssistantEcho,
@@ -28,10 +38,12 @@ import "../styles/AtlasVoicePanel.css";
 
 const REALTIME_CALLS_URL = "/api/v1/realtime/calls";
 const REALTIME_WS_PATH = "/api/v1/realtime/ws";
-const REALTIME_TRANSPORT = import.meta.env.VITE_REALTIME_TRANSPORT || "backend-ws";
+const REALTIME_TRANSPORT =
+  import.meta.env.VITE_REALTIME_TRANSPORT || "backend-ws";
 const REALTIME_AUDIO_SAMPLE_RATE = 24000;
-const REALTIME_AUDIO_MAX_BUFFERED_BYTES =
-  realtimeAudioMaxBufferedBytes(import.meta.env);
+const REALTIME_AUDIO_MAX_BUFFERED_BYTES = realtimeAudioMaxBufferedBytes(
+  import.meta.env,
+);
 const REALTIME_TRANSCRIPTION_MODEL =
   import.meta.env.VITE_REALTIME_TRANSCRIPTION_MODEL || "gpt-4o-mini-transcribe";
 const REALTIME_VOICE = import.meta.env.VITE_REALTIME_VOICE || "cedar";
@@ -40,8 +52,10 @@ const REALTIME_OUTPUT_SPEED =
 const REALTIME_TURN_DETECTION = buildRealtimeTurnDetection(import.meta.env);
 const REALTIME_RESPONSE_WATCHDOG_MS = Math.max(
   4000,
-  Number.parseInt(import.meta.env.VITE_REALTIME_RESPONSE_WATCHDOG_MS || "9000", 10) ||
-    9000,
+  Number.parseInt(
+    import.meta.env.VITE_REALTIME_RESPONSE_WATCHDOG_MS || "9000",
+    10,
+  ) || 9000,
 );
 const ASSISTANT_ECHO_TAIL_MS = Math.max(
   0,
@@ -76,6 +90,15 @@ const directionWords = {
   right: 90,
   back: 180,
 };
+
+const SCENE_CHANGING_ACTIONS = new Set([
+  "loaded_random_location",
+  "loaded_interest_location",
+  "loaded_coordinates",
+  "loaded_place_search",
+  "wandered_nearby",
+  "updated_heading",
+]);
 
 const TEXT = {
   zh: {
@@ -112,7 +135,8 @@ const TEXT = {
     micError: "Could not access microphone",
     openaiError: "Realtime connection failed",
     ttsError: "Doubao speech synthesis failed",
-    ttsMissingCredentials: "Doubao speech is not configured yet, so I kept the text reply.",
+    ttsMissingCredentials:
+      "Doubao speech is not configured yet, so I kept the text reply.",
     responseTimeout: "I think I got stuck for a second. Say that again?",
     noLocation: "No location is loaded yet.",
   },
@@ -137,69 +161,46 @@ const MicGlyph = () => (
 );
 
 const StopGlyph = () => (
-  <svg width="9" height="9" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
+  <svg
+    width="9"
+    height="9"
+    viewBox="0 0 12 12"
+    fill="currentColor"
+    aria-hidden="true"
+  >
     <rect x="1.5" y="1.5" width="9" height="9" rx="2" />
   </svg>
 );
 
-const TOOL_DEFINITIONS = [
+export const TOOL_DEFINITIONS = [
   {
     type: "function",
-    name: "explore_random",
-    description: "Load a fresh random Street View location.",
-    parameters: {
-      type: "object",
-      properties: {},
-    },
-  },
-  {
-    type: "function",
-    name: "explore_interest",
+    name: "navigate",
     description:
-      "Explore a place matching the user's spoken theme, place, region, mood, or curiosity.",
+      "Perform exactly one location-changing action. Pick one mode: random for a fresh surprise, theme for a broad kind of place, place for a concrete named target, coordinates for exact latitude/longitude, or nearby for a short walk from the current scene. Never retry with another mode in the same user turn.",
     parameters: {
       type: "object",
       properties: {
-        interest: {
+        mode: {
           type: "string",
-          description: "The user's requested place or exploration theme.",
+          enum: ["random", "theme", "place", "coordinates", "nearby"],
+          description: "The single navigation intent for this turn.",
         },
-      },
-      required: ["interest"],
-    },
-  },
-  {
-    type: "function",
-    name: "go_to_place",
-    description:
-      "Open a concrete real-world place, landmark, business, address, or exact coordinates in Street View. Use this for specific targets, not broad exploration themes.",
-    parameters: {
-      type: "object",
-      properties: {
         query: {
           type: "string",
           description:
-            "A specific place, landmark, business, or address to search online, such as 'Cromwell fruit sculpture New Zealand'.",
+            "For theme mode, the broad exploration theme. For place mode, the concrete landmark, business, address, or place name to search.",
         },
         lat: {
           type: "number",
-          description: "Optional latitude, between -90 and 90.",
+          description:
+            "Required for coordinates mode; latitude between -90 and 90.",
         },
         lng: {
           type: "number",
-          description: "Optional longitude, between -180 and 180.",
+          description:
+            "Required for coordinates mode; longitude between -180 and 180.",
         },
-      },
-    },
-  },
-  {
-    type: "function",
-    name: "wander_nearby",
-    description:
-      "Move to a nearby Street View point when the user wants to walk around, go forward, follow the road, wander nearby, or try another nearby corner.",
-    parameters: {
-      type: "object",
-      properties: {
         direction: {
           type: "string",
           enum: [
@@ -225,6 +226,7 @@ const TOOL_DEFINITIONS = [
             "Approximate distance to move. Keep it small for walking, usually 120-450.",
         },
       },
+      required: ["mode"],
     },
   },
   {
@@ -256,7 +258,8 @@ const TOOL_DEFINITIONS = [
         },
         heading: {
           type: "number",
-          description: "Absolute heading in degrees, where 0 is north and 90 is east.",
+          description:
+            "Absolute heading in degrees, where 0 is north and 90 is east.",
         },
       },
     },
@@ -284,7 +287,9 @@ function normalizeVoiceProvider(provider) {
 }
 
 function normalizeVoiceConfig(config) {
-  const providerOverride = normalizeVoiceProvider(VOICE_PROVIDER_OVERRIDE || "");
+  const providerOverride = normalizeVoiceProvider(
+    VOICE_PROVIDER_OVERRIDE || "",
+  );
   const hasOverride = Boolean(VOICE_PROVIDER_OVERRIDE);
   return {
     ...DEFAULT_VOICE_CONFIG,
@@ -300,7 +305,9 @@ function normalizeHeading(heading) {
 }
 
 function headingFromDirection(direction, currentHeading) {
-  const normalized = String(direction || "").toLowerCase().replace(/[\s_-]/g, "");
+  const normalized = String(direction || "")
+    .toLowerCase()
+    .replace(/[\s_-]/g, "");
   const absoluteDirections = {
     north: 0,
     northeast: 45,
@@ -324,7 +331,9 @@ function headingFromDirection(direction, currentHeading) {
   };
 
   if (Object.prototype.hasOwnProperty.call(relativeTurns, normalized)) {
-    return normalizeHeading(Number(currentHeading || 0) + relativeTurns[normalized]);
+    return normalizeHeading(
+      Number(currentHeading || 0) + relativeTurns[normalized],
+    );
   }
 
   return null;
@@ -347,11 +356,17 @@ function saveVoiceMemory(memory) {
 }
 
 function appendVoiceMemory(memory, speaker, text) {
-  const cleanText = truncateAtlasText(String(text || "").replace(/\s+/g, " "), 260);
+  const cleanText = truncateAtlasText(
+    String(text || "").replace(/\s+/g, " "),
+    260,
+  );
   if (!cleanText) return memory || "";
 
   const nextLines = [
-    ...(memory || "").split("\n").map((line) => line.trim()).filter(Boolean),
+    ...(memory || "")
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean),
     `${speaker}: ${cleanText}`,
   ].slice(-MAX_MEMORY_LINES);
 
@@ -374,14 +389,16 @@ function destinationPoint(lat, lng, bearingDeg, distanceMeters) {
     Math.sin(lat1) * Math.cos(angularDistance) +
       Math.cos(lat1) * Math.sin(angularDistance) * Math.cos(bearing),
   );
-  const lng2 = lng1 + Math.atan2(
-    Math.sin(bearing) * Math.sin(angularDistance) * Math.cos(lat1),
-    Math.cos(angularDistance) - Math.sin(lat1) * Math.sin(lat2),
-  );
+  const lng2 =
+    lng1 +
+    Math.atan2(
+      Math.sin(bearing) * Math.sin(angularDistance) * Math.cos(lat1),
+      Math.cos(angularDistance) - Math.sin(lat1) * Math.sin(lat2),
+    );
 
   return {
     lat: (lat2 * 180) / Math.PI,
-    lng: ((((lng2 * 180) / Math.PI) + 540) % 360) - 180,
+    lng: (((lng2 * 180) / Math.PI + 540) % 360) - 180,
   };
 }
 
@@ -392,11 +409,15 @@ function clampNumber(value, min, max, fallback) {
 }
 
 function nearbyBearing(direction, currentHeading) {
-  const normalized = String(direction || "forward").toLowerCase().replace(/[\s_-]/g, "");
+  const normalized = String(direction || "forward")
+    .toLowerCase()
+    .replace(/[\s_-]/g, "");
   const baseHeading = Number(currentHeading || 0);
   if (Object.prototype.hasOwnProperty.call(directionWords, normalized)) {
     const value = directionWords[normalized];
-    const isRelative = ["forward", "left", "right", "back"].includes(normalized);
+    const isRelative = ["forward", "left", "right", "back"].includes(
+      normalized,
+    );
     return normalizeHeading((isRelative ? baseHeading : 0) + value);
   }
   return normalizeHeading(baseHeading + (Math.random() * 90 - 45));
@@ -412,7 +433,9 @@ function extractAssistantText(item) {
 }
 
 function extractToken(payload) {
-  return payload?.value || payload?.client_secret?.value || payload?.data?.value;
+  return (
+    payload?.value || payload?.client_secret?.value || payload?.data?.value
+  );
 }
 
 function realtimeWebSocketURL(locale) {
@@ -477,6 +500,7 @@ export default function AtlasVoicePanel() {
   const location = useStore((state) => state.location);
   const description = useStore((state) => state.description);
   const heading = useStore((state) => state.heading);
+  const streetViewView = useStore((state) => state.streetViewView);
   const showToastMessage = useStore((state) => state.showToastMessage);
 
   const [status, setStatus] = useState("idle");
@@ -505,6 +529,7 @@ export default function AtlasVoicePanel() {
   const doubaoSpeechQueueRef = useRef([]);
   const doubaoSpeechActiveRef = useRef(false);
   const handledCallIdsRef = useRef(new Set());
+  const navigationAttemptedRef = useRef(false);
   const deferredSessionUpdateRef = useRef(false);
   const currentContextSignatureRef = useRef("");
   const sentContextSignatureRef = useRef("");
@@ -517,15 +542,30 @@ export default function AtlasVoicePanel() {
   const voiceConfigRef = useRef(voiceConfig);
   const memoryRef = useRef(loadVoiceMemory());
   const sessionOutputConfiguredRef = useRef(false);
+  const sceneItemIdRef = useRef("");
+  const sceneItemCounterRef = useRef(0);
+  const sentSceneSignatureRef = useRef("");
+  const sceneAbortRef = useRef(null);
+  const sceneInFlightRef = useRef(null);
+  const sceneDebounceTimerRef = useRef(null);
 
   const currentContext = useMemo(
-    () => ({ location, description, heading }),
-    [description, heading, location],
+    () => ({ location, description, heading, streetViewView }),
+    [description, heading, location, streetViewView],
   );
   const contextSignature = useMemo(
     () => buildVoiceContextSignature(currentContext),
     [currentContext],
   );
+  const sceneContext = useMemo(
+    () => resolveStreetViewScene({ location, streetViewView, heading }),
+    [heading, location, streetViewView],
+  );
+  const sceneSignature = useMemo(
+    () => buildStreetViewSceneSignature(sceneContext),
+    [sceneContext],
+  );
+  const sceneSource = sceneContext?.source || "initial";
 
   useEffect(() => {
     statusRef.current = status;
@@ -574,9 +614,15 @@ export default function AtlasVoicePanel() {
       audioPlaybackTimeRef.current > now + 0.05;
     let audioEndMs = 0;
 
-    if (activeAudio?.startedAt !== null && Number.isFinite(activeAudio?.startedAt)) {
+    if (
+      activeAudio?.startedAt !== null &&
+      Number.isFinite(activeAudio?.startedAt)
+    ) {
       const playedUntil = Math.min(now, activeAudio.scheduledUntil || now);
-      audioEndMs = Math.max(0, Math.floor((playedUntil - activeAudio.startedAt) * 1000));
+      audioEndMs = Math.max(
+        0,
+        Math.floor((playedUntil - activeAudio.startedAt) * 1000),
+      );
     }
 
     assistantAudioSourcesRef.current.forEach((source) => {
@@ -595,7 +641,9 @@ export default function AtlasVoicePanel() {
     assistantAudioSourcesRef.current.clear();
     activeAssistantAudioRef.current = null;
     assistantSpeechStartedAtRef.current = null;
-    assistantSpeechEndedAtRef.current = hadAssistantAudio ? performance.now() : null;
+    assistantSpeechEndedAtRef.current = hadAssistantAudio
+      ? performance.now()
+      : null;
     audioPlaybackTimeRef.current = now;
 
     return { activeAudio, audioEndMs };
@@ -623,7 +671,10 @@ export default function AtlasVoicePanel() {
     clearResponseWatchdog();
     responseWatchdogTimerRef.current = window.setTimeout(() => {
       responseWatchdogTimerRef.current = null;
-      if (statusRef.current === "thinking" || statusRef.current === "listening") {
+      if (
+        statusRef.current === "thinking" ||
+        statusRef.current === "listening"
+      ) {
         setError(copy.responseTimeout);
         setStatus("connected");
       }
@@ -652,6 +703,100 @@ export default function AtlasVoicePanel() {
     return false;
   }, []);
 
+  const sendLatestSceneContext = useCallback(
+    async ({ allowAuto = false } = {}) => {
+      const state = useStore.getState();
+      const scene = resolveStreetViewScene({
+        location: state.location || state.currentLocationRef,
+        streetViewView: state.streetViewView,
+        heading: state.heading,
+      });
+      const signature = buildStreetViewSceneSignature(scene);
+      if (!scene || !signature) return false;
+      if (!allowAuto && scene.source === "auto" && sceneItemIdRef.current) {
+        return sentSceneSignatureRef.current === signature;
+      }
+      if (
+        sentSceneSignatureRef.current === signature &&
+        sceneItemIdRef.current
+      ) {
+        return true;
+      }
+
+      if (sceneInFlightRef.current?.signature === signature) {
+        return sceneInFlightRef.current.promise;
+      }
+
+      const promise = (async () => {
+        sceneAbortRef.current?.abort();
+        const controller = new AbortController();
+        sceneAbortRef.current = controller;
+        const frame = await getStreetViewFrameDataURL(
+          scene.panoId,
+          scene,
+          controller.signal,
+        );
+        if (controller.signal.aborted || !frame.success || !frame.data) {
+          if (
+            !controller.signal.aborted &&
+            sceneItemIdRef.current &&
+            sentSceneSignatureRef.current !== signature
+          ) {
+            sendEvent({
+              type: "conversation.item.delete",
+              item_id: sceneItemIdRef.current,
+            });
+            sceneItemIdRef.current = "";
+            sentSceneSignatureRef.current = "";
+          }
+          return false;
+        }
+
+        const latestState = useStore.getState();
+        const latestScene = resolveStreetViewScene({
+          location: latestState.location || latestState.currentLocationRef,
+          streetViewView: latestState.streetViewView,
+          heading: latestState.heading,
+        });
+        if (buildStreetViewSceneSignature(latestScene) !== signature) {
+          return false;
+        }
+
+        sceneItemCounterRef.current += 1;
+        const nextItemId = `atlas_scene_${Date.now()}_${sceneItemCounterRef.current}`;
+        const previousItemId = sceneItemIdRef.current;
+        const didSend = sendEvent(
+          buildRealtimeSceneContextEvent({
+            itemId: nextItemId,
+            imageDataUrl: frame.data,
+            scene,
+          }),
+        );
+        if (!didSend) return false;
+
+        sceneItemIdRef.current = nextItemId;
+        sentSceneSignatureRef.current = signature;
+        if (previousItemId) {
+          sendEvent({
+            type: "conversation.item.delete",
+            item_id: previousItemId,
+          });
+        }
+        return true;
+      })();
+
+      sceneInFlightRef.current = { signature, promise };
+      try {
+        return await promise;
+      } finally {
+        if (sceneInFlightRef.current?.promise === promise) {
+          sceneInFlightRef.current = null;
+        }
+      }
+    },
+    [sendEvent],
+  );
+
   const truncateAssistantPlayback = useCallback(() => {
     const { activeAudio, audioEndMs } = clearAssistantPlayback();
     if (!activeAudio?.itemId) return;
@@ -667,7 +812,8 @@ export default function AtlasVoicePanel() {
   const sendSessionUpdate = useCallback(() => {
     const state = useStore.getState();
     const useDoubaoSpeech = voiceConfigRef.current?.provider === "doubao";
-    const includeOutput = !useDoubaoSpeech && !sessionOutputConfiguredRef.current;
+    const includeOutput =
+      !useDoubaoSpeech && !sessionOutputConfiguredRef.current;
     const session = {
       type: "realtime",
       output_modalities: useDoubaoSpeech ? ["text"] : ["audio"],
@@ -735,7 +881,10 @@ export default function AtlasVoicePanel() {
 
   const isAssistantEchoTailActive = useCallback(() => {
     if (!assistantSpeechEndedAtRef.current) return false;
-    return performance.now() - assistantSpeechEndedAtRef.current < ASSISTANT_ECHO_TAIL_MS;
+    return (
+      performance.now() - assistantSpeechEndedAtRef.current <
+      ASSISTANT_ECHO_TAIL_MS
+    );
   }, []);
 
   const shouldSuppressMicForAssistantEcho = useCallback(() => {
@@ -749,7 +898,10 @@ export default function AtlasVoicePanel() {
     if (!deferredSessionUpdateRef.current || hasActiveAssistantSpeech()) {
       return;
     }
-    if (statusRef.current !== "connected" && statusRef.current !== "listening") {
+    if (
+      statusRef.current !== "connected" &&
+      statusRef.current !== "listening"
+    ) {
       return;
     }
     deferredSessionUpdateRef.current = false;
@@ -817,6 +969,35 @@ export default function AtlasVoicePanel() {
     status,
   ]);
 
+  useEffect(() => {
+    if (
+      !sceneSignature ||
+      status === "idle" ||
+      status === "connecting" ||
+      (sceneSource === "auto" && sceneItemIdRef.current)
+    ) {
+      return undefined;
+    }
+
+    if (sceneDebounceTimerRef.current) {
+      window.clearTimeout(sceneDebounceTimerRef.current);
+    }
+    sceneDebounceTimerRef.current = window.setTimeout(
+      () => {
+        sceneDebounceTimerRef.current = null;
+        void sendLatestSceneContext();
+      },
+      sceneSource === "initial" ? 0 : 850,
+    );
+
+    return () => {
+      if (sceneDebounceTimerRef.current) {
+        window.clearTimeout(sceneDebounceTimerRef.current);
+        sceneDebounceTimerRef.current = null;
+      }
+    };
+  }, [sceneSignature, sceneSource, sendLatestSceneContext, status]);
+
   const cleanupConnection = useCallback(() => {
     doubaoSpeechIdRef.current += 1;
     doubaoSpeechQueueRef.current = [];
@@ -837,6 +1018,15 @@ export default function AtlasVoicePanel() {
     }
     clearAssistantPlayback();
     sessionOutputConfiguredRef.current = false;
+    sceneAbortRef.current?.abort();
+    sceneAbortRef.current = null;
+    sceneInFlightRef.current = null;
+    if (sceneDebounceTimerRef.current) {
+      window.clearTimeout(sceneDebounceTimerRef.current);
+      sceneDebounceTimerRef.current = null;
+    }
+    sceneItemIdRef.current = "";
+    sentSceneSignatureRef.current = "";
 
     const channel = channelRef.current;
     if (channel) {
@@ -888,6 +1078,7 @@ export default function AtlasVoicePanel() {
     audioPlaybackTimeRef.current = 0;
 
     handledCallIdsRef.current.clear();
+    navigationAttemptedRef.current = false;
   }, [clearAssistantPlayback, clearResponseWatchdog]);
 
   const getAudioContext = useCallback(() => {
@@ -927,10 +1118,12 @@ export default function AtlasVoicePanel() {
           audioContext.sampleRate,
           REALTIME_AUDIO_SAMPLE_RATE,
         );
-        socket.send(JSON.stringify({
-          type: "input_audio_buffer.append",
-          audio: bytesToBase64(floatTo16BitPCM(resampled)),
-        }));
+        socket.send(
+          JSON.stringify({
+            type: "input_audio_buffer.append",
+            audio: bytesToBase64(floatTo16BitPCM(resampled)),
+          }),
+        );
       };
 
       source.connect(processor);
@@ -950,22 +1143,24 @@ export default function AtlasVoicePanel() {
       if (!delta) return;
       const audioContext = getAudioContext();
       const samples = base64ToFloat32PCM(delta);
-      const sampleRate = Number(event.sample_rate) || REALTIME_AUDIO_SAMPLE_RATE;
-      const buffer = audioContext.createBuffer(
-        1,
-        samples.length,
-        sampleRate,
-      );
+      const sampleRate =
+        Number(event.sample_rate) || REALTIME_AUDIO_SAMPLE_RATE;
+      const buffer = audioContext.createBuffer(1, samples.length, sampleRate);
       buffer.copyToChannel(samples, 0);
 
       const source = audioContext.createBufferSource();
       source.buffer = buffer;
       source.connect(audioContext.destination);
 
-      const startAt = Math.max(audioContext.currentTime, audioPlaybackTimeRef.current);
+      const startAt = Math.max(
+        audioContext.currentTime,
+        audioPlaybackTimeRef.current,
+      );
       const scheduledUntil = startAt + buffer.duration;
       const itemId = event.item_id || event.item?.id || null;
-      const contentIndex = Number.isInteger(event.content_index) ? event.content_index : 0;
+      const contentIndex = Number.isInteger(event.content_index)
+        ? event.content_index
+        : 0;
       const playbackWasIdle =
         assistantAudioSourcesRef.current.size === 0 &&
         audioPlaybackTimeRef.current <= audioContext.currentTime + 0.05;
@@ -1068,7 +1263,8 @@ export default function AtlasVoicePanel() {
           let buffer = "";
 
           const handleLine = (line) => {
-            if (!line.trim() || doubaoSpeechIdRef.current !== generation) return;
+            if (!line.trim() || doubaoSpeechIdRef.current !== generation)
+              return;
             let event;
             try {
               event = JSON.parse(line);
@@ -1103,7 +1299,10 @@ export default function AtlasVoicePanel() {
             handleLine(buffer);
           }
         } catch (err) {
-          if (err.name === "AbortError" || doubaoSpeechIdRef.current !== generation) {
+          if (
+            err.name === "AbortError" ||
+            doubaoSpeechIdRef.current !== generation
+          ) {
             break;
           }
           setError(err.message || copy.ttsError);
@@ -1140,10 +1339,13 @@ export default function AtlasVoicePanel() {
       }
 
       doubaoSpeechItemIdRef.current += 1;
-      doubaoSpeechQueueRef.current = nextDoubaoSpeechQueue(doubaoSpeechQueueRef.current, {
-        id: doubaoSpeechItemIdRef.current,
-        text: cleanText,
-      });
+      doubaoSpeechQueueRef.current = nextDoubaoSpeechQueue(
+        doubaoSpeechQueueRef.current,
+        {
+          id: doubaoSpeechItemIdRef.current,
+          text: cleanText,
+        },
+      );
       setStatus("speaking");
       void drainDoubaoSpeechQueue();
     },
@@ -1174,11 +1376,28 @@ export default function AtlasVoicePanel() {
       const state = useStore.getState();
       const language = getLocale(i18n.resolvedLanguage || i18n.language);
 
+      const legacyModes = {
+        explore_random: "random",
+        explore_interest: "theme",
+        go_to_place: Number.isFinite(Number(args?.lat))
+          ? "coordinates"
+          : "place",
+        wander_nearby: "nearby",
+      };
+      if (Object.prototype.hasOwnProperty.call(legacyModes, name)) {
+        args = {
+          ...(args || {}),
+          mode: legacyModes[name],
+          query: args?.query || args?.interest,
+        };
+        name = "navigate";
+      }
+
       if (name === "read_current_place") {
         return summarizeCurrentPlace();
       }
 
-      if (name === "explore_random") {
+      if (name === "navigate" && args?.mode === "random") {
         await deleteExplorationPreference(language);
         window.localStorage?.setItem("exploration_mode", "random");
         window.localStorage?.removeItem("exploration_interest");
@@ -1188,6 +1407,7 @@ export default function AtlasVoicePanel() {
           preferenceError: null,
         });
         await useStore.getState().loadRandomLocation(true);
+        void sendLatestSceneContext({ allowAuto: true });
         return {
           success: true,
           action: "loaded_random_location",
@@ -1195,10 +1415,15 @@ export default function AtlasVoicePanel() {
         };
       }
 
-      if (name === "explore_interest") {
-        const interest = String(args?.interest || "").trim();
+      if (name === "navigate" && args?.mode === "theme") {
+        const interest = String(args?.query || "").trim();
         if (!interest) {
-          return { success: false, error: "Missing interest" };
+          return {
+            success: false,
+            error: "Missing exploration theme",
+            terminal: true,
+            retry_allowed: false,
+          };
         }
 
         const preference = await setExplorationPreference(interest, language);
@@ -1206,6 +1431,8 @@ export default function AtlasVoicePanel() {
           return {
             success: false,
             error: preference.error || "Failed to set exploration preference",
+            terminal: true,
+            retry_allowed: false,
           };
         }
 
@@ -1217,6 +1444,7 @@ export default function AtlasVoicePanel() {
           preferenceError: null,
         });
         await useStore.getState().loadRandomLocation(true);
+        void sendLatestSceneContext({ allowAuto: true });
         return {
           success: true,
           action: "loaded_interest_location",
@@ -1225,7 +1453,10 @@ export default function AtlasVoicePanel() {
         };
       }
 
-      if (name === "go_to_place") {
+      if (
+        name === "navigate" &&
+        ["place", "coordinates"].includes(args?.mode)
+      ) {
         const lat = Number(args?.lat);
         const lng = Number(args?.lng);
         const hasCoordinates =
@@ -1236,19 +1467,31 @@ export default function AtlasVoicePanel() {
           lng >= -180 &&
           lng <= 180;
 
-        if (hasCoordinates) {
+        if (args?.mode === "coordinates" && hasCoordinates) {
           await state.loadLocationFromURL(lat, lng);
           const nextLocation = useStore.getState().location;
           if (!nextLocation?.pano_id) {
             return {
               success: false,
               error: "Could not find Street View near those coordinates",
+              terminal: true,
+              retry_allowed: false,
             };
           }
+          void sendLatestSceneContext({ allowAuto: true });
           return {
             success: true,
             action: "loaded_coordinates",
             ...summarizeCurrentPlace(),
+          };
+        }
+
+        if (args?.mode === "coordinates") {
+          return {
+            success: false,
+            error: "Coordinates mode requires a valid latitude and longitude.",
+            terminal: true,
+            retry_allowed: false,
           };
         }
 
@@ -1257,6 +1500,8 @@ export default function AtlasVoicePanel() {
           return {
             success: false,
             error: "Provide a concrete place query or valid coordinates.",
+            terminal: true,
+            retry_allowed: false,
           };
         }
 
@@ -1266,13 +1511,20 @@ export default function AtlasVoicePanel() {
             success: false,
             error: result.error || "Could not find that place",
             place: result.place || null,
+            terminal: true,
+            retry_allowed: false,
           };
         }
 
         const locLat = Number(result.data.latitude);
         const locLng = Number(result.data.longitude);
         if (!Number.isFinite(locLat) || !Number.isFinite(locLng)) {
-          return { success: false, error: "Search returned invalid coordinates" };
+          return {
+            success: false,
+            error: "Search returned invalid coordinates",
+            terminal: true,
+            retry_allowed: false,
+          };
         }
 
         const locationData = {
@@ -1286,7 +1538,9 @@ export default function AtlasVoicePanel() {
           locationError: null,
           description: null,
           descriptionError: null,
+          streetViewView: null,
         });
+        void sendLatestSceneContext({ allowAuto: true });
 
         return {
           success: true,
@@ -1297,7 +1551,7 @@ export default function AtlasVoicePanel() {
         };
       }
 
-      if (name === "wander_nearby") {
+      if (name === "navigate" && args?.mode === "nearby") {
         if (!state.location) {
           return { success: false, message: copy.noLocation };
         }
@@ -1305,7 +1559,10 @@ export default function AtlasVoicePanel() {
         const startLat = Number(state.location.latitude);
         const startLng = Number(state.location.longitude);
         if (!Number.isFinite(startLat) || !Number.isFinite(startLng)) {
-          return { success: false, error: "Current location has invalid coordinates" };
+          return {
+            success: false,
+            error: "Current location has invalid coordinates",
+          };
         }
 
         const distanceMeters = clampNumber(args?.distance_meters, 80, 900, 240);
@@ -1321,6 +1578,7 @@ export default function AtlasVoicePanel() {
           await useStore.getState().loadLocationFromURL(next.lat, next.lng);
           const nextLocation = useStore.getState().location;
           if (nextLocation?.pano_id) {
+            void sendLatestSceneContext({ allowAuto: true });
             return {
               success: true,
               action: "wandered_nearby",
@@ -1335,6 +1593,17 @@ export default function AtlasVoicePanel() {
           success: false,
           error: "Could not find nearby Street View after a few tries",
           original_location: formatAtlasLocation(state.location),
+          terminal: true,
+          retry_allowed: false,
+        };
+      }
+
+      if (name === "navigate") {
+        return {
+          success: false,
+          error: "Unknown navigation mode",
+          terminal: true,
+          retry_allowed: false,
         };
       }
 
@@ -1357,6 +1626,15 @@ export default function AtlasVoicePanel() {
         } else {
           useStore.setState({ heading: nextHeading });
         }
+        const currentView = useStore.getState().streetViewView;
+        if (currentView?.panoId) {
+          useStore.getState().setStreetViewView?.({
+            ...currentView,
+            heading: nextHeading,
+            source: "programmatic",
+          });
+        }
+        void sendLatestSceneContext({ allowAuto: true });
 
         return {
           success: true,
@@ -1367,12 +1645,21 @@ export default function AtlasVoicePanel() {
 
       return { success: false, error: `Unknown tool: ${name}` };
     },
-    [copy.noLocation, i18n.language, i18n.resolvedLanguage, summarizeCurrentPlace],
+    [
+      copy.noLocation,
+      i18n.language,
+      i18n.resolvedLanguage,
+      sendLatestSceneContext,
+      summarizeCurrentPlace,
+    ],
   );
 
   const handleFunctionCall = useCallback(
     async (functionCall) => {
-      if (!functionCall?.call_id || handledCallIdsRef.current.has(functionCall.call_id)) {
+      if (
+        !functionCall?.call_id ||
+        handledCallIdsRef.current.has(functionCall.call_id)
+      ) {
         return;
       }
       handledCallIdsRef.current.add(functionCall.call_id);
@@ -1385,13 +1672,37 @@ export default function AtlasVoicePanel() {
       }
 
       let output;
-      try {
-        output = await executeTool(functionCall.name, args);
-      } catch (err) {
+      const isNavigationCall = [
+        "navigate",
+        "explore_random",
+        "explore_interest",
+        "go_to_place",
+        "wander_nearby",
+      ].includes(functionCall.name);
+      if (isNavigationCall && navigationAttemptedRef.current) {
         output = {
           success: false,
-          error: err.message || "Tool execution failed",
+          error: "A navigation action was already attempted in this user turn.",
+          terminal: true,
+          retry_allowed: false,
         };
+      } else {
+        if (isNavigationCall) navigationAttemptedRef.current = true;
+        try {
+          output = await executeTool(functionCall.name, args);
+        } catch (err) {
+          output = {
+            success: false,
+            error: err.message || "Tool execution failed",
+            terminal: isNavigationCall,
+            retry_allowed: !isNavigationCall,
+          };
+        }
+      }
+
+      if (output?.success && SCENE_CHANGING_ACTIONS.has(output.action)) {
+        const sceneReady = await sendLatestSceneContext({ allowAuto: true });
+        output = { ...output, visual_context_ready: sceneReady };
       }
 
       sendEvent({
@@ -1406,7 +1717,7 @@ export default function AtlasVoicePanel() {
       setStatus("thinking");
       startResponseWatchdog();
     },
-    [executeTool, sendEvent, startResponseWatchdog],
+    [executeTool, sendEvent, sendLatestSceneContext, startResponseWatchdog],
   );
 
   const handleRealtimeEvent = useCallback(
@@ -1423,7 +1734,9 @@ export default function AtlasVoicePanel() {
           setStatus("connected");
           break;
         case "input_audio_buffer.speech_started":
+          navigationAttemptedRef.current = false;
           clearResponseWatchdog();
+          void sendLatestSceneContext({ allowAuto: true });
           if (voiceConfigRef.current?.provider === "doubao") {
             if (
               shouldIgnoreAssistantEcho({
@@ -1457,7 +1770,11 @@ export default function AtlasVoicePanel() {
         case "response.audio_transcript.delta":
         case "response.output_audio_transcript.delta":
           clearResponseWatchdog();
-          setStatus(voiceConfigRef.current?.provider === "doubao" ? "thinking" : "speaking");
+          setStatus(
+            voiceConfigRef.current?.provider === "doubao"
+              ? "thinking"
+              : "speaking",
+          );
           break;
         case "response.output_text.delta":
           if (voiceConfigRef.current?.provider === "doubao") {
@@ -1465,7 +1782,11 @@ export default function AtlasVoicePanel() {
           } else {
             clearResponseWatchdog();
           }
-          setStatus(voiceConfigRef.current?.provider === "doubao" ? "thinking" : "speaking");
+          setStatus(
+            voiceConfigRef.current?.provider === "doubao"
+              ? "thinking"
+              : "speaking",
+          );
           break;
         case "conversation.item.input_audio_transcription.completed":
           setLastUserText(event.transcript || "");
@@ -1484,8 +1805,13 @@ export default function AtlasVoicePanel() {
         case "response.done": {
           clearResponseWatchdog();
           const output = event.response?.output || [];
-          const text = output.map(extractAssistantText).filter(Boolean).join(" ");
-          const functionCalls = output.filter((item) => item.type === "function_call");
+          const text = output
+            .map(extractAssistantText)
+            .filter(Boolean)
+            .join(" ");
+          const functionCalls = output.filter(
+            (item) => item.type === "function_call",
+          );
           const useDoubaoSpeech = voiceConfigRef.current?.provider === "doubao";
           if (text && functionCalls.length === 0) {
             setLastAssistantText(text);
@@ -1530,6 +1856,7 @@ export default function AtlasVoicePanel() {
       isAssistantEchoTailActive,
       playAudioDelta,
       rememberLine,
+      sendLatestSceneContext,
       speakWithDoubao,
       startResponseWatchdog,
       stopDoubaoSpeech,
@@ -1568,7 +1895,9 @@ export default function AtlasVoicePanel() {
 
         let stream;
         try {
-          stream = await navigator.mediaDevices.getUserMedia(MIC_AUDIO_CONSTRAINTS);
+          stream = await navigator.mediaDevices.getUserMedia(
+            MIC_AUDIO_CONSTRAINTS,
+          );
         } catch (err) {
           throw new Error(copy.micError);
         }
@@ -1600,7 +1929,9 @@ export default function AtlasVoicePanel() {
 
       let stream;
       try {
-        stream = await navigator.mediaDevices.getUserMedia(MIC_AUDIO_CONSTRAINTS);
+        stream = await navigator.mediaDevices.getUserMedia(
+          MIC_AUDIO_CONSTRAINTS,
+        );
       } catch (err) {
         throw new Error(copy.micError);
       }
@@ -1677,6 +2008,7 @@ export default function AtlasVoicePanel() {
       className={`atlas-voice-panel atlas-voice-panel--${status}${
         hasVoiceLog ? " atlas-voice-panel--with-log" : ""
       }`}
+      aria-busy={status === "thinking" || status === "tool"}
     >
       <button
         className="atlas-voice-button"
@@ -1689,16 +2021,20 @@ export default function AtlasVoicePanel() {
         <span className="atlas-voice-glyph" aria-hidden="true">
           {isActive ? <StopGlyph /> : <MicGlyph />}
         </span>
-        <span className="atlas-voice-label">
+        <span className="atlas-voice-label" aria-live="polite">
           {isActive ? statusLabel : copy.title}
         </span>
       </button>
 
       {hasVoiceLog && (
         <div className="atlas-voice-log" aria-live="polite">
-          {lastUserText && <div className="atlas-voice-line user">{lastUserText}</div>}
+          {lastUserText && (
+            <div className="atlas-voice-line user">{lastUserText}</div>
+          )}
           {lastAssistantText && (
-            <div className="atlas-voice-line assistant">{lastAssistantText}</div>
+            <div className="atlas-voice-line assistant">
+              {lastAssistantText}
+            </div>
           )}
           {error && <div className="atlas-voice-line error">{error}</div>}
         </div>

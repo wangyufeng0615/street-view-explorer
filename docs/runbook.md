@@ -81,6 +81,18 @@ curl -s 'http://localhost:8080/api/v1/realtime/client-secret?lang=zh'
 
 The first response should show `success: true`. The second requires `OPENAI_API_KEY` or `REALTIME_API_KEY`; failures there usually mean missing credentials, blocked egress, or proxy misconfiguration.
 
+Atlas visual-context smoke (replace the panorama ID with one returned by a location endpoint):
+
+```bash
+curl -o /tmp/atlas-frame.jpg \
+  'http://localhost:8080/api/v1/locations/PANO_ID/streetview-frame?heading=90&pitch=0&fov=90'
+file /tmp/atlas-frame.jpg
+```
+
+The response should be a non-empty `640x480` JPEG or PNG. Text description requests accept the same view parameters and an optional `scene_pano_id` when the user has moved to a linked panorama.
+
+For the streaming text path, add `stream=1`; a healthy response uses `text/event-stream`, emits one or more `delta` events, and finishes with `done`. A terminal `error` event means the response failed validation, including the fail-closed check that OpenRouter actually executed web search and the check that its prose matches the requested UI language. Repeating the same location, language, detail mode, panorama, and camera view within 30 minutes should hit the in-memory description cache and complete almost immediately.
+
 End-to-end local smoke:
 
 ```bash
@@ -240,7 +252,7 @@ Use `--skip-proxy-check` only when the proxy health check itself is unreliable b
 - Verify `AI_API_KEY`.
 - In proxy-restricted networks, set `AI_PROXY_URL` or shared `PROXY_URL`. A direct OpenRouter response like `This model is not available in your region` means the key and model can be valid while the current egress region is blocked.
 - If you need a model override, set `OPENROUTER_MODEL` or `AI_MODEL`. `CN_AI_MODEL` is used only when no AI/shared proxy is configured.
-- AI endpoints can take longer than normal JSON calls; frontend default timeout is 25 seconds, detailed descriptions use 30 seconds. The backend retries transient OpenRouter statuses (`408`, `429`, and `5xx`) within its request timeout.
+- AI endpoints can take longer than normal JSON calls; the streaming frontend timeout is 25 seconds for the first Atlas letter and 35 seconds for the detailed follow-up. The backend retries transient OpenRouter statuses (`408`, `429`, and `5xx`) before streaming begins. OpenRouter usage logs should show at least one web-search request for either description path.
 
 ### Online duel room disappears
 

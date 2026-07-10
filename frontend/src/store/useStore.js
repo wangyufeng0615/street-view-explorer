@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import {
     getRandomLocation,
-    getLocationDescription,
+    streamLocationDescription,
     setExplorationPreference,
     deleteExplorationPreference,
     lookupLocation,
@@ -12,6 +12,7 @@ import i18n from '../i18n';
 const RATE_LIMIT_MS = 1000; // 1秒限制
 const EXPLORATION_MODE_KEY = 'exploration_mode';
 const EXPLORATION_INTEREST_KEY = 'exploration_interest';
+let activeDescriptionRequest = null;
 
 function getActiveLanguage() {
     const language = i18n.resolvedLanguage || i18n.language || 'en';
@@ -20,7 +21,7 @@ function getActiveLanguage() {
 
 export const EXPLORATION_MODES = {
     RANDOM: 'random',
-    CUSTOM: 'custom'
+    CUSTOM: 'custom',
 };
 
 const useStore = create(
@@ -50,6 +51,7 @@ const useStore = create(
 
             // ===== UI相关状态 =====
             heading: 0,
+            streetViewView: null,
             scale: 1,
             toastMessage: '',
             showToast: false,
@@ -86,7 +88,8 @@ const useStore = create(
                     lastRefreshTime: Date.now(),
                     location: null,
                     description: null,
-                    descriptionError: null
+                    descriptionError: null,
+                    streetViewView: null,
                 });
 
                 try {
@@ -104,13 +107,13 @@ const useStore = create(
                             const locationData = {
                                 ...resp.data,
                                 latitude: lat,
-                                longitude: lng
+                                longitude: lng,
                             };
 
                             set({
                                 location: locationData,
                                 currentLocationRef: locationData,
-                                locationError: null
+                                locationError: null,
                             });
                         } else {
                             throw new Error('无效的坐标数据');
@@ -121,12 +124,12 @@ const useStore = create(
                 } catch (error) {
                     console.error('加载位置失败:', error);
                     set({
-                        locationError: error.message || '获取位置失败，请重试'
+                        locationError: error.message || '获取位置失败，请重试',
                     });
                 } finally {
                     set({
                         isLocationLoading: false,
-                        isLoadingLocation: false
+                        isLoadingLocation: false,
                     });
                 }
             },
@@ -141,7 +144,8 @@ const useStore = create(
                     isLocationLoading: true,
                     location: null,
                     description: null,
-                    descriptionError: null
+                    descriptionError: null,
+                    streetViewView: null,
                 });
 
                 try {
@@ -158,13 +162,13 @@ const useStore = create(
                             const locationData = {
                                 ...resp.data,
                                 latitude: locLat,
-                                longitude: locLng
+                                longitude: locLng,
                             };
 
                             set({
                                 location: locationData,
                                 currentLocationRef: locationData,
-                                locationError: null
+                                locationError: null,
                             });
                         } else {
                             throw new Error('无效的坐标数据');
@@ -175,12 +179,12 @@ const useStore = create(
                 } catch (error) {
                     console.error('从URL加载位置失败:', error);
                     set({
-                        locationError: error.message || '查找位置失败，请重试'
+                        locationError: error.message || '查找位置失败，请重试',
                     });
                 } finally {
                     set({
                         isLocationLoading: false,
-                        isLoadingLocation: false
+                        isLoadingLocation: false,
                     });
                 }
             },
@@ -191,18 +195,24 @@ const useStore = create(
                 if (state.isLoadingLocation) {
                     return {
                         success: false,
-                        error: i18n.t('mapPicker.busy')
+                        error: i18n.t('mapPicker.busy'),
                     };
                 }
 
                 set({
                     isLoadingLocation: true,
-                    isMapLocationLoading: true
+                    isMapLocationLoading: true,
                 });
 
                 try {
                     const currentLanguage = getActiveLanguage();
-                    const resp = await lookupLocation(lat, lng, currentLanguage, 'map_pick', 'nearest');
+                    const resp = await lookupLocation(
+                        lat,
+                        lng,
+                        currentLanguage,
+                        'map_pick',
+                        'nearest',
+                    );
 
                     if (resp.success && resp.data) {
                         const locLat = Number(resp.data.latitude);
@@ -212,7 +222,7 @@ const useStore = create(
                             const locationData = {
                                 ...resp.data,
                                 latitude: locLat,
-                                longitude: locLng
+                                longitude: locLng,
                             };
 
                             set({
@@ -221,12 +231,13 @@ const useStore = create(
                                 locationError: null,
                                 description: null,
                                 descriptionCitations: null,
-                                descriptionError: null
+                                descriptionError: null,
+                                streetViewView: null,
                             });
 
                             return {
                                 success: true,
-                                data: locationData
+                                data: locationData,
                             };
                         }
 
@@ -238,21 +249,42 @@ const useStore = create(
                     console.error('从地图查找位置失败:', error);
                     return {
                         success: false,
-                        error: error.message || '查找位置失败，请重试'
+                        error: error.message || '查找位置失败，请重试',
                     };
                 } finally {
                     set({
                         isMapLocationLoading: false,
-                        isLoadingLocation: false
+                        isLoadingLocation: false,
                     });
                 }
             },
 
             // Description Actions
-            loadLocationDescription: async (panoId, retryCount = 0) => {
+            loadLocationDescription: (panoId, retryCount = 0) => {
                 const MAX_RETRIES = 3;
                 const currentLanguage = getActiveLanguage();
-                const requestKey = `${panoId}:${currentLanguage}:${Date.now()}:${retryCount}`;
+                const currentState = get();
+                const currentView =
+                    currentState.streetViewView?.panoId === panoId
+                        ? currentState.streetViewView
+                        : { heading: currentState.heading, pitch: 0, fov: 90 };
+                const fingerprint = [
+                    panoId,
+                    currentLanguage,
+                    currentView?.panoId || '',
+                    Math.round(Number(currentView?.heading) || 0),
+                    Math.round(Number(currentView?.pitch) || 0),
+                    Math.round(Number(currentView?.fov) || 90),
+                    retryCount,
+                ].join(':');
+
+                if (activeDescriptionRequest?.fingerprint === fingerprint) {
+                    return activeDescriptionRequest.promise;
+                }
+                activeDescriptionRequest?.controller.abort();
+
+                const controller = new AbortController();
+                const requestKey = fingerprint;
 
                 set({
                     isDescriptionLoading: true,
@@ -260,56 +292,87 @@ const useStore = create(
                     descriptionCitations: null,
                     descriptionError: null,
                     descriptionRetries: retryCount,
-                    descriptionRequestKey: requestKey
+                    descriptionRequestKey: requestKey,
                 });
 
-                try {
-                    const resp = await getLocationDescription(panoId, currentLanguage);
-                    const latestState = get();
+                const promise = (async () => {
+                    try {
+                        const resp = await streamLocationDescription(
+                            panoId,
+                            currentLanguage,
+                            controller.signal,
+                            currentView,
+                            (delta) => {
+                                const latestState = get();
+                                if (
+                                    latestState.descriptionRequestKey === requestKey &&
+                                    latestState.currentLocationRef?.pano_id === panoId &&
+                                    getActiveLanguage() === currentLanguage
+                                ) {
+                                    set((state) => ({
+                                        description: `${state.description || ''}${delta}`,
+                                    }));
+                                }
+                            },
+                        );
+                        const latestState = get();
 
-                    if (
-                        latestState.descriptionRequestKey !== requestKey ||
-                        latestState.currentLocationRef?.pano_id !== panoId ||
-                        getActiveLanguage() !== currentLanguage
-                    ) {
-                        return;
-                    }
+                        if (
+                            latestState.descriptionRequestKey !== requestKey ||
+                            latestState.currentLocationRef?.pano_id !== panoId ||
+                            getActiveLanguage() !== currentLanguage
+                        ) {
+                            return;
+                        }
 
-                    if (resp.success && resp.data?.description) {
-                        set({
-                            description: resp.data.description,
-                            descriptionCitations: resp.data.citations || null,
-                            descriptionError: null
-                        });
-                    } else {
-                        throw new Error(resp.error || '获取描述失败');
-                    }
-                } catch (error) {
-                    console.error('加载描述失败:', error);
+                        if (resp.success && resp.data?.description) {
+                            set({
+                                description: resp.data.description,
+                                descriptionCitations: resp.data.citations || null,
+                                descriptionError: null,
+                            });
+                        } else if (!controller.signal.aborted) {
+                            throw new Error(resp.error || '获取描述失败');
+                        }
+                    } catch (error) {
+                        if (
+                            controller.signal.aborted ||
+                            get().descriptionRequestKey !== requestKey
+                        ) {
+                            return;
+                        }
 
-                    if (get().descriptionRequestKey !== requestKey) {
-                        return;
-                    }
+                        console.error('加载描述失败:', error);
+                        set({ description: null, descriptionCitations: null });
 
-                    // 自动重试逻辑
-                    if (retryCount < MAX_RETRIES && get().networkState) {
-                        const retryDelay = Math.min(1000 * Math.pow(2, retryCount), 5000);
-                        setTimeout(() => {
-                            const state = get();
-                            if (state.currentLocationRef?.pano_id === panoId) {
-                                state.loadLocationDescription(panoId, retryCount + 1);
-                            }
-                        }, retryDelay);
-                    } else {
-                        set({
-                            descriptionError: '获取位置描述失败'
-                        });
+                        if (retryCount < MAX_RETRIES && get().networkState) {
+                            const retryDelay = Math.min(1000 * Math.pow(2, retryCount), 5000);
+                            setTimeout(() => {
+                                const state = get();
+                                if (state.currentLocationRef?.pano_id === panoId) {
+                                    state.loadLocationDescription(panoId, retryCount + 1);
+                                }
+                            }, retryDelay);
+                        } else {
+                            set({ descriptionError: '获取位置描述失败' });
+                        }
+                    } finally {
+                        if (activeDescriptionRequest?.requestKey === requestKey) {
+                            activeDescriptionRequest = null;
+                        }
+                        if (get().descriptionRequestKey === requestKey) {
+                            set({ isDescriptionLoading: false });
+                        }
                     }
-                } finally {
-                    if (get().descriptionRequestKey === requestKey) {
-                        set({ isDescriptionLoading: false });
-                    }
-                }
+                })();
+
+                activeDescriptionRequest = {
+                    fingerprint,
+                    requestKey,
+                    controller,
+                    promise,
+                };
+                return promise;
             },
 
             // Exploration Mode Actions
@@ -321,7 +384,7 @@ const useStore = create(
                     set({
                         explorationMode: EXPLORATION_MODES.CUSTOM,
                         explorationInterest: savedInterest,
-                        isExplorationInitialized: true
+                        isExplorationInitialized: true,
                     });
                     // 确保后端也有这个偏好
                     setExplorationPreference(savedInterest).catch(console.error);
@@ -329,7 +392,7 @@ const useStore = create(
                     set({
                         explorationMode: EXPLORATION_MODES.RANDOM,
                         explorationInterest: '',
-                        isExplorationInitialized: true
+                        isExplorationInitialized: true,
                     });
                     localStorage.removeItem(EXPLORATION_MODE_KEY);
                     localStorage.removeItem(EXPLORATION_INTEREST_KEY);
@@ -344,7 +407,7 @@ const useStore = create(
                     set({
                         explorationMode: EXPLORATION_MODES.RANDOM,
                         explorationInterest: '',
-                        preferenceError: null
+                        preferenceError: null,
                     });
 
                     try {
@@ -366,7 +429,9 @@ const useStore = create(
 
                 // 检查限流
                 if (now - state.lastRefreshTime < RATE_LIMIT_MS) {
-                    const waitTime = Math.ceil((RATE_LIMIT_MS - (now - state.lastRefreshTime)) / 1000);
+                    const waitTime = Math.ceil(
+                        (RATE_LIMIT_MS - (now - state.lastRefreshTime)) / 1000,
+                    );
                     set({ preferenceError: `请等待 ${waitTime} 秒后再试` });
                     return;
                 }
@@ -376,7 +441,7 @@ const useStore = create(
                 set({
                     isSavingPreference: true,
                     preferenceError: null,
-                    lastRefreshTime: now
+                    lastRefreshTime: now,
                 });
 
                 try {
@@ -389,7 +454,7 @@ const useStore = create(
                         set({
                             explorationMode: EXPLORATION_MODES.CUSTOM,
                             explorationInterest: interest,
-                            preferenceError: null
+                            preferenceError: null,
                         });
 
                         // 自动刷新位置
@@ -400,7 +465,7 @@ const useStore = create(
                 } catch (error) {
                     console.error('保存探索偏好失败:', error);
                     set({
-                        preferenceError: error.message || '保存失败，请重试'
+                        preferenceError: error.message || '保存失败，请重试',
                     });
                 } finally {
                     set({ isSavingPreference: false });
@@ -417,12 +482,37 @@ const useStore = create(
                     set({ heading: normalizedHeading });
                 }
             },
+
+            setStreetViewView: (nextView) => {
+                if (!nextView?.panoId) return;
+                const normalized = {
+                    panoId: String(nextView.panoId),
+                    latitude: Number(nextView.latitude),
+                    longitude: Number(nextView.longitude),
+                    heading: Math.round(Number(nextView.heading) || 0),
+                    pitch: Math.round(Number(nextView.pitch) || 0),
+                    zoom: Number(nextView.zoom) || 1,
+                    fov: Math.round(Number(nextView.fov) || 90),
+                    source: nextView.source || 'initial',
+                };
+                const current = get().streetViewView;
+                if (
+                    current?.panoId === normalized.panoId &&
+                    current.heading === normalized.heading &&
+                    current.pitch === normalized.pitch &&
+                    current.fov === normalized.fov &&
+                    current.source === normalized.source
+                ) {
+                    return;
+                }
+                set({ streetViewView: normalized });
+            },
             setScale: (scale) => set({ scale }),
 
             showToastMessage: (message) => {
                 set({
                     toastMessage: message,
-                    showToast: true
+                    showToast: true,
                 });
 
                 // 3秒后自动隐藏
@@ -439,9 +529,9 @@ const useStore = create(
             resetDescriptionError: () => set({ descriptionError: null }),
         }),
         {
-            name: 'streetview-store'
-        }
-    )
+            name: 'streetview-store',
+        },
+    ),
 );
 
 export default useStore;

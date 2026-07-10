@@ -1,40 +1,14 @@
-import React, { memo, useState, useCallback, useEffect, useMemo } from "react";
+import React, {
+  memo,
+  useState,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+} from "react";
 import { useTranslation } from "react-i18next";
-import { getLocationDetailedDescription } from "../services/api";
+import { streamLocationDetailedDescription } from "../services/api";
 import "../styles/AiDescription.css";
-
-const LOADING_HINTS = {
-  zh: [
-    "Atlas 正在看路牌…",
-    "Atlas 正在辨认地形…",
-    "Atlas 正在打量街角…",
-    "Atlas 正在理清来路…",
-    "Atlas 正在找这地方的脉络…",
-    "Atlas 正在把周围串起来…",
-  ],
-  en: [
-    "Atlas is reading the street...",
-    "Atlas is sizing up the block...",
-    "Atlas is tracing the route...",
-    "Atlas is getting the lay of the land...",
-    "Atlas is piecing the place together...",
-    "Atlas is checking the local clues...",
-  ],
-};
-
-function pickLoadingHint(language, panoId) {
-  const hints = language === "zh" ? LOADING_HINTS.zh : LOADING_HINTS.en;
-  if (!panoId || hints.length === 0) {
-    return null;
-  }
-
-  let hash = 0;
-  for (let i = 0; i < panoId.length; i += 1) {
-    hash = (hash * 33 + panoId.charCodeAt(i)) >>> 0;
-  }
-
-  return hints[hash % hints.length];
-}
 
 function detectLanguage(text) {
   if (!text) return "en";
@@ -59,7 +33,10 @@ function splitNarration(text) {
 
   // 全文只有旁注没有正文时，按普通段落显示，避免整段斜体
   if (items.length > 0 && items.every((item) => item.type === "scene")) {
-    return paragraphs.map((paragraph) => ({ type: "paragraph", text: paragraph }));
+    return paragraphs.map((paragraph) => ({
+      type: "paragraph",
+      text: paragraph,
+    }));
   }
 
   return items;
@@ -103,11 +80,27 @@ const SearchGlyph = () => (
   </svg>
 );
 
-const ThinkingIcon = () => (
-  <div className="thinking-icon">
-    <CompassGlyph needleClassName="compass-needle" />
-  </div>
-);
+const ThinkingIndicator = memo(function ThinkingIndicator({
+  title,
+  variant = "primary",
+  elementRef = null,
+}) {
+  return (
+    <div
+      ref={elementRef}
+      className={`atlas-thinking-indicator atlas-thinking-indicator--${variant}`}
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+      aria-label={title}
+    >
+      <div className="atlas-thinking-mark" aria-hidden="true">
+        <CompassGlyph needleClassName="compass-needle" />
+      </div>
+      <div className="atlas-thinking-title">{title}</div>
+    </div>
+  );
+});
 
 const CitationLinks = memo(function CitationLinks({ citations, label }) {
   if (!citations || citations.length === 0) return null;
@@ -143,7 +136,7 @@ const NarrationBody = memo(function NarrationBody({
 }) {
   const items = useMemo(() => splitNarration(text), [text]);
   return (
-    <div className="ai-content" lang={detectLanguage(text)}>
+    <div className="ai-content" lang={detectLanguage(text)} aria-live="polite">
       {items.map((item, index) =>
         item.type === "scene" ? (
           <div key={index} className="ai-scene-note">
@@ -169,6 +162,8 @@ const AiDescription = memo(
     citations,
     retries,
     panoId,
+    heading = 0,
+    view = null,
     onRetry,
   }) {
     const { t, i18n } = useTranslation();
@@ -178,13 +173,13 @@ const AiDescription = memo(
     const [isLoadingDetailed, setIsLoadingDetailed] = useState(false);
     const [detailedError, setDetailedError] = useState(null);
     const [hasRequestedDetailed, setHasRequestedDetailed] = useState(false);
+    const detailedLoadingRef = useRef(null);
+    const detailedAbortRef = useRef(null);
 
-    const shouldShowLoading = isLoading || (panoId && !description && !error);
-    const loadingHint = useMemo(
-      () => pickLoadingHint(i18n.language, panoId),
-      [i18n.language, panoId],
+    const shouldShowLoading = !description && (isLoading || (panoId && !error));
+    const isChinese = (i18n.resolvedLanguage || i18n.language || "").startsWith(
+      "zh",
     );
-    const isChinese = (i18n.resolvedLanguage || i18n.language || "").startsWith("zh");
     const sectionTitle = isChinese ? "Atlas 说…" : "Atlas says...";
     const citationsLabel = isChinese ? "出处" : "Sources";
 
@@ -199,9 +194,22 @@ const AiDescription = memo(
       setIsLoadingDetailed(true);
       setDetailedError(null);
       setHasRequestedDetailed(true);
+      setDetailedDescription(null);
+      setDetailedCitations(null);
+      detailedAbortRef.current?.abort();
+      const controller = new AbortController();
+      detailedAbortRef.current = controller;
 
       try {
-        const result = await getLocationDetailedDescription(panoId, i18n.language);
+        const result = await streamLocationDetailedDescription(
+          panoId,
+          i18n.language,
+          controller.signal,
+          view || { heading, pitch: 0, fov: 90 },
+          (delta) =>
+            setDetailedDescription((current) => `${current || ""}${delta}`),
+        );
+        if (controller.signal.aborted) return;
         const nextDescription = result.data?.description?.trim();
         if (result.success && nextDescription) {
           setDetailedDescription(nextDescription);
@@ -212,14 +220,19 @@ const AiDescription = memo(
       } catch (err) {
         setDetailedError(err.message || "获取详细介绍失败");
       } finally {
-        setIsLoadingDetailed(false);
+        if (detailedAbortRef.current === controller) {
+          detailedAbortRef.current = null;
+          setIsLoadingDetailed(false);
+        }
       }
     }, [
       description,
       hasRequestedDetailed,
+      heading,
       i18n.language,
       isLoadingDetailed,
       panoId,
+      view,
       t,
     ]);
 
@@ -228,9 +241,22 @@ const AiDescription = memo(
 
       setIsLoadingDetailed(true);
       setDetailedError(null);
+      setDetailedDescription(null);
+      setDetailedCitations(null);
+      detailedAbortRef.current?.abort();
+      const controller = new AbortController();
+      detailedAbortRef.current = controller;
 
       try {
-        const result = await getLocationDetailedDescription(panoId, i18n.language);
+        const result = await streamLocationDetailedDescription(
+          panoId,
+          i18n.language,
+          controller.signal,
+          view || { heading, pitch: 0, fov: 90 },
+          (delta) =>
+            setDetailedDescription((current) => `${current || ""}${delta}`),
+        );
+        if (controller.signal.aborted) return;
         const nextDescription = result.data?.description?.trim();
         if (result.success && nextDescription) {
           setDetailedDescription(nextDescription);
@@ -242,17 +268,42 @@ const AiDescription = memo(
       } catch (err) {
         setDetailedError(err.message || "获取详细介绍失败");
       } finally {
-        setIsLoadingDetailed(false);
+        if (detailedAbortRef.current === controller) {
+          detailedAbortRef.current = null;
+          setIsLoadingDetailed(false);
+        }
       }
-    }, [i18n.language, isLoadingDetailed, panoId, t]);
+    }, [heading, i18n.language, isLoadingDetailed, panoId, t, view]);
 
     useEffect(() => {
+      detailedAbortRef.current?.abort();
+      detailedAbortRef.current = null;
       setDetailedDescription(null);
       setDetailedCitations(null);
       setDetailedError(null);
       setHasRequestedDetailed(false);
       setIsLoadingDetailed(false);
+
+      return () => {
+        detailedAbortRef.current?.abort();
+      };
     }, [panoId]);
+
+    useEffect(() => {
+      if (!isLoadingDetailed || !detailedLoadingRef.current) return undefined;
+
+      const frame = window.requestAnimationFrame(() => {
+        const reduceMotion = window.matchMedia?.(
+          "(prefers-reduced-motion: reduce)",
+        ).matches;
+        detailedLoadingRef.current?.scrollIntoView({
+          behavior: reduceMotion ? "auto" : "smooth",
+          block: "nearest",
+        });
+      });
+
+      return () => window.cancelAnimationFrame(frame);
+    }, [isLoadingDetailed]);
 
     return (
       <div className="ai-description">
@@ -266,16 +317,18 @@ const AiDescription = memo(
           )}
         </div>
 
-        <div className="ai-description-body">
+        <div
+          className="ai-description-body"
+          aria-busy={shouldShowLoading || isLoadingDetailed}
+        >
           {shouldShowLoading ? (
-            <div className="ai-loading-container">
-              <ThinkingIcon />
-              <div className="loading-message">
-                {retries > 0
+            <ThinkingIndicator
+              title={
+                retries > 0
                   ? t("ai.retrying", { retries })
-                  : loadingHint || t("ai.waitingForAnalysis")}
-              </div>
-            </div>
+                  : t("ai.thinkingTitle")
+              }
+            />
           ) : error ? (
             <div className="ai-error">
               <div className="ai-error-message">{error}</div>
@@ -291,7 +344,7 @@ const AiDescription = memo(
                 citationsLabel={citationsLabel}
               />
 
-              {!hasRequestedDetailed && !detailedDescription && (
+              {!isLoading && !hasRequestedDetailed && !detailedDescription && (
                 <div className="tell-me-more-container">
                   <button
                     className="tell-me-more-button"
@@ -311,12 +364,11 @@ const AiDescription = memo(
               )}
 
               {isLoadingDetailed && (
-                <div className="detailed-loading-container">
-                  <ThinkingIcon />
-                  <div className="loading-message">
-                    {t("ai.loadingDetailedDescription")}
-                  </div>
-                </div>
+                <ThinkingIndicator
+                  variant="detailed"
+                  elementRef={detailedLoadingRef}
+                  title={t("ai.loadingDetailedDescription")}
+                />
               )}
 
               {detailedError && (
@@ -358,7 +410,12 @@ const AiDescription = memo(
     prevProps.description === nextProps.description &&
     prevProps.citations === nextProps.citations &&
     prevProps.retries === nextProps.retries &&
-    prevProps.panoId === nextProps.panoId,
+    prevProps.panoId === nextProps.panoId &&
+    prevProps.heading === nextProps.heading &&
+    prevProps.view?.panoId === nextProps.view?.panoId &&
+    prevProps.view?.heading === nextProps.view?.heading &&
+    prevProps.view?.pitch === nextProps.view?.pitch &&
+    prevProps.view?.fov === nextProps.view?.fov,
 );
 
 export default AiDescription;

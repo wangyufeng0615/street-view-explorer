@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"time"
 )
 
@@ -83,7 +84,7 @@ func SetupProxyWithFallback(proxyURL string, timeout time.Duration) func(*http.R
 
 // CheckTCPConnection 检查TCP连接是否可用
 func CheckTCPConnection(host string, port int, timeout time.Duration) error {
-	address := fmt.Sprintf("%s:%d", host, port)
+	address := net.JoinHostPort(host, strconv.Itoa(port))
 	conn, err := net.DialTimeout("tcp", address, timeout)
 	if err != nil {
 		return fmt.Errorf("连接到 %s 失败: %w", address, err)

@@ -6,6 +6,40 @@ import i18n from "../i18n";
 const API_V1 = "/api/v1";
 const DEFAULT_TIMEOUT = 25000; // 25 seconds (AI generation can take longer)
 
+function appendStreetViewView(params, view = {}) {
+  const panoId = String(view?.panoId || "").trim();
+  const heading = Number(view?.heading);
+  const pitch = Number(view?.pitch);
+  const fov = Number(view?.fov);
+  if (panoId) params.set("scene_pano_id", panoId);
+  if (Number.isFinite(heading))
+    params.set("heading", String(Math.round(heading)));
+  if (Number.isFinite(pitch)) params.set("pitch", String(Math.round(pitch)));
+  if (Number.isFinite(fov)) params.set("fov", String(Math.round(fov)));
+  return params;
+}
+
+function blobToDataURL(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener(
+      "load",
+      () => resolve(String(reader.result || "")),
+      {
+        once: true,
+      },
+    );
+    reader.addEventListener(
+      "error",
+      () => reject(new Error("Could not read scene image")),
+      {
+        once: true,
+      },
+    );
+    reader.readAsDataURL(blob);
+  });
+}
+
 // 获取当前语言，默认为英文
 function getCurrentLanguage() {
   const language = i18n.resolvedLanguage || i18n.language || "en";
@@ -20,9 +54,163 @@ function getHeaders() {
   };
 }
 
+function parseDescriptionSSEBlock(block) {
+  let event = "message";
+  const dataLines = [];
+  for (const line of block.split(/\r?\n/)) {
+    if (line.startsWith("event:")) {
+      event = line.slice(6).trim();
+    } else if (line.startsWith("data:")) {
+      dataLines.push(line.slice(5).trimStart());
+    }
+  }
+  if (dataLines.length === 0) return null;
+  return { event, data: JSON.parse(dataLines.join("\n")) };
+}
+
+async function streamDescriptionEndpoint(
+  path,
+  panoId,
+  language,
+  signal,
+  view,
+  onDelta,
+  timeout,
+) {
+  if (!panoId) {
+    return { success: false, data: null, error: "Missing location ID" };
+  }
+
+  const lang = language || getCurrentLanguage();
+  const params = appendStreetViewView(
+    new URLSearchParams({ lang, stream: "1" }),
+    view,
+  );
+  const controller = new AbortController();
+  const externalSignal = signal instanceof AbortSignal ? signal : null;
+  const abortFromExternal = () => controller.abort();
+  let timeoutId = null;
+
+  if (externalSignal?.aborted) controller.abort();
+  externalSignal?.addEventListener("abort", abortFromExternal, { once: true });
+  if (timeout > 0) timeoutId = setTimeout(() => controller.abort(), timeout);
+
+  try {
+    const encodedPanoId = encodeURIComponent(panoId);
+    const resp = await fetch(
+      `${API_V1}/locations/${encodedPanoId}/${path}?${params.toString()}`,
+      {
+        method: "GET",
+        headers: getHeaders(),
+        signal: controller.signal,
+      },
+    );
+
+    const contentType = resp.headers.get("Content-Type") || "";
+    if (!resp.ok || !contentType.includes("text/event-stream")) {
+      const payload = await resp.json();
+      if (payload.success) {
+        return { success: true, data: payload.data, error: null };
+      }
+      return {
+        success: false,
+        data: null,
+        error: payload.error || "获取描述失败",
+      };
+    }
+
+    const reader = resp.body?.getReader();
+    if (!reader) throw new Error("浏览器不支持流式响应");
+
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let completed = null;
+
+    const handleBlock = (block) => {
+      const parsed = parseDescriptionSSEBlock(block);
+      if (!parsed) return;
+      if (parsed.event === "delta") {
+        const text = String(parsed.data?.text || "");
+        if (text && typeof onDelta === "function") onDelta(text);
+      } else if (parsed.event === "done") {
+        completed = parsed.data;
+      } else if (parsed.event === "error") {
+        throw new Error(parsed.data?.error || "获取描述失败");
+      }
+    };
+
+    let streamDone = false;
+    while (!streamDone) {
+      const { value, done } = await reader.read();
+      buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+      let match = buffer.match(/\r?\n\r?\n/);
+      while (match?.index !== undefined) {
+        const boundary = match.index;
+        const separatorLength = match[0].length;
+        handleBlock(buffer.slice(0, boundary));
+        buffer = buffer.slice(boundary + separatorLength);
+        match = buffer.match(/\r?\n\r?\n/);
+      }
+      streamDone = done;
+    }
+    if (buffer.trim()) handleBlock(buffer);
+    if (!completed?.description) throw new Error("流式响应未正常完成");
+
+    return { success: true, data: completed, error: null };
+  } catch (err) {
+    return {
+      success: false,
+      data: null,
+      error:
+        err.name === "AbortError" ? "请求超时" : err.message || "获取描述失败",
+      aborted: err.name === "AbortError",
+    };
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+    externalSignal?.removeEventListener("abort", abortFromExternal);
+  }
+}
+
+export function streamLocationDescription(
+  panoId,
+  language = null,
+  signal = null,
+  view = null,
+  onDelta = null,
+) {
+  return streamDescriptionEndpoint(
+    "description",
+    panoId,
+    language,
+    signal,
+    view,
+    onDelta,
+    25000,
+  );
+}
+
+export function streamLocationDetailedDescription(
+  panoId,
+  language = null,
+  signal = null,
+  view = null,
+  onDelta = null,
+) {
+  return streamDescriptionEndpoint(
+    "detailed-description",
+    panoId,
+    language,
+    signal,
+    view,
+    onDelta,
+    35000,
+  );
+}
+
 // 带超时的 fetch
 async function fetchWithTimeout(url, options, timeout = DEFAULT_TIMEOUT) {
-  const externalSignal = options.signal instanceof AbortSignal ? options.signal : null;
+  const externalSignal =
+    options.signal instanceof AbortSignal ? options.signal : null;
   if (externalSignal?.aborted) {
     const abortError = new DOMException(
       "The operation was aborted.",
@@ -198,6 +386,7 @@ export async function getLocationDescription(
   panoId,
   language = null,
   signal = null,
+  view = null,
 ) {
   if (!panoId) {
     return {
@@ -221,8 +410,9 @@ export async function getLocationDescription(
     }
 
     const encodedPanoId = encodeURIComponent(panoId);
+    const params = appendStreetViewView(new URLSearchParams({ lang }), view);
     const resp = await fetchWithTimeout(
-      `${API_V1}/locations/${encodedPanoId}/description?lang=${lang}`,
+      `${API_V1}/locations/${encodedPanoId}/description?${params.toString()}`,
       fetchOptions,
     );
     const data = await resp.json();
@@ -391,6 +581,7 @@ export async function getLocationDetailedDescription(
   panoId,
   language = null,
   signal = null,
+  view = null,
 ) {
   if (!panoId) {
     return {
@@ -414,8 +605,9 @@ export async function getLocationDetailedDescription(
     }
 
     const encodedPanoId = encodeURIComponent(panoId);
+    const params = appendStreetViewView(new URLSearchParams({ lang }), view);
     const resp = await fetchWithTimeout(
-      `${API_V1}/locations/${encodedPanoId}/detailed-description?lang=${lang}`,
+      `${API_V1}/locations/${encodedPanoId}/detailed-description?${params.toString()}`,
       fetchOptions,
       30000, // 30秒超时，详细描述需要更长的AI处理时间
     );
@@ -451,6 +643,65 @@ export async function getLocationDetailedDescription(
   }
 }
 
+export async function getStreetViewFrameDataURL(
+  panoId,
+  view = {},
+  signal = null,
+) {
+  const trimmedPanoId = String(panoId || "").trim();
+  if (!trimmedPanoId) {
+    return { success: false, data: null, error: "Missing panorama id" };
+  }
+
+  const params = appendStreetViewView(new URLSearchParams(), view);
+  const fetchOptions = {
+    method: "GET",
+    headers: getHeaders(),
+  };
+  if (signal instanceof AbortSignal) fetchOptions.signal = signal;
+
+  try {
+    const response = await fetchWithTimeout(
+      `${API_V1}/locations/${encodeURIComponent(trimmedPanoId)}/streetview-frame?${params.toString()}`,
+      fetchOptions,
+      15000,
+    );
+    if (!response.ok) {
+      let message = "Could not load the Street View frame";
+      try {
+        const payload = await response.json();
+        message = payload.error || message;
+      } catch (_err) {
+        // The endpoint normally returns JSON errors; keep the stable fallback.
+      }
+      return { success: false, data: null, error: message };
+    }
+
+    const contentType = response.headers.get("Content-Type") || "";
+    if (!contentType.startsWith("image/")) {
+      return {
+        success: false,
+        data: null,
+        error: "Scene response was not an image",
+      };
+    }
+
+    const dataUrl = await blobToDataURL(await response.blob());
+    return {
+      success: Boolean(dataUrl),
+      data: dataUrl || null,
+      error: dataUrl ? null : "Empty scene image",
+    };
+  } catch (err) {
+    return {
+      success: false,
+      data: null,
+      error:
+        err.name === "AbortError" ? "Scene request cancelled" : err.message,
+    };
+  }
+}
+
 export async function createRealtimeClientSecret(language = null) {
   const lang = language || getCurrentLanguage();
 
@@ -473,7 +724,11 @@ export async function getRealtimeVoiceConfig() {
   );
 }
 
-export async function synthesizeDoubaoTTSStream({ text, language = null, signal = null }) {
+export async function synthesizeDoubaoTTSStream({
+  text,
+  language = null,
+  signal = null,
+}) {
   const lang = language || getCurrentLanguage();
 
   return fetchWithTimeout(
@@ -526,13 +781,15 @@ async function requestJson(path, options = {}, timeout = DEFAULT_TIMEOUT) {
   }
 }
 
-export async function fetchGeoBattleImage(roomId, cacheKey = "", signal = null) {
+export async function fetchGeoBattleImage(
+  roomId,
+  cacheKey = "",
+  signal = null,
+) {
   const fetchOptions = { method: "GET", headers: getHeaders() };
   if (signal instanceof AbortSignal) fetchOptions.signal = signal;
 
-  const query = cacheKey
-    ? `?v=${encodeURIComponent(cacheKey)}`
-    : "";
+  const query = cacheKey ? `?v=${encodeURIComponent(cacheKey)}` : "";
   const resp = await fetch(
     `${API_V1}/geo/online/rooms/${encodeURIComponent(roomId)}/image${query}`,
     fetchOptions,

@@ -1,7 +1,9 @@
+import { isPlusCodeLabel } from './atlasPersona';
+
 export const formatAddress = (location) => {
     if (!location) return '';
     
-    if (location.formatted_address) {
+    if (location.formatted_address && !isPlusCodeLabel(location.formatted_address)) {
         return location.formatted_address;
     }
 
@@ -16,4 +18,4 @@ export const formatAddress = (location) => {
     }
 
     return parts.join(', ');
-}; 
+};

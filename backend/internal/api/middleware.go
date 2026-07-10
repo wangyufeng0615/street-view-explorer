@@ -43,6 +43,9 @@ func RateLimitMiddleware(rateLimiter repositories.RateLimiter) gin.HandlerFunc {
 			"/api/v1/geo/online/rooms/:roomId/image":
 			maxRequests = 180 // 静态地图代理会消耗 Google Maps 配额
 			window = 60 * time.Second
+		case "/api/v1/locations/:panoId/streetview-frame":
+			maxRequests = 60 // Atlas 视觉上下文；防止自动旋转意外刷图
+			window = 60 * time.Second
 		case "/api/v1/realtime/client-secret",
 			"/api/v1/realtime/calls",
 			"/api/v1/realtime/ws",

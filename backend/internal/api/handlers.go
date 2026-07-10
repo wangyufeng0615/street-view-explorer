@@ -1,7 +1,9 @@
 package api
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"net/http"
 	"regexp"
@@ -11,6 +13,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/my-streetview-project/backend/internal/models"
+	"github.com/my-streetview-project/backend/internal/openai"
 	"github.com/my-streetview-project/backend/internal/repositories"
 	"github.com/my-streetview-project/backend/internal/services"
 	"github.com/my-streetview-project/backend/internal/utils"
@@ -27,6 +30,23 @@ var (
 )
 
 const maxVisitHistoryLimit = 5000
+
+func wantsDescriptionStream(c *gin.Context) bool {
+	value := strings.ToLower(strings.TrimSpace(c.Query("stream")))
+	return value == "1" || value == "true"
+}
+
+func writeDescriptionSSE(c *gin.Context, event string, payload interface{}) error {
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(c.Writer, "event: %s\ndata: %s\n\n", event, data); err != nil {
+		return err
+	}
+	c.Writer.Flush()
+	return nil
+}
 
 // sanitizeDescription 移除模型偶发输出的 markdown/URL 引用，保留正文和单独的 citation chips。
 func sanitizeDescription(text string) string {
@@ -53,6 +73,7 @@ func sanitizeDescription(text string) string {
 	}
 
 	cleaned := strings.TrimSpace(strings.Join(lines[:end], "\n"))
+	cleaned = stripStandaloneMarkdownEmphasis(cleaned)
 	cleaned = stripMarkdownLinksFromProse(cleaned)
 	cleaned = bareURLRegex.ReplaceAllString(cleaned, "")
 	cleaned = emptyParenthesesRegex.ReplaceAllString(cleaned, "")
@@ -61,6 +82,21 @@ func sanitizeDescription(text string) string {
 	cleaned = trailingSpacesRegex.ReplaceAllString(cleaned, "\n")
 	cleaned = excessiveNewlines.ReplaceAllString(cleaned, "\n\n")
 	return strings.TrimSpace(cleaned)
+}
+
+func stripStandaloneMarkdownEmphasis(text string) string {
+	lines := strings.Split(text, "\n")
+	for index, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		for _, marker := range []string{"**", "*", "__", "_"} {
+			if len(trimmed) > len(marker)*2 && strings.HasPrefix(trimmed, marker) && strings.HasSuffix(trimmed, marker) {
+				trimmed = strings.TrimSpace(trimmed[len(marker) : len(trimmed)-len(marker)])
+				break
+			}
+		}
+		lines[index] = trimmed
+	}
+	return strings.Join(lines, "\n")
 }
 
 func stripMarkdownLinksFromProse(text string) string {
@@ -265,6 +301,11 @@ func (h *Handlers) GetLocationDescription(c *gin.Context) {
 
 	// Get language from query parameter, default to "en" (align with frontend default)
 	language := c.DefaultQuery("lang", "en")
+	view, err := streetViewViewFromRequest(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "Invalid Street View parameters"})
+		return
+	}
 
 	svc := h.servicesForMode(c)
 
@@ -288,11 +329,15 @@ func (h *Handlers) GetLocationDescription(c *gin.Context) {
 		})
 		return
 	}
+	if wantsDescriptionStream(c) {
+		h.streamDescription(c, svc.AIService, *loc, language, view, false)
+		return
+	}
 
 	startTime := time.Now()
 	logger := utils.APILogger()
 
-	desc, citations, err := svc.AIService.GetDescriptionForLocation(*loc, language)
+	desc, citations, err := svc.AIService.GetDescriptionForLocation(*loc, language, view)
 	if err != nil {
 		duration := time.Since(startTime)
 		statusCode := http.StatusInternalServerError
@@ -366,6 +411,11 @@ func (h *Handlers) GetLocationDetailedDescription(c *gin.Context) {
 
 	// Get language from query parameter, default to "en" (align with frontend default)
 	language := c.DefaultQuery("lang", "en")
+	view, err := streetViewViewFromRequest(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "Invalid Street View parameters"})
+		return
+	}
 
 	svc := h.servicesForMode(c)
 
@@ -389,11 +439,15 @@ func (h *Handlers) GetLocationDetailedDescription(c *gin.Context) {
 		})
 		return
 	}
+	if wantsDescriptionStream(c) {
+		h.streamDescription(c, svc.AIService, *loc, language, view, true)
+		return
+	}
 
 	startTime := time.Now()
 	logger := utils.APILogger()
 
-	desc, citations, err := svc.AIService.GetDetailedDescriptionForLocation(*loc, language)
+	desc, citations, err := svc.AIService.GetDetailedDescriptionForLocation(*loc, language, view)
 	if err != nil {
 		duration := time.Since(startTime)
 		statusCode := http.StatusInternalServerError
@@ -453,6 +507,126 @@ func (h *Handlers) GetLocationDetailedDescription(c *gin.Context) {
 			"duration":    time.Since(startTime).String(),
 		},
 	})
+}
+
+func (h *Handlers) streamDescription(c *gin.Context, aiService *services.AIService, loc models.Location, language string, view services.StreetViewView, detailed bool) {
+	startTime := time.Now()
+	c.Header("Content-Type", "text/event-stream; charset=utf-8")
+	c.Header("Cache-Control", "no-cache, no-transform")
+	c.Header("Connection", "keep-alive")
+	c.Header("X-Accel-Buffering", "no")
+	c.Status(http.StatusOK)
+	if err := writeDescriptionSSE(c, "status", gin.H{"phase": "researching"}); err != nil {
+		return
+	}
+
+	onDelta := func(delta string) error {
+		return writeDescriptionSSE(c, "delta", gin.H{"text": delta})
+	}
+
+	var (
+		desc      string
+		citations []openai.Citation
+		err       error
+	)
+	if detailed {
+		desc, citations, err = aiService.StreamDetailedDescriptionForLocation(c.Request.Context(), loc, language, view, onDelta)
+	} else {
+		desc, citations, err = aiService.StreamDescriptionForLocation(c.Request.Context(), loc, language, view, onDelta)
+	}
+	if err != nil {
+		CaptureHandlerError(c, err, http.StatusInternalServerError, map[string]interface{}{
+			"operation": "stream_description",
+			"pano_id":   loc.PanoID,
+			"language":  language,
+			"detailed":  detailed,
+			"duration":  time.Since(startTime).String(),
+		})
+		_ = writeDescriptionSSE(c, "error", gin.H{"error": PublicErrorMessage(err)})
+		return
+	}
+
+	cleanDesc := sanitizeDescription(desc)
+	if strings.TrimSpace(cleanDesc) == "" {
+		_ = writeDescriptionSSE(c, "error", gin.H{"error": "AI生成的描述为空，请重试"})
+		return
+	}
+	_ = writeDescriptionSSE(c, "done", gin.H{
+		"description": cleanDesc,
+		"citations":   citations,
+		"language":    language,
+		"duration":    time.Since(startTime).String(),
+	})
+}
+
+// GetStreetViewFrame returns the exact frame used as visual context by Atlas.
+// It is also consumed by the browser Realtime client as an input_image item.
+func (h *Handlers) GetStreetViewFrame(c *gin.Context) {
+	panoID := strings.TrimSpace(c.Param("panoId"))
+	if panoID == "" || len(panoID) > 100 || !panoIDRegex.MatchString(panoID) {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "Invalid pano id"})
+		return
+	}
+
+	view, err := streetViewViewFromRequest(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "Invalid Street View parameters"})
+		return
+	}
+
+	frame, err := h.servicesForMode(c).AIService.GetStreetViewFrame(c.Request.Context(), panoID, view)
+	if err != nil {
+		CaptureHandlerError(c, err, http.StatusBadGateway, map[string]interface{}{
+			"operation": "get_streetview_frame",
+			"pano_id":   panoID,
+			"heading":   view.Heading,
+			"pitch":     view.Pitch,
+			"fov":       view.FOV,
+		})
+		c.JSON(http.StatusBadGateway, gin.H{"success": false, "error": PublicErrorMessage(err)})
+		return
+	}
+
+	c.Header("Cache-Control", "public, max-age=3600")
+	c.Data(http.StatusOK, frame.ContentType, frame.Data)
+}
+
+func streetViewViewFromRequest(c *gin.Context) (services.StreetViewView, error) {
+	parse := func(name string, fallback, min, max int) (int, error) {
+		raw := strings.TrimSpace(c.Query(name))
+		if raw == "" {
+			return fallback, nil
+		}
+		value, err := strconv.Atoi(raw)
+		if err != nil || value < min || value > max {
+			return 0, strconv.ErrRange
+		}
+		return value, nil
+	}
+
+	heading, err := parse("heading", 0, 0, 360)
+	if err != nil {
+		return services.StreetViewView{}, err
+	}
+	pitch, err := parse("pitch", 0, -90, 90)
+	if err != nil {
+		return services.StreetViewView{}, err
+	}
+	fov, err := parse("fov", 90, 10, 120)
+	if err != nil {
+		return services.StreetViewView{}, err
+	}
+	scenePanoID := strings.TrimSpace(c.Query("scene_pano_id"))
+	if scenePanoID != "" && (len(scenePanoID) > 100 || !panoIDRegex.MatchString(scenePanoID)) {
+		return services.StreetViewView{}, strconv.ErrSyntax
+	}
+
+	return services.StreetViewView{
+		PanoID:  scenePanoID,
+		Heading: heading,
+		Pitch:   pitch,
+		FOV:     fov,
+	}, nil
 }
 
 // LookupLocation 根据坐标查找位置

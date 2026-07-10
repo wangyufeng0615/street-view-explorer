@@ -1,6 +1,7 @@
 package openai
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -13,6 +14,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/my-streetview-project/backend/internal/atlas"
 	"github.com/my-streetview-project/backend/internal/models"
@@ -36,8 +38,10 @@ const (
 var geographerSystemPrompt = atlas.TextSystemPrompt()
 
 type Client interface {
-	GenerateLocationDescription(latitude, longitude float64, locationInfo map[string]string, language string) (string, []Citation, error)
-	GenerateDetailedLocationDescription(latitude, longitude float64, locationInfo map[string]string, language string) (string, []Citation, error)
+	GenerateLocationDescription(latitude, longitude float64, locationInfo map[string]string, scene *SceneImage, language string) (string, []Citation, error)
+	GenerateDetailedLocationDescription(latitude, longitude float64, locationInfo map[string]string, scene *SceneImage, language string) (string, []Citation, error)
+	StreamLocationDescription(ctx context.Context, latitude, longitude float64, locationInfo map[string]string, scene *SceneImage, language string, onDelta func(string) error) (string, []Citation, error)
+	StreamDetailedLocationDescription(ctx context.Context, latitude, longitude float64, locationInfo map[string]string, scene *SceneImage, language string, onDelta func(string) error) (string, []Citation, error)
 	GenerateRegionsForInterest(interest string) ([]models.Region, error)
 	GuessLocationFromImage(ctx context.Context, imageBase64 string, zoom int, language string) (lat float64, lng float64, reasoning string, err error)
 }
@@ -49,15 +53,39 @@ type client struct {
 	endpoint   string
 }
 
-type webPlugin struct {
-	ID         string `json:"id"`
-	MaxResults int    `json:"max_results,omitempty"`
+type webSearchTool struct {
+	Type       string              `json:"type"`
+	Parameters webSearchParameters `json:"parameters,omitempty"`
+}
+
+type webSearchParameters struct {
+	Engine          string `json:"engine,omitempty"`
+	MaxResults      int    `json:"max_results,omitempty"`
+	MaxTotalResults int    `json:"max_total_results,omitempty"`
+	MaxCharacters   int    `json:"max_characters,omitempty"`
 }
 
 type chatRequest struct {
 	Model    string        `json:"model"`
 	Messages []chatMessage `json:"messages"`
-	Plugins  []webPlugin   `json:"plugins,omitempty"`
+}
+
+type completionUsage struct {
+	ServerToolUse struct {
+		WebSearchRequests int `json:"web_search_requests"`
+	} `json:"server_tool_use"`
+	ServerToolUseDetails struct {
+		WebSearchRequests  int `json:"web_search_requests"`
+		ToolCallsRequested int `json:"tool_calls_requested"`
+		ToolCallsExecuted  int `json:"tool_calls_executed"`
+	} `json:"server_tool_use_details"`
+}
+
+func (u completionUsage) webSearchRequests() int {
+	if u.ServerToolUseDetails.WebSearchRequests > u.ServerToolUse.WebSearchRequests {
+		return u.ServerToolUseDetails.WebSearchRequests
+	}
+	return u.ServerToolUse.WebSearchRequests
 }
 
 type ChatMessage struct {
@@ -69,6 +97,14 @@ type ChatMessage struct {
 type Citation struct {
 	URL   string `json:"url"`
 	Title string `json:"title"`
+}
+
+type SceneImage struct {
+	Base64      string
+	ContentType string
+	Heading     int
+	Pitch       int
+	FOV         int
 }
 
 // 为了向后兼容保留小写版本
@@ -95,6 +131,25 @@ type chatResponse struct {
 		Message string `json:"message"`
 		Code    any    `json:"code,omitempty"`
 	} `json:"error,omitempty"`
+	Usage completionUsage `json:"usage,omitempty"`
+}
+
+type chatStreamChunk struct {
+	Choices []struct {
+		Delta struct {
+			Content     string       `json:"content"`
+			Annotations []annotation `json:"annotations,omitempty"`
+		} `json:"delta"`
+		Message struct {
+			Content     string       `json:"content"`
+			Annotations []annotation `json:"annotations,omitempty"`
+		} `json:"message,omitempty"`
+	} `json:"choices"`
+	Error *struct {
+		Message string `json:"message"`
+		Code    any    `json:"code,omitempty"`
+	} `json:"error,omitempty"`
+	Usage completionUsage `json:"usage,omitempty"`
 }
 
 // extractCitations deduplicates url_citation annotations into a Citation slice.
@@ -343,6 +398,132 @@ func (c *client) doChatCompletion(ctx context.Context, functionName string, reqJ
 	return nil, lastErr
 }
 
+func (c *client) doStreamingChatCompletion(ctx context.Context, functionName string, reqJSON []byte, startTime time.Time, onDelta func(string) error) (chatResponse, error) {
+	var lastErr error
+	var retryAfter time.Duration
+
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			delay := retryDelay(attempt, retryAfter)
+			log.Printf("[AI_RETRY] function=%s attempt=%d delay=%v previous_error=%v", functionName, attempt+1, delay, lastErr)
+			if err := sleepWithContext(ctx, delay); err != nil {
+				return chatResponse{}, fmt.Errorf("OpenRouter 请求超时")
+			}
+		}
+		retryAfter = 0
+
+		req, err := http.NewRequestWithContext(ctx, "POST", c.endpoint, bytes.NewReader(reqJSON))
+		if err != nil {
+			return chatResponse{}, fmt.Errorf("创建请求失败: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "text/event-stream")
+		req.Header.Set("Authorization", "Bearer "+c.apiKey)
+		req.Header.Set("HTTP-Referer", "https://earth.wangyufeng.org")
+		req.Header.Set("X-OpenRouter-Title", "Street View Explorer")
+
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			if ctx.Err() == context.DeadlineExceeded {
+				log.Printf("[AI_ERROR] action=timeout function=%s duration=%v error=request_timeout", functionName, time.Since(startTime))
+				return chatResponse{}, fmt.Errorf("OpenRouter 请求超时")
+			}
+			lastErr = fmt.Errorf("发送请求失败: %w", err)
+			log.Printf("[AI_ERROR] action=request_failed function=%s attempt=%d duration=%v error=%v", functionName, attempt+1, time.Since(startTime), err)
+			if attempt < maxRetries {
+				continue
+			}
+			return chatResponse{}, lastErr
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			body, readErr := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if readErr != nil {
+				return chatResponse{}, fmt.Errorf("读取响应失败: %w", readErr)
+			}
+			lastErr = fmt.Errorf("API 请求失败 (状态码: %d): %s", resp.StatusCode, string(body))
+			log.Printf("[AI_ERROR] action=api_error function=%s attempt=%d duration=%v status=%d response=%s", functionName, attempt+1, time.Since(startTime), resp.StatusCode, truncateString(string(body), 200))
+			if !isRetryableStatus(resp.StatusCode) || attempt >= maxRetries {
+				return chatResponse{}, lastErr
+			}
+			retryAfter = parseRetryAfter(resp.Header.Get("Retry-After"))
+			continue
+		}
+
+		result, streamErr := readChatCompletionStream(resp.Body, onDelta)
+		resp.Body.Close()
+		if streamErr != nil {
+			log.Printf("[AI_ERROR] action=stream_failed function=%s duration=%v error=%v", functionName, time.Since(startTime), streamErr)
+			return chatResponse{}, streamErr
+		}
+		return result, nil
+	}
+
+	return chatResponse{}, lastErr
+}
+
+func readChatCompletionStream(body io.Reader, onDelta func(string) error) (chatResponse, error) {
+	scanner := bufio.NewScanner(body)
+	scanner.Buffer(make([]byte, 64*1024), 2*1024*1024)
+
+	var content strings.Builder
+	var annotations []annotation
+	var usage completionUsage
+
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, ":") || !strings.HasPrefix(line, "data:") {
+			continue
+		}
+		payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+		if payload == "" || payload == "[DONE]" {
+			continue
+		}
+		var chunk chatStreamChunk
+		if err := json.Unmarshal([]byte(payload), &chunk); err != nil {
+			return chatResponse{}, fmt.Errorf("解析流式响应失败: %w", err)
+		}
+		if chunk.Error != nil {
+			return chatResponse{}, fmt.Errorf("AI API错误: %s", chunk.Error.Message)
+		}
+		if chunk.Usage.webSearchRequests() > 0 {
+			usage = chunk.Usage
+		}
+		for _, choice := range chunk.Choices {
+			delta := choice.Delta.Content
+			if delta == "" && choice.Message.Content != "" {
+				delta = choice.Message.Content
+			}
+			if delta != "" {
+				content.WriteString(delta)
+				if onDelta != nil {
+					if err := onDelta(delta); err != nil {
+						return chatResponse{}, fmt.Errorf("向客户端发送流式响应失败: %w", err)
+					}
+				}
+			}
+			annotations = append(annotations, choice.Delta.Annotations...)
+			annotations = append(annotations, choice.Message.Annotations...)
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return chatResponse{}, fmt.Errorf("读取流式响应失败: %w", err)
+	}
+
+	var result chatResponse
+	result.Choices = append(result.Choices, struct {
+		Message struct {
+			Content     string       `json:"content"`
+			Annotations []annotation `json:"annotations,omitempty"`
+		} `json:"message"`
+	}{})
+	result.Choices[0].Message.Content = content.String()
+	result.Choices[0].Message.Annotations = annotations
+	result.Usage = usage
+	return result, nil
+}
+
 func retryDelay(attempt int, retryAfter time.Duration) time.Duration {
 	if retryAfter > 0 {
 		return retryAfter
@@ -406,17 +587,170 @@ func truncateRunes(s string, maxRunes int) string {
 	return string(runes[:maxRunes])
 }
 
-func (c *client) GenerateLocationDescription(latitude, longitude float64, locationInfo map[string]string, language string) (string, []Citation, error) {
+func isChineseLanguage(language string) bool {
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(language)), "zh")
+}
+
+func descriptionLanguageInstruction(language string) string {
+	if isChineseLanguage(language) {
+		return "Output only Simplified Chinese. The location's country and local language never change this rule. Every visible word, including the opening bracket line and proper-name rendering, must be Chinese."
+	}
+	return "Output only English. The location's country and local language never change this rule. Every visible word, including the opening bracket line, must be English."
+}
+
+func containsResearchNarration(text string) bool {
+	lower := strings.ToLower(strings.TrimSpace(text))
+	for _, phrase := range []string{
+		"i'll search",
+		"i will search",
+		"i’m going to search",
+		"i'm going to search",
+		"let me search",
+		"i'll look up",
+		"i will look up",
+		"let me look up",
+		"i'll research",
+		"i will research",
+		"first, i'll search",
+		"first i'll search",
+		"我先搜索",
+		"让我搜索",
+		"我会搜索",
+		"先查一下",
+		"先搜索",
+		"検索",
+	} {
+		if strings.Contains(lower, phrase) {
+			return true
+		}
+	}
+	return false
+}
+
+func countDescriptionScripts(text string) (han, kana, latin int) {
+	for _, r := range text {
+		switch {
+		case unicode.In(r, unicode.Hiragana, unicode.Katakana):
+			kana++
+		case unicode.In(r, unicode.Han):
+			han++
+		case unicode.Is(unicode.Latin, r):
+			latin++
+		}
+	}
+	return han, kana, latin
+}
+
+func stripResearchNarration(text, language string) string {
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" {
+		return ""
+	}
+
+	opening := -1
+	for _, marker := range []string{"[", "【"} {
+		if index := strings.Index(trimmed, marker); index >= 0 && (opening < 0 || index < opening) {
+			opening = index
+		}
+	}
+	if opening > 0 && opening < 400 {
+		prefix := strings.TrimSpace(trimmed[:opening])
+		han, _, _ := countDescriptionScripts(prefix)
+		if containsResearchNarration(prefix) || (isChineseLanguage(language) && han == 0) {
+			return strings.TrimSpace(trimmed[opening:])
+		}
+	}
+
+	if paragraphEnd := strings.Index(trimmed, "\n\n"); paragraphEnd > 0 && paragraphEnd < 400 {
+		prefix := strings.TrimSpace(trimmed[:paragraphEnd])
+		if containsResearchNarration(prefix) {
+			return strings.TrimSpace(trimmed[paragraphEnd+2:])
+		}
+	}
+	return trimmed
+}
+
+func validateDescriptionLanguage(text, language string, partial bool) error {
+	han, kana, latin := countDescriptionScripts(text)
+	if isChineseLanguage(language) {
+		minimumHan := 12
+		if partial {
+			minimumHan = 4
+		}
+		if kana >= 2 || han < minimumHan {
+			return fmt.Errorf("AI 返回的描述语言不符合简体中文要求")
+		}
+		return nil
+	}
+
+	minimumLatin := 20
+	if partial {
+		minimumLatin = 6
+	}
+	if latin < minimumLatin && han+kana > latin*2 {
+		return fmt.Errorf("AI returned the description in the wrong language")
+	}
+	return nil
+}
+
+type descriptionStreamGate struct {
+	language   string
+	downstream func(string) error
+	pending    strings.Builder
+	released   bool
+}
+
+func newDescriptionStreamGate(language string, downstream func(string) error) *descriptionStreamGate {
+	return &descriptionStreamGate{language: language, downstream: downstream}
+}
+
+func (g *descriptionStreamGate) Write(delta string) error {
+	if g.downstream == nil || delta == "" {
+		return nil
+	}
+	if g.released {
+		if isChineseLanguage(g.language) {
+			_, kana, _ := countDescriptionScripts(delta)
+			if kana > 0 {
+				return fmt.Errorf("AI 返回的描述语言不符合简体中文要求")
+			}
+		}
+		return g.downstream(delta)
+	}
+
+	g.pending.WriteString(delta)
+	pending := g.pending.String()
+	if !strings.Contains(pending, "\n\n") && len([]rune(pending)) < 220 {
+		return nil
+	}
+
+	visible := stripResearchNarration(pending, g.language)
+	if err := validateDescriptionLanguage(visible, g.language, true); err != nil {
+		return err
+	}
+	g.released = true
+	return g.downstream(visible)
+}
+
+func (g *descriptionStreamGate) Finish(finalText string) error {
+	if g.downstream == nil || g.released || finalText == "" {
+		return nil
+	}
+	g.released = true
+	return g.downstream(finalText)
+}
+
+func (c *client) GenerateLocationDescription(latitude, longitude float64, locationInfo map[string]string, scene *SceneImage, language string) (string, []Citation, error) {
+	return c.StreamLocationDescription(context.Background(), latitude, longitude, locationInfo, scene, language, nil)
+}
+
+func (c *client) StreamLocationDescription(parent context.Context, latitude, longitude float64, locationInfo map[string]string, scene *SceneImage, language string, onDelta func(string) error) (string, []Citation, error) {
 	startTime := time.Now()
 	descTimeout := 20 * time.Second
 
 	log.Printf("[AI] action=request_start function=GenerateLocationDescription coords=(%.6f,%.6f) language=%s model=%s timeout=%s", latitude, longitude, language, c.modelName, descTimeout)
 
-	// 根据语言选择提示词格式
-	outputFormat := "Give it to me in Chinese"
-	if language != "zh" {
-		outputFormat = "Give it to me in English"
-	}
+	outputFormat := descriptionLanguageInstruction(language)
 
 	// 构建详细的地理信息字符串
 	var geoDetails strings.Builder
@@ -486,24 +820,24 @@ func (c *client) GenerateLocationDescription(latitude, longitude float64, locati
 		}
 	}
 
-	// Plus Code信息
-	if val, exists := locationInfo["plus_code_global"]; exists && val != "" {
-		geoDetails.WriteString(fmt.Sprintf("- Plus Code (Global): %s\n", val))
-	}
-	if val, exists := locationInfo["plus_code_compound"]; exists && val != "" {
-		geoDetails.WriteString(fmt.Sprintf("- Plus Code (Compound): %s\n", val))
-	}
-	if val, exists := locationInfo["plus_code"]; exists && val != "" {
-		geoDetails.WriteString(fmt.Sprintf("- Plus Code: %s\n", val))
-	}
-
 	// 自然特征
 	if val, exists := locationInfo["natural_feature"]; exists && val != "" {
 		geoDetails.WriteString(fmt.Sprintf("- Natural Feature: %s\n", val))
 	}
+	if scene != nil && scene.Base64 != "" {
+		geoDetails.WriteString(fmt.Sprintf(
+			"\nStreet View Frame: provided (heading=%d, pitch=%d, fov=%d). Treat it as the authoritative source for what is visibly present in the current view.\n",
+			scene.Heading,
+			scene.Pitch,
+			scene.FOV,
+		))
+	} else {
+		geoDetails.WriteString("\nStreet View Frame: unavailable. Do not claim to see scene details.\n")
+	}
 
 	prompt := fmt.Sprintf(
 		"%s\n\n"+
+			"Silently call the web search tool exactly once with one precise query about this location. After that single search, synthesize the answer and do not search again. Do not announce or describe the research step; the first visible output must be Atlas's bracketed scene note.\n"+
 			"Focus on the most specific geographic information available (street, establishment, or neighborhood level). "+
 			"Use broader context as supporting info. Remember: plain text only, no markdown. The app renders citations separately, so keep links and source mentions out of the prose and end on a clean sentence.\n\n"+
 			"%s",
@@ -511,19 +845,41 @@ func (c *client) GenerateLocationDescription(latitude, longitude float64, locati
 		outputFormat,
 	)
 
-	reqBody := chatRequest{
+	var userContent interface{} = prompt
+	if scene != nil && scene.Base64 != "" {
+		userContent = []visionContentPart{
+			{Type: "image_url", ImageURL: &visionImageURL{URL: sceneDataURI(scene), Detail: "high"}},
+			{Type: "text", Text: prompt},
+		}
+	}
+
+	parallelToolCalls := false
+	streamGate := newDescriptionStreamGate(language, onDelta)
+	reqBody := visionChatRequest{
 		Model: c.modelName,
-		Messages: []chatMessage{
+		Messages: []visionMessage{
 			{
 				Role:    "system",
-				Content: geographerSystemPrompt,
+				Content: atlas.TextSystemPrompt(language),
 			},
 			{
 				Role:    "user",
-				Content: prompt,
+				Content: userContent,
 			},
 		},
-		Plugins: []webPlugin{{ID: "web", MaxResults: 3}},
+		Tools: []webSearchTool{{
+			Type: "openrouter:web_search",
+			Parameters: webSearchParameters{
+				Engine:          "auto",
+				MaxResults:      3,
+				MaxTotalResults: 3,
+				MaxCharacters:   2000,
+			},
+		}},
+		ToolChoice:        "auto",
+		ParallelToolCalls: &parallelToolCalls,
+		Stream:            true,
+		MaxToolCalls:      1,
 	}
 
 	reqJSON, err := json.Marshal(reqBody)
@@ -531,18 +887,12 @@ func (c *client) GenerateLocationDescription(latitude, longitude float64, locati
 		return "", nil, fmt.Errorf("编码请求失败: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), descTimeout)
+	ctx, cancel := context.WithTimeout(parent, descTimeout)
 	defer cancel()
 
-	body, err := c.doChatCompletion(ctx, "GenerateLocationDescription", reqJSON, startTime)
+	chatResp, err := c.doStreamingChatCompletion(ctx, "GenerateLocationDescription", reqJSON, startTime, streamGate.Write)
 	if err != nil {
 		return "", nil, err
-	}
-
-	var chatResp chatResponse
-	if err := json.Unmarshal(body, &chatResp); err != nil {
-		log.Printf("[AI_ERROR] action=parse_failed function=GenerateLocationDescription duration=%v error=%v response=%s", time.Since(startTime), err, truncateString(string(body), 200))
-		return "", nil, fmt.Errorf("解析响应失败: %w", err)
 	}
 
 	if chatResp.Error != nil {
@@ -554,27 +904,45 @@ func (c *client) GenerateLocationDescription(latitude, longitude float64, locati
 		log.Printf("[AI_ERROR] action=empty_response function=GenerateLocationDescription duration=%v error=no_choices_returned", time.Since(startTime))
 		return "", nil, fmt.Errorf("AI未返回任何结果")
 	}
+	if chatResp.Usage.webSearchRequests() < 1 {
+		log.Printf("[AI_ERROR] action=web_search_missing function=GenerateLocationDescription duration=%v", time.Since(startTime))
+		return "", nil, fmt.Errorf("AI 未执行要求的资料搜索")
+	}
 
-	desc := stripInlineCitations(chatResp.Choices[0].Message.Content, chatResp.Choices[0].Message.Annotations)
+	desc := stripResearchNarration(
+		stripInlineCitations(chatResp.Choices[0].Message.Content, chatResp.Choices[0].Message.Annotations),
+		language,
+	)
+	if err := validateDescriptionLanguage(desc, language, false); err != nil {
+		log.Printf("[AI_ERROR] action=language_mismatch function=GenerateLocationDescription duration=%v", time.Since(startTime))
+		return "", nil, err
+	}
+	if err := streamGate.Finish(desc); err != nil {
+		return "", nil, err
+	}
 	citations := extractCitations(chatResp)
-	log.Printf("[AI] action=request_completed function=GenerateLocationDescription duration=%v response_length=%d citations_count=%d", time.Since(startTime), len(desc), len(citations))
+	log.Printf("[AI] action=request_completed function=GenerateLocationDescription duration=%v response_length=%d citations_count=%d web_search_requests=%d", time.Since(startTime), len(desc), len(citations), chatResp.Usage.webSearchRequests())
 
 	return desc, citations, nil
 }
 
-func (c *client) GenerateDetailedLocationDescription(latitude, longitude float64, locationInfo map[string]string, language string) (string, []Citation, error) {
+func (c *client) GenerateDetailedLocationDescription(latitude, longitude float64, locationInfo map[string]string, scene *SceneImage, language string) (string, []Citation, error) {
+	return c.StreamDetailedLocationDescription(context.Background(), latitude, longitude, locationInfo, scene, language, nil)
+}
+
+func (c *client) StreamDetailedLocationDescription(parent context.Context, latitude, longitude float64, locationInfo map[string]string, scene *SceneImage, language string, onDelta func(string) error) (string, []Citation, error) {
 	startTime := time.Now()
 	detailedTimeout := 30 * time.Second
 
 	log.Printf("[AI] action=request_start function=GenerateDetailedLocationDescription coords=(%.6f,%.6f) language=%s model=%s timeout=%s", latitude, longitude, language, c.modelName, detailedTimeout)
 
-	ctx, cancel := context.WithTimeout(context.Background(), detailedTimeout)
+	ctx, cancel := context.WithTimeout(parent, detailedTimeout)
 	defer cancel()
 
 	// 构建位置信息字符串
 	var locationStrings []string
 	for key, value := range locationInfo {
-		if value != "" {
+		if value != "" && !strings.HasPrefix(key, "plus_code") {
 			locationStrings = append(locationStrings, fmt.Sprintf("%s: %s", key, value))
 		}
 	}
@@ -583,17 +951,23 @@ func (c *client) GenerateDetailedLocationDescription(latitude, longitude float64
 		locationText = fmt.Sprintf("Coordinates: %.6f, %.6f", latitude, longitude)
 	}
 
-	// 根据语言选择提示词格式
-	outputFormat := "Please respond in Chinese"
-	if language != "zh" {
-		outputFormat = "Please respond in English"
-	}
+	outputFormat := descriptionLanguageInstruction(language)
 
 	// 构建详细分析请求
+	sceneInstruction := "No Street View frame is available. Do not claim to see specific visual details."
+	if scene != nil && scene.Base64 != "" {
+		sceneInstruction = fmt.Sprintf(
+			"A current Street View frame is attached at heading %d, pitch %d, fov %d. Use it as the authoritative source for visible details and keep off-screen claims separate.",
+			scene.Heading,
+			scene.Pitch,
+			scene.FOV,
+		)
+	}
 	detailedPrompt := fmt.Sprintf(
 		"Your friend wants you to dig deeper into this location. Take your time and think carefully.\n"+
 			"Coordinates: %.6f, %.6f\n"+
-			"Location Info: %s\n\n"+
+			"Location Info: %s\n"+
+			"Visual Context: %s\n\n"+
 			"Cover these angles with real substance:\n"+
 			"- History: what happened here, how did this place evolve, key turning points\n"+
 			"- Built environment: architecture styles, urban planning, infrastructure quality\n"+
@@ -601,30 +975,47 @@ func (c *client) GenerateDetailedLocationDescription(latitude, longitude float64
 			"- Economy: what drives the local economy, major industries, employment\n"+
 			"- Geography and environment: terrain, climate, natural features\n"+
 			"- How this place connects to and matters within its broader region\n\n"+
-			"You have real-time web search results at your disposal — use them thoroughly. Cross-reference sources for historical dates, demographic data, economic figures, and recent local developments. Go deeper than surface-level knowledge.\n\n"+
+			"Silently call the web search tool exactly once with one precise query about this location. After that single search, synthesize the answer and do not search again. Do not announce or describe the research step; the first visible output must be Atlas's bracketed scene note. Cross-reference the returned sources for historical dates, demographic data, economic figures, and recent local developments. Go deeper than surface-level knowledge.\n\n"+
 			"Write as Atlas — warm, playful, talking to a friend. Every sentence should carry actual information. 4-6 short paragraphs, 2-3 sentences each; never one long wall of text. You may drop one or two bracket lines with a quick inner thought between paragraphs (e.g. [翻资料的时候被这段历史惊到了]).\n"+
 			"CRITICAL: pure plain text only, absolutely no markdown formatting (no asterisks, no bold, no headers, no bullet points).\n"+
 			"The app renders citations separately, so keep links, URL fragments, source lists, and trailing reference blocks out of the response body. End on a clean sentence about the place.\n"+
 			"If a specific claim is uncertain and unsupported by search results, keep it modest rather than inventing details.\n\n"+
 			"%s",
-		latitude, longitude, locationText, outputFormat)
+		latitude, longitude, locationText, sceneInstruction, outputFormat)
 
 	// 构建消息
+	var userContent interface{} = detailedPrompt
+	if scene != nil && scene.Base64 != "" {
+		userContent = []visionContentPart{
+			{Type: "image_url", ImageURL: &visionImageURL{URL: sceneDataURI(scene), Detail: "high"}},
+			{Type: "text", Text: detailedPrompt},
+		}
+	}
 	messages := []ChatMessage{
-		{
-			Role:    "system",
-			Content: geographerSystemPrompt,
-		},
-		{
-			Role:    "user",
-			Content: detailedPrompt,
-		},
+		{Role: "system", Content: atlas.TextSystemPrompt(language)},
 	}
 
-	reqBody := chatRequest{
-		Model:    c.modelName,
-		Messages: messages,
-		Plugins:  []webPlugin{{ID: "web", MaxResults: 6}},
+	parallelToolCalls := false
+	streamGate := newDescriptionStreamGate(language, onDelta)
+	reqBody := visionChatRequest{
+		Model: c.modelName,
+		Messages: []visionMessage{
+			{Role: messages[0].Role, Content: messages[0].Content},
+			{Role: "user", Content: userContent},
+		},
+		Tools: []webSearchTool{{
+			Type: "openrouter:web_search",
+			Parameters: webSearchParameters{
+				Engine:          "auto",
+				MaxResults:      6,
+				MaxTotalResults: 6,
+				MaxCharacters:   2500,
+			},
+		}},
+		ToolChoice:        "auto",
+		ParallelToolCalls: &parallelToolCalls,
+		Stream:            true,
+		MaxToolCalls:      1,
 	}
 
 	reqJSON, err := json.Marshal(reqBody)
@@ -632,16 +1023,9 @@ func (c *client) GenerateDetailedLocationDescription(latitude, longitude float64
 		return "", nil, fmt.Errorf("编码请求失败: %w", err)
 	}
 
-	body, err := c.doChatCompletion(ctx, "GenerateDetailedLocationDescription", reqJSON, startTime)
+	chatResp, err := c.doStreamingChatCompletion(ctx, "GenerateDetailedLocationDescription", reqJSON, startTime, streamGate.Write)
 	if err != nil {
 		return "", nil, err
-	}
-
-	var chatResp chatResponse
-	if err := json.Unmarshal(body, &chatResp); err != nil {
-		log.Printf("[AI_ERROR] action=parse_failed function=GenerateDetailedLocationDescription duration=%v error=%v",
-			time.Since(startTime), err)
-		return "", nil, fmt.Errorf("解析响应失败: %w", err)
 	}
 
 	if chatResp.Error != nil {
@@ -655,11 +1039,25 @@ func (c *client) GenerateDetailedLocationDescription(latitude, longitude float64
 			time.Since(startTime))
 		return "", nil, fmt.Errorf("AI未返回任何结果")
 	}
+	if chatResp.Usage.webSearchRequests() < 1 {
+		log.Printf("[AI_ERROR] action=web_search_missing function=GenerateDetailedLocationDescription duration=%v", time.Since(startTime))
+		return "", nil, fmt.Errorf("AI 未执行要求的资料搜索")
+	}
 
-	result := stripInlineCitations(chatResp.Choices[0].Message.Content, chatResp.Choices[0].Message.Annotations)
+	result := stripResearchNarration(
+		stripInlineCitations(chatResp.Choices[0].Message.Content, chatResp.Choices[0].Message.Annotations),
+		language,
+	)
+	if err := validateDescriptionLanguage(result, language, false); err != nil {
+		log.Printf("[AI_ERROR] action=language_mismatch function=GenerateDetailedLocationDescription duration=%v", time.Since(startTime))
+		return "", nil, err
+	}
+	if err := streamGate.Finish(result); err != nil {
+		return "", nil, err
+	}
 	citations := extractCitations(chatResp)
 
-	log.Printf("[AI] action=request_completed function=GenerateDetailedLocationDescription duration=%v response_length=%d citations_count=%d", time.Since(startTime), len(result), len(citations))
+	log.Printf("[AI] action=request_completed function=GenerateDetailedLocationDescription duration=%v response_length=%d citations_count=%d web_search_requests=%d", time.Since(startTime), len(result), len(citations), chatResp.Usage.webSearchRequests())
 
 	return result, citations, nil
 }
@@ -854,8 +1252,21 @@ type visionMessage struct {
 }
 
 type visionChatRequest struct {
-	Model    string          `json:"model"`
-	Messages []visionMessage `json:"messages"`
+	Model             string          `json:"model"`
+	Messages          []visionMessage `json:"messages"`
+	Tools             []webSearchTool `json:"tools,omitempty"`
+	ToolChoice        string          `json:"tool_choice,omitempty"`
+	ParallelToolCalls *bool           `json:"parallel_tool_calls,omitempty"`
+	Stream            bool            `json:"stream,omitempty"`
+	MaxToolCalls      int             `json:"max_tool_calls,omitempty"`
+}
+
+func sceneDataURI(scene *SceneImage) string {
+	contentType := strings.ToLower(strings.TrimSpace(scene.ContentType))
+	if contentType != "image/png" && contentType != "image/jpeg" {
+		contentType = "image/jpeg"
+	}
+	return "data:" + contentType + ";base64," + scene.Base64
 }
 
 func geoGuessUserPrompt(zoom int, language string) string {

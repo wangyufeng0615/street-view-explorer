@@ -7,6 +7,7 @@
   "ai.retrying": "Atlas is taking another look… ({{retries}}/3)",
   "ai.retryGetDescription": "Let Atlas try again",
   "ai.waitingForAnalysis": "Atlas is traveling…",
+  "ai.thinkingTitle": "Atlas is looking around…",
   "ai.cannotGetStreetView": "Unable to get Street View information for this location. Please try exploring other locations.",
   "ai.tellMeMore": "Atlas, tell me more",
   "ai.loadingDetailedDescription": "Atlas is digging deeper…",

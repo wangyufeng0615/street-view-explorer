@@ -81,6 +81,63 @@ export function buildVoiceContextSignature(context = {}) {
   });
 }
 
+export function resolveStreetViewScene({ location, streetViewView, heading = 0 } = {}) {
+  const panoId = String(
+    streetViewView?.panoId || location?.pano_id || location?.panoId || "",
+  ).trim();
+  if (!panoId) return null;
+
+  const numeric = (value, fallback) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  };
+
+  return {
+    panoId,
+    heading: ((numeric(streetViewView?.heading, heading) % 360) + 360) % 360,
+    pitch: Math.max(-90, Math.min(90, numeric(streetViewView?.pitch, 0))),
+    fov: Math.max(10, Math.min(120, numeric(streetViewView?.fov, 90))),
+    source: streetViewView?.source || "initial",
+  };
+}
+
+export function buildStreetViewSceneSignature(scene) {
+  if (!scene?.panoId) return "";
+  const quantize = (value, step) => Math.round(Number(value || 0) / step) * step;
+  return [
+    scene.panoId,
+    quantize(scene.heading, 5),
+    quantize(scene.pitch, 5),
+    Math.round(scene.fov),
+  ].join(":");
+}
+
+export function buildRealtimeSceneContextEvent({ itemId, imageDataUrl, scene }) {
+  return {
+    type: "conversation.item.create",
+    item: {
+      id: itemId,
+      type: "message",
+      role: "user",
+      content: [
+        {
+          type: "input_image",
+          image_url: imageDataUrl,
+          detail: "high",
+        },
+        {
+          type: "input_text",
+          text: `Silent current Street View context. Heading ${Math.round(
+            scene.heading,
+          )}°, pitch ${Math.round(scene.pitch)}°, field of view ${Math.round(
+            scene.fov,
+          )}°. Observe it now, but do not respond until the user speaks.`,
+        },
+      ],
+    },
+  };
+}
+
 function quantizedHeading(heading) {
   const numeric = Number(heading);
   if (!Number.isFinite(numeric)) return 0;

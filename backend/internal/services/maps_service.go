@@ -5,10 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/my-streetview-project/backend/internal/utils"
 	"googlemaps.github.io/maps"
@@ -20,6 +23,21 @@ type MapsService struct {
 	httpClient      *http.Client
 	proxyConfigured bool
 	mu              sync.RWMutex
+	cacheMu         sync.Mutex
+	locationCache   map[string]locationInfoCacheEntry
+	frameCache      map[string]streetViewFrameCacheEntry
+}
+
+type locationInfoCacheEntry struct {
+	info       map[string]string
+	expiresAt  time.Time
+	lastAccess time.Time
+}
+
+type streetViewFrameCacheEntry struct {
+	frame      *StreetViewFrame
+	expiresAt  time.Time
+	lastAccess time.Time
 }
 
 func NewMapsService(apiKey string) (*MapsService, error) {
@@ -124,6 +142,98 @@ func (s *MapsService) getHTTPClient() *http.Client {
 // HTTPClient returns the proxy-aware HTTP client for reuse by other components.
 func (s *MapsService) HTTPClient() *http.Client {
 	return s.getHTTPClient()
+}
+
+const (
+	maxStreetViewFrameBytes = 8 << 20
+	locationInfoCacheTTL    = time.Hour
+	streetViewFrameCacheTTL = 10 * time.Minute
+	maxLocationCacheEntries = 512
+	maxFrameCacheEntries    = 128
+)
+
+func normalizeStreetViewView(view StreetViewView) StreetViewView {
+	if view.Heading < 0 || view.Heading > 360 {
+		view.Heading = 0
+	}
+	if view.Heading == 360 {
+		view.Heading = 0
+	}
+	if view.Pitch < -90 || view.Pitch > 90 {
+		view.Pitch = 0
+	}
+	if view.FOV < 10 || view.FOV > 120 {
+		view.FOV = 90
+	}
+	return view
+}
+
+// GetStreetViewFrame returns one Google Street View Static API image using the
+// same proxy-aware client as the rest of MapsService. The API key never leaves
+// the backend.
+func (s *MapsService) GetStreetViewFrame(ctx context.Context, panoID string, view StreetViewView) (*StreetViewFrame, error) {
+	panoID = strings.TrimSpace(panoID)
+	if panoID == "" || len(panoID) > 100 {
+		return nil, fmt.Errorf("invalid pano id")
+	}
+	if strings.TrimSpace(s.apiKey) == "" {
+		return nil, fmt.Errorf("street view image service is not configured")
+	}
+
+	view = normalizeStreetViewView(view)
+	cacheKey := fmt.Sprintf("%s|%d|%d|%d", panoID, view.Heading, view.Pitch, view.FOV)
+	if cached, ok := s.getCachedStreetViewFrame(cacheKey); ok {
+		return cached, nil
+	}
+	query := url.Values{}
+	query.Set("size", "640x480")
+	query.Set("pano", panoID)
+	query.Set("heading", fmt.Sprintf("%d", view.Heading))
+	query.Set("pitch", fmt.Sprintf("%d", view.Pitch))
+	query.Set("fov", fmt.Sprintf("%d", view.FOV))
+	query.Set("key", s.apiKey)
+
+	req, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodGet,
+		"https://maps.googleapis.com/maps/api/streetview?"+query.Encode(),
+		nil,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("build street view image request: %w", err)
+	}
+
+	resp, err := s.getHTTPClient().Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fetch street view image: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("street view image returned status %d", resp.StatusCode)
+	}
+
+	contentType := strings.TrimSpace(resp.Header.Get("Content-Type"))
+	mediaType, _, err := mime.ParseMediaType(contentType)
+	if err != nil || (mediaType != "image/jpeg" && mediaType != "image/png") {
+		return nil, fmt.Errorf("street view image returned unsupported content type")
+	}
+
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxStreetViewFrameBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("read street view image: %w", err)
+	}
+	if len(data) == 0 || len(data) > maxStreetViewFrameBytes {
+		return nil, fmt.Errorf("street view image size is invalid")
+	}
+
+	frame := &StreetViewFrame{
+		Data:        data,
+		ContentType: mediaType,
+		View:        view,
+	}
+	s.cacheStreetViewFrame(cacheKey, frame)
+	return cloneStreetViewFrame(frame), nil
 }
 
 // 检查坐标是否有街景可用，并返回街景坐标
@@ -360,6 +470,11 @@ func placeSearchResultToCandidate(result maps.PlacesSearchResult) *PlaceCandidat
 }
 
 func (s *MapsService) GetLocationInfo(ctx context.Context, latitude, longitude float64, language string) (map[string]string, error) {
+	cacheKey := fmt.Sprintf("%.6f|%.6f|%s", latitude, longitude, strings.ToLower(strings.TrimSpace(language)))
+	if cached, ok := s.getCachedLocationInfo(cacheKey); ok {
+		return cached, nil
+	}
+
 	// 创建 Geocoding 请求
 	req := &maps.GeocodingRequest{
 		LatLng: &maps.LatLng{
@@ -383,106 +498,250 @@ func (s *MapsService) GetLocationInfo(ctx context.Context, latitude, longitude f
 	if len(resp) == 0 {
 		return nil, fmt.Errorf("未找到位置信息")
 	}
+	info := locationInfoFromGeocodingResults(resp)
+	s.cacheLocationInfo(cacheKey, info)
+	return cloneLocationInfo(info), nil
+}
 
-	// 提取位置信息
-	result := make(map[string]string)
-	result["formatted_address"] = resp[0].FormattedAddress
+func (s *MapsService) getCachedLocationInfo(key string) (map[string]string, bool) {
+	now := time.Now()
+	s.cacheMu.Lock()
+	defer s.cacheMu.Unlock()
+	entry, ok := s.locationCache[key]
+	if !ok {
+		return nil, false
+	}
+	if now.After(entry.expiresAt) {
+		delete(s.locationCache, key)
+		return nil, false
+	}
+	entry.lastAccess = now
+	s.locationCache[key] = entry
+	return cloneLocationInfo(entry.info), true
+}
 
-	// 提取详细的地址组件信息
-	for _, component := range resp[0].AddressComponents {
-		for _, t := range component.Types {
-			switch t {
-			case "street_number":
-				result["street_number"] = component.LongName
-			case "route":
-				result["route"] = component.LongName
-			case "intersection":
-				result["intersection"] = component.LongName
-			case "political":
-				result["political"] = component.LongName
-			case "country":
-				result["country"] = component.LongName
-				result["country_code"] = component.ShortName
-			case "administrative_area_level_1":
-				result["state_province"] = component.LongName
-				result["state_province_code"] = component.ShortName
-			case "administrative_area_level_2":
-				result["county_district"] = component.LongName
-			case "administrative_area_level_3":
-				result["subdistrict"] = component.LongName
-			case "administrative_area_level_4":
-				result["neighborhood"] = component.LongName
-			case "administrative_area_level_5":
-				result["subneighborhood"] = component.LongName
-			case "locality":
-				result["city"] = component.LongName
-			case "sublocality":
-				result["sublocality"] = component.LongName
-			case "sublocality_level_1":
-				result["sublocality_level_1"] = component.LongName
-			case "sublocality_level_2":
-				result["sublocality_level_2"] = component.LongName
-			case "sublocality_level_3":
-				result["sublocality_level_3"] = component.LongName
-			case "colloquial_area":
-				result["colloquial_area"] = component.LongName
-			case "floor":
-				result["floor"] = component.LongName
-			case "room":
-				result["room"] = component.LongName
-			case "postal_code":
-				result["postal_code"] = component.LongName
-			case "postal_code_suffix":
-				result["postal_code_suffix"] = component.LongName
-			case "postal_town":
-				result["postal_town"] = component.LongName
-			case "premise":
-				result["premise"] = component.LongName
-			case "subpremise":
-				result["subpremise"] = component.LongName
-			case "plus_code":
-				result["plus_code"] = component.LongName
-			case "establishment":
-				result["establishment"] = component.LongName
-			case "point_of_interest":
-				result["point_of_interest"] = component.LongName
-			case "park":
-				result["park"] = component.LongName
-			case "natural_feature":
-				result["natural_feature"] = component.LongName
-			case "airport":
-				result["airport"] = component.LongName
-			case "university":
-				result["university"] = component.LongName
-			case "school":
-				result["school"] = component.LongName
-			case "hospital":
-				result["hospital"] = component.LongName
-			case "pharmacy":
-				result["pharmacy"] = component.LongName
-			case "church":
-				result["church"] = component.LongName
-			case "finance":
-				result["finance"] = component.LongName
-			case "post_box":
-				result["post_box"] = component.LongName
-			case "bus_station":
-				result["bus_station"] = component.LongName
-			case "train_station":
-				result["train_station"] = component.LongName
-			case "transit_station":
-				result["transit_station"] = component.LongName
-			}
+func (s *MapsService) cacheLocationInfo(key string, info map[string]string) {
+	now := time.Now()
+	s.cacheMu.Lock()
+	defer s.cacheMu.Unlock()
+	if s.locationCache == nil {
+		s.locationCache = make(map[string]locationInfoCacheEntry)
+	}
+	evictOldestLocationCacheEntry(s.locationCache, now)
+	s.locationCache[key] = locationInfoCacheEntry{
+		info:       cloneLocationInfo(info),
+		expiresAt:  now.Add(locationInfoCacheTTL),
+		lastAccess: now,
+	}
+}
+
+func (s *MapsService) getCachedStreetViewFrame(key string) (*StreetViewFrame, bool) {
+	now := time.Now()
+	s.cacheMu.Lock()
+	defer s.cacheMu.Unlock()
+	entry, ok := s.frameCache[key]
+	if !ok {
+		return nil, false
+	}
+	if now.After(entry.expiresAt) {
+		delete(s.frameCache, key)
+		return nil, false
+	}
+	entry.lastAccess = now
+	s.frameCache[key] = entry
+	return cloneStreetViewFrame(entry.frame), true
+}
+
+func (s *MapsService) cacheStreetViewFrame(key string, frame *StreetViewFrame) {
+	now := time.Now()
+	s.cacheMu.Lock()
+	defer s.cacheMu.Unlock()
+	if s.frameCache == nil {
+		s.frameCache = make(map[string]streetViewFrameCacheEntry)
+	}
+	evictOldestStreetViewFrameCacheEntry(s.frameCache, now)
+	s.frameCache[key] = streetViewFrameCacheEntry{
+		frame:      cloneStreetViewFrame(frame),
+		expiresAt:  now.Add(streetViewFrameCacheTTL),
+		lastAccess: now,
+	}
+}
+
+func evictOldestLocationCacheEntry(cache map[string]locationInfoCacheEntry, now time.Time) {
+	oldestKey := ""
+	var oldest time.Time
+	for key, entry := range cache {
+		if now.After(entry.expiresAt) {
+			delete(cache, key)
+			continue
+		}
+		if oldestKey == "" || entry.lastAccess.Before(oldest) {
+			oldestKey, oldest = key, entry.lastAccess
 		}
 	}
-
-	// 如果有Plus Code信息，也提取出来
-	if resp[0].PlusCode.GlobalCode != "" {
-		result["plus_code_global"] = resp[0].PlusCode.GlobalCode
+	if len(cache) >= maxLocationCacheEntries && oldestKey != "" {
+		delete(cache, oldestKey)
 	}
-	if resp[0].PlusCode.CompoundCode != "" {
-		result["plus_code_compound"] = resp[0].PlusCode.CompoundCode
+}
+
+func evictOldestStreetViewFrameCacheEntry(cache map[string]streetViewFrameCacheEntry, now time.Time) {
+	oldestKey := ""
+	var oldest time.Time
+	for key, entry := range cache {
+		if now.After(entry.expiresAt) {
+			delete(cache, key)
+			continue
+		}
+		if oldestKey == "" || entry.lastAccess.Before(oldest) {
+			oldestKey, oldest = key, entry.lastAccess
+		}
+	}
+	if len(cache) >= maxFrameCacheEntries && oldestKey != "" {
+		delete(cache, oldestKey)
+	}
+}
+
+func cloneLocationInfo(info map[string]string) map[string]string {
+	cloned := make(map[string]string, len(info))
+	for key, value := range info {
+		cloned[key] = value
+	}
+	return cloned
+}
+
+func cloneStreetViewFrame(frame *StreetViewFrame) *StreetViewFrame {
+	if frame == nil {
+		return nil
+	}
+	return &StreetViewFrame{
+		Data:        append([]byte(nil), frame.Data...),
+		ContentType: frame.ContentType,
+		View:        frame.View,
+	}
+}
+
+func locationInfoFromGeocodingResults(resp []maps.GeocodingResult) map[string]string {
+	// Reverse geocoding may return an exact Plus Code first and a much more
+	// useful human-readable street/locality result afterwards. Merge all
+	// candidates while preserving the most specific value found first.
+	result := make(map[string]string)
+	for _, geocodingResult := range resp {
+		if result["formatted_address"] == "" &&
+			!geocodingResultHasType(geocodingResult, "plus_code") &&
+			strings.TrimSpace(geocodingResult.FormattedAddress) != "" {
+			result["formatted_address"] = geocodingResult.FormattedAddress
+		}
+
+		for _, component := range geocodingResult.AddressComponents {
+			for _, t := range component.Types {
+				switch t {
+				case "street_number":
+					setLocationInfoIfEmpty(result, "street_number", component.LongName)
+				case "route":
+					setLocationInfoIfEmpty(result, "route", component.LongName)
+				case "intersection":
+					setLocationInfoIfEmpty(result, "intersection", component.LongName)
+				case "political":
+					setLocationInfoIfEmpty(result, "political", component.LongName)
+				case "country":
+					setLocationInfoIfEmpty(result, "country", component.LongName)
+					setLocationInfoIfEmpty(result, "country_code", component.ShortName)
+				case "administrative_area_level_1":
+					setLocationInfoIfEmpty(result, "administrative_area_level_1", component.LongName)
+					setLocationInfoIfEmpty(result, "state_province", component.LongName)
+					setLocationInfoIfEmpty(result, "state_province_code", component.ShortName)
+				case "administrative_area_level_2":
+					setLocationInfoIfEmpty(result, "administrative_area_level_2", component.LongName)
+					setLocationInfoIfEmpty(result, "county_district", component.LongName)
+				case "administrative_area_level_3":
+					setLocationInfoIfEmpty(result, "administrative_area_level_3", component.LongName)
+					setLocationInfoIfEmpty(result, "subdistrict", component.LongName)
+				case "administrative_area_level_4":
+					setLocationInfoIfEmpty(result, "neighborhood", component.LongName)
+				case "administrative_area_level_5":
+					setLocationInfoIfEmpty(result, "subneighborhood", component.LongName)
+				case "locality":
+					setLocationInfoIfEmpty(result, "locality", component.LongName)
+					setLocationInfoIfEmpty(result, "city", component.LongName)
+				case "sublocality":
+					setLocationInfoIfEmpty(result, "sublocality", component.LongName)
+				case "sublocality_level_1":
+					setLocationInfoIfEmpty(result, "sublocality_level_1", component.LongName)
+				case "sublocality_level_2":
+					setLocationInfoIfEmpty(result, "sublocality_level_2", component.LongName)
+				case "sublocality_level_3":
+					setLocationInfoIfEmpty(result, "sublocality_level_3", component.LongName)
+				case "colloquial_area":
+					setLocationInfoIfEmpty(result, "colloquial_area", component.LongName)
+				case "floor":
+					setLocationInfoIfEmpty(result, "floor", component.LongName)
+				case "room":
+					setLocationInfoIfEmpty(result, "room", component.LongName)
+				case "postal_code":
+					setLocationInfoIfEmpty(result, "postal_code", component.LongName)
+				case "postal_code_suffix":
+					setLocationInfoIfEmpty(result, "postal_code_suffix", component.LongName)
+				case "postal_town":
+					setLocationInfoIfEmpty(result, "postal_town", component.LongName)
+				case "premise":
+					setLocationInfoIfEmpty(result, "premise", component.LongName)
+				case "subpremise":
+					setLocationInfoIfEmpty(result, "subpremise", component.LongName)
+				case "plus_code":
+					setLocationInfoIfEmpty(result, "plus_code", component.LongName)
+				case "establishment":
+					setLocationInfoIfEmpty(result, "establishment", component.LongName)
+				case "point_of_interest":
+					setLocationInfoIfEmpty(result, "point_of_interest", component.LongName)
+				case "park":
+					setLocationInfoIfEmpty(result, "park", component.LongName)
+				case "natural_feature":
+					setLocationInfoIfEmpty(result, "natural_feature", component.LongName)
+				case "airport":
+					setLocationInfoIfEmpty(result, "airport", component.LongName)
+				case "university":
+					setLocationInfoIfEmpty(result, "university", component.LongName)
+				case "school":
+					setLocationInfoIfEmpty(result, "school", component.LongName)
+				case "hospital":
+					setLocationInfoIfEmpty(result, "hospital", component.LongName)
+				case "pharmacy":
+					setLocationInfoIfEmpty(result, "pharmacy", component.LongName)
+				case "church":
+					setLocationInfoIfEmpty(result, "church", component.LongName)
+				case "finance":
+					setLocationInfoIfEmpty(result, "finance", component.LongName)
+				case "post_box":
+					setLocationInfoIfEmpty(result, "post_box", component.LongName)
+				case "bus_station":
+					setLocationInfoIfEmpty(result, "bus_station", component.LongName)
+				case "train_station":
+					setLocationInfoIfEmpty(result, "train_station", component.LongName)
+				case "transit_station":
+					setLocationInfoIfEmpty(result, "transit_station", component.LongName)
+				}
+			}
+		}
+
+		setLocationInfoIfEmpty(result, "plus_code_global", geocodingResult.PlusCode.GlobalCode)
+		setLocationInfoIfEmpty(result, "plus_code_compound", geocodingResult.PlusCode.CompoundCode)
 	}
 
-	return result, nil
+	return result
+}
+
+func geocodingResultHasType(result maps.GeocodingResult, target string) bool {
+	for _, resultType := range result.Types {
+		if resultType == target {
+			return true
+		}
+	}
+	return false
+}
+
+func setLocationInfoIfEmpty(result map[string]string, key, value string) {
+	if strings.TrimSpace(value) == "" || strings.TrimSpace(result[key]) != "" {
+		return
+	}
+	result[key] = value
 }

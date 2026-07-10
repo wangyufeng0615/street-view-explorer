@@ -36,7 +36,7 @@ import useStore from "../store/useStore";
 
 // Memoized StreetViewContainer wrapper
 const StreetViewContainer = memo(
-  ({ latitude, longitude, heading, onPovChanged }) => {
+  ({ latitude, longitude, heading, onPovChanged, onViewChanged }) => {
     return (
       <div className="street-view-container">
         <Suspense fallback={<div style={{ width: '100%', height: '100%', backgroundColor: '#222' }} />}>
@@ -45,6 +45,7 @@ const StreetViewContainer = memo(
             longitude={longitude}
             heading={heading}
             onPovChanged={onPovChanged}
+            onViewChanged={onViewChanged}
           />
         </Suspense>
       </div>
@@ -146,6 +147,8 @@ export default function HomePage({ showFootprintFromRoute = false }) {
   } = useExplorationMode(lastRefreshTimeRef, loadingRef);
 
   const { heading, setHeading, toastMessage, showToast } = useUIHandlers();
+  const setStreetViewView = useStore((state) => state.setStreetViewView);
+  const streetViewView = useStore((state) => state.streetViewView);
 
   // 使用键盘导航钩子
   useKeyboardNavigation(loadRandomLocation, isLoading, loadingRef);
@@ -157,6 +160,13 @@ export default function HomePage({ showFootprintFromRoute = false }) {
       setHeading(Math.round(newHeading));
     },
     [setHeading],
+  );
+
+  const handleViewChanged = useCallback(
+    (nextView) => {
+      setStreetViewView(nextView);
+    },
+    [setStreetViewView],
   );
 
   const handleRetryDescription = useCallback(() => {
@@ -243,28 +253,16 @@ export default function HomePage({ showFootprintFromRoute = false }) {
     };
   }, [clearMapPickResetTimer]);
 
-  // Debounced location description loading
+  // Start Atlas research as soon as a concrete panorama and UI language exist.
+  // The store already deduplicates identical requests and aborts stale ones.
   useEffect(() => {
-    let mounted = true;
-    let timeoutId = null;
-
     if (isLanguageReady && location?.pano_id) {
       locationRef.current = location;
 
-      // Debounce description loading
-      timeoutId = setTimeout(() => {
-        if (mounted && locationRef.current?.pano_id === location.pano_id) {
-          loadLocationDescription(location.pano_id);
-        }
-      }, 300);
-    }
-
-    return () => {
-      mounted = false;
-      if (timeoutId) {
-        clearTimeout(timeoutId);
+      if (locationRef.current?.pano_id === location.pano_id) {
+        loadLocationDescription(location.pano_id);
       }
-    };
+    }
   }, [activeLanguage, isLanguageReady, location?.pano_id, locationRef, loadLocationDescription]);
 
   // 监听网络状态变化，重新加载描述
@@ -404,6 +402,7 @@ export default function HomePage({ showFootprintFromRoute = false }) {
             longitude={location?.longitude}
             heading={heading}
             onPovChanged={handlePovChanged}
+            onViewChanged={handleViewChanged}
           />
         </div>
 
@@ -411,6 +410,7 @@ export default function HomePage({ showFootprintFromRoute = false }) {
         <Sidebar
           location={location}
           heading={heading}
+          streetViewView={streetViewView}
           description={description}
           descriptionCitations={descriptionCitations}
           isLoadingDesc={isLoadingDesc}

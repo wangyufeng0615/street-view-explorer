@@ -16,6 +16,7 @@ func SetupRoutes(r *gin.Engine, h *Handlers, ah *AgentHandlers, rh *RealtimeHand
 			locations.GET("/search", h.SearchLocation)
 			locations.GET("/:panoId/description", h.GetLocationDescription)
 			locations.GET("/:panoId/detailed-description", h.GetLocationDetailedDescription)
+			locations.GET("/:panoId/streetview-frame", h.GetStreetViewFrame)
 		}
 
 		// 访问记录

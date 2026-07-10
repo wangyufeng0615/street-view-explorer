@@ -11,10 +11,10 @@ An interactive map application for exploring random Google Street View locations
 ## Features
 
 - Random global exploration with area-weighted location selection.
-- AI-generated short and detailed descriptions through OpenRouter.
+- Streamed Atlas letters and detailed follow-ups through OpenRouter, grounded in the Street View frame the user is currently facing and verified against server-side web search.
 - Visit history, shared site-wide footprint map, and regional or custom exploration preferences.
 - Bilingual UI in English and Chinese.
-- Atlas Voice on the home route, with OpenAI Realtime input/tools, interruptible spoken turns, concrete place search, nearby wandering, and optional Doubao TTS output.
+- Atlas Voice on the home route, with the latest Street View frame as Realtime visual context, interruptible spoken turns, concrete place search, nearby wandering, and optional Doubao TTS output.
 - Odyssey agent journey flow where an external AI can create journeys, save stops, and publish illustrated letters.
 - Solo "Guess Where" game using satellite imagery, curated city entries, random backend locations, optional AI opponent, center-pin zoom reveals, score decay with zoom-aware distance tolerance, and lightweight sound/bubble feedback.
 - Online 1v1 geography duel with private room codes, quick matchmaking, 100-second synchronized rounds, server-authoritative scoring, consistent color-coded pins, score-factor breakdowns, and reconnect-safe polling.
@@ -184,6 +184,7 @@ All standard JSON endpoints return a `{ "success": boolean, "data": ..., "error"
 - `GET /api/v1/locations/search` - resolves a concrete place/landmark query through Google Places/Geocoding, then loads nearby Street View.
 - `GET /api/v1/locations/:panoId/description`
 - `GET /api/v1/locations/:panoId/detailed-description`
+- `GET /api/v1/locations/:panoId/streetview-frame` - returns the current heading/pitch/FOV frame used by text and voice Atlas.
 - `GET /api/v1/visits` - shared site-wide Atlas footprint history.
 - `POST /api/v1/preferences/exploration`
 - `POST /api/v1/preferences/exploration/remove`

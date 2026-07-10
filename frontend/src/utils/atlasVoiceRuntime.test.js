@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   MIC_AUDIO_CONSTRAINTS,
+  buildRealtimeSceneContextEvent,
   buildRealtimeTurnDetection,
+  buildStreetViewSceneSignature,
   buildVoiceContextSignature,
   nextDoubaoSpeechQueue,
   realtimeAudioMaxBufferedBytes,
+  resolveStreetViewScene,
   shouldDeferVoiceSessionUpdate,
   shouldDropRealtimeAudioFrame,
   shouldIgnoreAssistantEcho,
@@ -115,6 +118,46 @@ describe("atlasVoiceRuntime", () => {
         description: "quiet road",
       }),
     ).not.toBe(base);
+  });
+
+  it("prefers the actual panorama view and builds a stable scene image event", () => {
+    const scene = resolveStreetViewScene({
+      location: { pano_id: "stored-pano" },
+      streetViewView: {
+        panoId: "actual-pano",
+        heading: 91.4,
+        pitch: -4.6,
+        fov: 72,
+        source: "user",
+      },
+      heading: 10,
+    });
+
+    expect(scene).toMatchObject({
+      panoId: "actual-pano",
+      pitch: -4.6,
+      fov: 72,
+      source: "user",
+    });
+    expect(scene.heading).toBeCloseTo(91.4, 6);
+    expect(buildStreetViewSceneSignature(scene)).toBe("actual-pano:90:-5:72");
+    expect(
+      buildRealtimeSceneContextEvent({
+        itemId: "scene-1",
+        imageDataUrl: "data:image/jpeg;base64,abc",
+        scene,
+      }),
+    ).toMatchObject({
+      type: "conversation.item.create",
+      item: {
+        id: "scene-1",
+        role: "user",
+        content: [
+          { type: "input_image", image_url: "data:image/jpeg;base64,abc" },
+          { type: "input_text" },
+        ],
+      },
+    });
   });
 
   it("defers session updates only when context is pending and speech/tooling is active", () => {

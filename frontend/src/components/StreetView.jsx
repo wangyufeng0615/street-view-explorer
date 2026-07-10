@@ -29,6 +29,12 @@ function headingDistance(a, b) {
     return Math.min(delta, 360 - delta);
 }
 
+export function streetViewFovFromZoom(zoom) {
+    const numericZoom = Number(zoom);
+    if (!Number.isFinite(numericZoom)) return 90;
+    return Math.round(Math.max(10, Math.min(120, 180 / (2 ** numericZoom))));
+}
+
 const styles = {
     container: {
         width: '100%',
@@ -97,7 +103,13 @@ const styles = {
     }
 };
 
-export default function StreetView({ latitude, longitude, heading = 0, onPovChanged }) {
+export default function StreetView({
+    latitude,
+    longitude,
+    heading = 0,
+    onPovChanged,
+    onViewChanged,
+}) {
     const panoramaRef = useRef(null);
     const panoramaInstanceRef = useRef(null); // 存储街景实例的引用
     const autoRotateRef = useRef(null); // 存储自动旋转动画帧的引用
@@ -105,6 +117,8 @@ export default function StreetView({ latitude, longitude, heading = 0, onPovChan
     const isAutoRotatingRef = useRef(false); // 标记是否正在自动旋转
     const isContainerVisibleRef = useRef(true);
     const onPovChangedRef = useRef(onPovChanged);
+    const onViewChangedRef = useRef(onViewChanged);
+    const viewSourceRef = useRef('initial');
     const latestHeadingRef = useRef(heading);
     const lastNotifiedHeadingRef = useRef(null);
     const cleanupFunctionsRef = useRef([]); // 存储所有需要清理的函数
@@ -117,6 +131,10 @@ export default function StreetView({ latitude, longitude, heading = 0, onPovChan
     useEffect(() => {
         onPovChangedRef.current = onPovChanged;
     }, [onPovChanged]);
+
+    useEffect(() => {
+        onViewChangedRef.current = onViewChanged;
+    }, [onViewChanged]);
 
     useEffect(() => {
         latestHeadingRef.current = heading;
@@ -142,6 +160,26 @@ export default function StreetView({ latitude, longitude, heading = 0, onPovChan
         if (onPovChangedRef.current) {
             onPovChangedRef.current(normalizedHeading);
         }
+    };
+
+    const notifyViewChanged = (panorama) => {
+        if (!panorama || !onViewChangedRef.current) return;
+        const pov = panorama.getPov?.() || { heading: latestHeadingRef.current, pitch: 0 };
+        const position = panorama.getPosition?.();
+        const lat = typeof position?.lat === 'function' ? position.lat() : Number(latitude);
+        const lng = typeof position?.lng === 'function' ? position.lng() : Number(longitude);
+        const zoom = Number(panorama.getZoom?.() ?? 1);
+
+        onViewChangedRef.current({
+            panoId: panorama.getPano?.() || '',
+            latitude: lat,
+            longitude: lng,
+            heading: normalizeHeading(pov.heading),
+            pitch: Number(pov.pitch) || 0,
+            zoom,
+            fov: streetViewFovFromZoom(zoom),
+            source: isAutoRotatingRef.current ? 'auto' : viewSourceRef.current,
+        });
     };
 
     const scheduleAutoRotateResume = (delay = AUTO_ROTATE_RESUME_DELAY_MS) => {
@@ -172,6 +210,7 @@ export default function StreetView({ latitude, longitude, heading = 0, onPovChan
         let lastPovUpdateTime = lastTime;
 
         isAutoRotatingRef.current = true;
+        viewSourceRef.current = 'auto';
         
         const rotate = (currentTime) => {
             // 检查组件是否已卸载
@@ -247,6 +286,7 @@ export default function StreetView({ latitude, longitude, heading = 0, onPovChan
 
         try {
             stopAutoRotate();
+            viewSourceRef.current = 'programmatic';
             panorama.setPov({
                 ...currentPov,
                 heading: nextHeading,
@@ -259,6 +299,7 @@ export default function StreetView({ latitude, longitude, heading = 0, onPovChan
 
     // 处理用户交互
     const handleUserInteraction = () => {
+        viewSourceRef.current = 'user';
         // 隐藏操作提示
         if (showInteractionTip) {
             setShowInteractionTip(false);
@@ -424,6 +465,7 @@ export default function StreetView({ latitude, longitude, heading = 0, onPovChan
                     // 重置错误状态
                     setError(null);
                     setIsNetworkError(false);
+                    notifyViewChanged(panorama);
                     
                     // 清除之前的自动旋转定时器
                     if (autoRotateTimeoutId) {
@@ -459,9 +501,15 @@ export default function StreetView({ latitude, longitude, heading = 0, onPovChan
                     if (panorama) {
                         const currentPov = panorama.getPov();
                         notifyHeadingChanged(currentPov.heading);
+                        notifyViewChanged(panorama);
                     }
                 });
                 listeners.push(povListener);
+
+                const zoomListener = panorama.addListener('zoom_changed', () => {
+                    notifyViewChanged(panorama);
+                });
+                listeners.push(zoomListener);
 
                 // 监听DOM事件（鼠标和触摸）
                 const streetViewElement = panoramaRef.current;

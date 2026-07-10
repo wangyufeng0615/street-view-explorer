@@ -16,4 +16,4 @@ export function getOrCreateSessionId() {
 }
 
 // Alias for backward compatibility
-export const getSessionId = getOrCreateSessionId; 
+export const getSessionId = getOrCreateSessionId;

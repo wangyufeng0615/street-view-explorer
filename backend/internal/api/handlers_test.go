@@ -1,6 +1,12 @@
 package api
 
-import "testing"
+import (
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"github.com/gin-gonic/gin"
+)
 
 func TestParseCoordinate(t *testing.T) {
 	tests := []struct {
@@ -35,6 +41,20 @@ func TestParseCoordinate(t *testing.T) {
 				t.Fatalf("got %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestWriteDescriptionSSEFlushesNamedEvent(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+
+	if err := writeDescriptionSSE(context, "delta", gin.H{"text": "你好"}); err != nil {
+		t.Fatalf("writeDescriptionSSE() error = %v", err)
+	}
+	body := recorder.Body.String()
+	if !strings.Contains(body, "event: delta\n") || !strings.Contains(body, `data: {"text":"你好"}`) {
+		t.Fatalf("unexpected SSE body: %q", body)
 	}
 }
 
@@ -89,6 +109,11 @@ func TestSanitizeDescription(t *testing.T) {
 			input: "[站在海风和红土之间，盯着北边那一片安静的地势]\n\n朋友，这里是普恩一带。([en.wikipedia.org](https://example.com/wiki/Poum))",
 			want:  "[站在海风和红土之间，盯着北边那一片安静的地势]\n\n朋友，这里是普恩一带。",
 		},
+		{
+			name:  "strips standalone markdown emphasis",
+			input: "第一段。\n\n*这一段不应保留星号*\n\n**最后一段也一样**",
+			want:  "第一段。\n\n这一段不应保留星号\n\n最后一段也一样",
+		},
 	}
 
 	for _, tt := range tests {
@@ -121,5 +146,33 @@ func TestPanoIDRegexAllowsGooglePanoCharacters(t *testing.T) {
 		if panoIDRegex.MatchString(panoID) {
 			t.Fatalf("panoIDRegex accepted invalid pano id %q", panoID)
 		}
+	}
+}
+
+func TestStreetViewViewFromRequestKeepsActualScenePanorama(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	context, _ := gin.CreateTestContext(httptest.NewRecorder())
+	context.Request = httptest.NewRequest(
+		"GET",
+		"/?scene_pano_id=actual-pano_2&heading=91&pitch=-5&fov=72",
+		nil,
+	)
+
+	view, err := streetViewViewFromRequest(context)
+	if err != nil {
+		t.Fatalf("streetViewViewFromRequest() error = %v", err)
+	}
+	if view.PanoID != "actual-pano_2" || view.Heading != 91 || view.Pitch != -5 || view.FOV != 72 {
+		t.Fatalf("unexpected view: %#v", view)
+	}
+}
+
+func TestStreetViewViewFromRequestRejectsInvalidScenePanorama(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	context, _ := gin.CreateTestContext(httptest.NewRecorder())
+	context.Request = httptest.NewRequest("GET", "/?scene_pano_id=bad%2Fpano", nil)
+
+	if _, err := streetViewViewFromRequest(context); err == nil {
+		t.Fatal("expected invalid scene panorama to be rejected")
 	}
 }

@@ -10,6 +10,7 @@ const PreviewMap = lazy(() => import("./PreviewMap"));
 const Sidebar = memo(function Sidebar({
   location,
   heading,
+  streetViewView,
   description,
   descriptionCitations,
   isLoadingDesc,
@@ -121,6 +122,8 @@ const Sidebar = memo(function Sidebar({
               citations={descriptionCitations}
               retries={descRetries}
               panoId={location?.pano_id}
+              heading={heading}
+              view={streetViewView}
               onRetry={onRetryDescription}
             />
           </div>

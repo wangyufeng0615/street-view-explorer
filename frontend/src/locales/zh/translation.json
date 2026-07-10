@@ -7,6 +7,7 @@
   "ai.retrying": "Atlas 再看看… ({{retries}}/3)",
   "ai.retryGetDescription": "让 Atlas 再试一次",
   "ai.waitingForAnalysis": "Atlas 旅行中…",
+  "ai.thinkingTitle": "Atlas 正在观察…",
   "ai.cannotGetStreetView": "无法获取此位置的街景信息，请尝试继续探索其他位置。",
   "ai.tellMeMore": "Atlas，再多讲讲",
   "ai.loadingDetailedDescription": "Atlas 正在深入了解…",

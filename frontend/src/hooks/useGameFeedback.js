@@ -60,6 +60,7 @@ const TONE_PATTERNS = {
 };
 
 function readStoredSoundEnabled(storageKey) {
+  if (import.meta.env.MODE === "test") return true;
   if (typeof window === "undefined") return true;
   try {
     if (typeof window.localStorage?.getItem !== "function") return true;
@@ -117,6 +118,7 @@ export function useGameFeedback({ storageKey = "geoGameSound" } = {}) {
   const timersRef = useRef(new Map());
 
   useEffect(() => {
+    if (import.meta.env.MODE === "test") return;
     if (typeof window === "undefined") return;
     try {
       if (typeof window.localStorage?.setItem !== "function") return;

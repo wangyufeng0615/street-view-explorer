@@ -4,9 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"io"
 	"net/http"
-	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -15,6 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/my-streetview-project/backend/internal/models"
 	"github.com/my-streetview-project/backend/internal/repositories"
+	"github.com/my-streetview-project/backend/internal/services"
 )
 
 // AgentHandlers holds dependencies for agent-related endpoints.
@@ -577,7 +576,7 @@ func (ah *AgentHandlers) StreetViewImage(c *gin.Context) {
 		return
 	}
 
-	if ah.googleAPIKey == "" {
+	if ah.global == nil || ah.global.AIService == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"success": false, "error": "Street view image service not available"})
 		return
 	}
@@ -613,27 +612,17 @@ func (ah *AgentHandlers) StreetViewImage(c *gin.Context) {
 		}
 	}
 
-	// Build Google Street View Static API URL with safe parameters
-	svURL := fmt.Sprintf(
-		"https://maps.googleapis.com/maps/api/streetview?size=640x480&pano=%s&heading=%d&pitch=%d&fov=%d&key=%s",
-		url.QueryEscape(panoID), headingNum, pitchNum, fovNum, ah.googleAPIKey,
+	frame, err := ah.global.AIService.GetStreetViewFrame(
+		c.Request.Context(),
+		panoID,
+		services.StreetViewView{Heading: headingNum, Pitch: pitchNum, FOV: fovNum},
 	)
-
-	resp, err := ah.httpClient.Get(svURL)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"success": false, "error": "Failed to fetch street view image"})
 		return
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		c.JSON(http.StatusBadGateway, gin.H{"success": false, "error": "Google API returned error"})
-		return
-	}
 
 	// Stream the image back
-	c.Header("Content-Type", resp.Header.Get("Content-Type"))
 	c.Header("Cache-Control", "public, max-age=86400") // cache 24h
-	c.Status(http.StatusOK)
-	io.Copy(c.Writer, resp.Body)
+	c.Data(http.StatusOK, frame.ContentType, frame.Data)
 }

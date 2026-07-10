@@ -90,6 +90,7 @@
 
 /* 在听 / 在说 / 行动中：图标呼吸 */
 .atlas-voice-panel--listening .atlas-voice-glyph,
+.atlas-voice-panel--thinking .atlas-voice-glyph,
 .atlas-voice-panel--speaking .atlas-voice-glyph,
 .atlas-voice-panel--tool .atlas-voice-glyph {
   animation: voiceBreath 1.6s ease-in-out infinite;
@@ -165,5 +166,14 @@
 
   .atlas-voice-line {
     font-size: 11px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .atlas-voice-panel--listening .atlas-voice-glyph,
+  .atlas-voice-panel--thinking .atlas-voice-glyph,
+  .atlas-voice-panel--speaking .atlas-voice-glyph,
+  .atlas-voice-panel--tool .atlas-voice-glyph {
+    animation: none !important;
   }
 }
