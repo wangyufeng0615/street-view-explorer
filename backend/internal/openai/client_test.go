@@ -405,6 +405,16 @@ func TestSelectModelUsesCNModelOnlyWithoutProxy(t *testing.T) {
 	}
 }
 
+func TestSelectModelUsesGPT54MiniByDefault(t *testing.T) {
+	t.Setenv("OPENROUTER_MODEL", "")
+	t.Setenv("AI_MODEL", "")
+	t.Setenv("CN_AI_MODEL", "")
+
+	if got := selectModel("http://127.0.0.1:10086"); got != "openai/gpt-5.4-mini" {
+		t.Fatalf("selectModel with proxy = %q, want openai/gpt-5.4-mini", got)
+	}
+}
+
 func TestSelectProviderPreferences(t *testing.T) {
 	t.Setenv("OPENROUTER_PROVIDER_SORT", "")
 	preferences := selectProviderPreferences()
