@@ -405,13 +405,13 @@ func TestSelectModelUsesCNModelOnlyWithoutProxy(t *testing.T) {
 	}
 }
 
-func TestSelectModelUsesGPT54MiniByDefault(t *testing.T) {
+func TestSelectModelUsesClaudeHaiku45ByDefault(t *testing.T) {
 	t.Setenv("OPENROUTER_MODEL", "")
 	t.Setenv("AI_MODEL", "")
 	t.Setenv("CN_AI_MODEL", "")
 
-	if got := selectModel("http://127.0.0.1:10086"); got != "openai/gpt-5.4-mini" {
-		t.Fatalf("selectModel with proxy = %q, want openai/gpt-5.4-mini", got)
+	if got := selectModel("http://127.0.0.1:10086"); got != "anthropic/claude-haiku-4.5" {
+		t.Fatalf("selectModel with proxy = %q, want anthropic/claude-haiku-4.5", got)
 	}
 }
 

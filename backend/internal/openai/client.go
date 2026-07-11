@@ -22,7 +22,7 @@ import (
 
 const (
 	defaultAPIEndpoint     = "https://openrouter.ai/api/v1/chat/completions"
-	defaultModel           = "openai/gpt-5.4-mini"
+	defaultModel           = "anthropic/claude-haiku-4.5"
 	defaultProviderSort    = "latency"
 	maxRetries             = 2
 	retryBaseDelay         = 500 * time.Millisecond
