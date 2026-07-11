@@ -90,6 +90,38 @@ async function streamDescriptionEndpoint(
   const externalSignal = signal instanceof AbortSignal ? signal : null;
   const abortFromExternal = () => controller.abort();
   let timeoutId = null;
+  let pendingDelta = "";
+  let deltaTimerId = null;
+
+  const discardDelta = () => {
+    pendingDelta = "";
+    if (deltaTimerId !== null) {
+      globalThis.clearTimeout(deltaTimerId);
+      deltaTimerId = null;
+    }
+  };
+
+  const flushDelta = () => {
+    if (deltaTimerId !== null) {
+      globalThis.clearTimeout(deltaTimerId);
+      deltaTimerId = null;
+    }
+    if (!pendingDelta || typeof onDelta !== "function") {
+      pendingDelta = "";
+      return;
+    }
+    const text = pendingDelta;
+    pendingDelta = "";
+    onDelta(text);
+  };
+
+  const queueDelta = (text) => {
+    if (!text || typeof onDelta !== "function") return;
+    pendingDelta += text;
+    if (deltaTimerId === null) {
+      deltaTimerId = globalThis.setTimeout(flushDelta, 50);
+    }
+  };
 
   if (externalSignal?.aborted) controller.abort();
   externalSignal?.addEventListener("abort", abortFromExternal, { once: true });
@@ -131,10 +163,12 @@ async function streamDescriptionEndpoint(
       if (!parsed) return;
       if (parsed.event === "delta") {
         const text = String(parsed.data?.text || "");
-        if (text && typeof onDelta === "function") onDelta(text);
+        queueDelta(text);
       } else if (parsed.event === "done") {
+        flushDelta();
         completed = parsed.data;
       } else if (parsed.event === "error") {
+        discardDelta();
         throw new Error(parsed.data?.error || "获取描述失败");
       }
     };
@@ -154,10 +188,12 @@ async function streamDescriptionEndpoint(
       streamDone = done;
     }
     if (buffer.trim()) handleBlock(buffer);
+    flushDelta();
     if (!completed?.description) throw new Error("流式响应未正常完成");
 
     return { success: true, data: completed, error: null };
   } catch (err) {
+    discardDelta();
     return {
       success: false,
       data: null,
@@ -166,6 +202,7 @@ async function streamDescriptionEndpoint(
       aborted: err.name === "AbortError",
     };
   } finally {
+    discardDelta();
     if (timeoutId) clearTimeout(timeoutId);
     externalSignal?.removeEventListener("abort", abortFromExternal);
   }
@@ -185,7 +222,7 @@ export function streamLocationDescription(
     signal,
     view,
     onDelta,
-    25000,
+    30000,
   );
 }
 

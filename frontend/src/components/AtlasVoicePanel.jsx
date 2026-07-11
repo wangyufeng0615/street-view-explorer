@@ -594,12 +594,6 @@ export default function AtlasVoicePanel() {
     return applyVoiceConfig(voiceConfigRef.current || DEFAULT_VOICE_CONFIG);
   }, [applyVoiceConfig]);
 
-  useEffect(() => {
-    loadVoiceConfig().catch(() => {
-      applyVoiceConfig(DEFAULT_VOICE_CONFIG);
-    });
-  }, [applyVoiceConfig, loadVoiceConfig]);
-
   const clearAssistantPlayback = useCallback(() => {
     if (speechIdleTimerRef.current) {
       window.clearTimeout(speechIdleTimerRef.current);

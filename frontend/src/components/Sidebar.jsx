@@ -1,4 +1,4 @@
-import React, { memo, useRef, useEffect, lazy, Suspense } from "react";
+import React, { memo, useRef, useEffect, useState, lazy, Suspense } from "react";
 import { useTranslation } from "react-i18next";
 import AiDescription from "./AiDescription";
 import AtlasVoicePanel from "./AtlasVoicePanel";
@@ -6,6 +6,8 @@ import "../styles/Sidebar.css";
 
 const GlobalMap = lazy(() => import("./GlobalMap"));
 const PreviewMap = lazy(() => import("./PreviewMap"));
+
+const SECONDARY_MAP_DELAY_MS = 700;
 
 const Sidebar = memo(function Sidebar({
   location,
@@ -23,6 +25,31 @@ const Sidebar = memo(function Sidebar({
 }) {
   const { t } = useTranslation();
   const scrollContainerRef = useRef(null);
+  const [shouldLoadSecondaryMaps, setShouldLoadSecondaryMaps] = useState(false);
+
+  useEffect(() => {
+    setShouldLoadSecondaryMaps(false);
+    if (!location?.pano_id) return undefined;
+
+    let idleId = null;
+    const timerId = window.setTimeout(() => {
+      if (typeof window.requestIdleCallback === "function") {
+        idleId = window.requestIdleCallback(
+          () => setShouldLoadSecondaryMaps(true),
+          { timeout: 1200 },
+        );
+      } else {
+        setShouldLoadSecondaryMaps(true);
+      }
+    }, SECONDARY_MAP_DELAY_MS);
+
+    return () => {
+      window.clearTimeout(timerId);
+      if (idleId !== null && typeof window.cancelIdleCallback === "function") {
+        window.cancelIdleCallback(idleId);
+      }
+    };
+  }, [location?.pano_id]);
 
   // 当组件挂载时重置滚动位置
   useEffect(() => {
@@ -51,7 +78,7 @@ const Sidebar = memo(function Sidebar({
           className="sidebar-section sidebar-section--global-map"
         >
           <div style={styles.mapContainer} className="sidebar-map-container">
-            {location ? (
+            {location && shouldLoadSecondaryMaps ? (
               <Suspense fallback={<div style={styles.mapPlaceholder}>{t("loading_location")}</div>}>
                 <GlobalMap
                   latitude={location.latitude}
@@ -83,7 +110,7 @@ const Sidebar = memo(function Sidebar({
           className="sidebar-section sidebar-section--preview-map"
         >
           <div style={styles.mapContainer} className="sidebar-map-container">
-            {location && (
+            {location && shouldLoadSecondaryMaps ? (
               <Suspense fallback={null}>
                 <PreviewMap
                   latitude={location.latitude}
@@ -104,6 +131,8 @@ const Sidebar = memo(function Sidebar({
                   }
                 />
               </Suspense>
+            ) : (
+              <div style={styles.mapPlaceholder}>{t("loading_location")}</div>
             )}
           </div>
         </div>

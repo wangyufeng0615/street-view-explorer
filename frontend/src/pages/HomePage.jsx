@@ -12,11 +12,10 @@ import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import TopBar from "../components/TopBar";
 import Sidebar from "../components/Sidebar";
+import StreetView from "../components/StreetView";
 import "../styles/animations.css";
 import "../styles/HomePage.css";
 import "../styles/responsive.css";
-
-const StreetView = lazy(() => import("../components/StreetView"));
 
 // Lazy load components that are not immediately visible
 const GlobalLoading = lazy(() => import("../components/GlobalLoading"));
@@ -39,15 +38,13 @@ const StreetViewContainer = memo(
   ({ latitude, longitude, heading, onPovChanged, onViewChanged }) => {
     return (
       <div className="street-view-container">
-        <Suspense fallback={<div style={{ width: '100%', height: '100%', backgroundColor: '#222' }} />}>
-          <StreetView
-            latitude={latitude}
-            longitude={longitude}
-            heading={heading}
-            onPovChanged={onPovChanged}
-            onViewChanged={onViewChanged}
-          />
-        </Suspense>
+        <StreetView
+          latitude={latitude}
+          longitude={longitude}
+          heading={heading}
+          onPovChanged={onPovChanged}
+          onViewChanged={onViewChanged}
+        />
       </div>
     );
   },
@@ -431,9 +428,11 @@ export default function HomePage({ showFootprintFromRoute = false }) {
       )}
 
       {/* Toast 通知 - lazy loaded */}
-      <Suspense fallback={null}>
-        <Toast message={toastMessage} visible={showToast} />
-      </Suspense>
+      {showToast && (
+        <Suspense fallback={null}>
+          <Toast message={toastMessage} visible />
+        </Suspense>
+      )}
 
       {/* 全球足迹地图 */}
       {showFootprintFromRoute && (

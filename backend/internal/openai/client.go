@@ -23,6 +23,7 @@ import (
 const (
 	defaultAPIEndpoint     = "https://openrouter.ai/api/v1/chat/completions"
 	defaultModel           = "anthropic/claude-haiku-4.5"
+	defaultProviderSort    = "latency"
 	maxRetries             = 2
 	retryBaseDelay         = 500 * time.Millisecond
 	timeout                = 15 * time.Second
@@ -63,6 +64,10 @@ type webSearchParameters struct {
 	MaxResults      int    `json:"max_results,omitempty"`
 	MaxTotalResults int    `json:"max_total_results,omitempty"`
 	MaxCharacters   int    `json:"max_characters,omitempty"`
+}
+
+type providerPreferences struct {
+	Sort string `json:"sort,omitempty"`
 }
 
 type chatRequest struct {
@@ -335,6 +340,19 @@ func selectModel(proxyURLStr string) string {
 	return defaultModel
 }
 
+func selectProviderPreferences() *providerPreferences {
+	sortBy := strings.ToLower(strings.TrimSpace(os.Getenv("OPENROUTER_PROVIDER_SORT")))
+	if sortBy == "none" || sortBy == "off" || sortBy == "disabled" {
+		return nil
+	}
+	if sortBy != "price" && sortBy != "throughput" && sortBy != "latency" {
+		sortBy = defaultProviderSort
+	}
+	return &providerPreferences{
+		Sort: sortBy,
+	}
+}
+
 func (c *client) doChatCompletion(ctx context.Context, functionName string, reqJSON []byte, startTime time.Time) ([]byte, error) {
 	var lastErr error
 	var retryAfter time.Duration
@@ -450,6 +468,7 @@ func (c *client) doStreamingChatCompletion(ctx context.Context, functionName str
 			retryAfter = parseRetryAfter(resp.Header.Get("Retry-After"))
 			continue
 		}
+		log.Printf("[AI] action=upstream_stream_open function=%s attempt=%d duration=%v", functionName, attempt+1, time.Since(startTime))
 
 		result, streamErr := readChatCompletionStream(resp.Body, onDelta)
 		resp.Body.Close()
@@ -746,7 +765,7 @@ func (c *client) GenerateLocationDescription(latitude, longitude float64, locati
 
 func (c *client) StreamLocationDescription(parent context.Context, latitude, longitude float64, locationInfo map[string]string, scene *SceneImage, language string, onDelta func(string) error) (string, []Citation, error) {
 	startTime := time.Now()
-	descTimeout := 20 * time.Second
+	descTimeout := 25 * time.Second
 
 	log.Printf("[AI] action=request_start function=GenerateLocationDescription coords=(%.6f,%.6f) language=%s model=%s timeout=%s", latitude, longitude, language, c.modelName, descTimeout)
 
@@ -854,9 +873,21 @@ func (c *client) StreamLocationDescription(parent context.Context, latitude, lon
 	}
 
 	parallelToolCalls := false
-	streamGate := newDescriptionStreamGate(language, onDelta)
+	visibleDeltaLogged := false
+	visibleOnDelta := onDelta
+	if onDelta != nil {
+		visibleOnDelta = func(delta string) error {
+			if !visibleDeltaLogged {
+				visibleDeltaLogged = true
+				log.Printf("[AI] action=visible_first_delta function=GenerateLocationDescription duration=%v", time.Since(startTime))
+			}
+			return onDelta(delta)
+		}
+	}
+	streamGate := newDescriptionStreamGate(language, visibleOnDelta)
 	reqBody := visionChatRequest{
-		Model: c.modelName,
+		Model:    c.modelName,
+		Provider: selectProviderPreferences(),
 		Messages: []visionMessage{
 			{
 				Role:    "system",
@@ -871,9 +902,9 @@ func (c *client) StreamLocationDescription(parent context.Context, latitude, lon
 			Type: "openrouter:web_search",
 			Parameters: webSearchParameters{
 				Engine:          "auto",
-				MaxResults:      3,
-				MaxTotalResults: 3,
-				MaxCharacters:   2000,
+				MaxResults:      4,
+				MaxTotalResults: 4,
+				MaxCharacters:   3000,
 			},
 		}},
 		ToolChoice:        "auto",
@@ -890,7 +921,14 @@ func (c *client) StreamLocationDescription(parent context.Context, latitude, lon
 	ctx, cancel := context.WithTimeout(parent, descTimeout)
 	defer cancel()
 
-	chatResp, err := c.doStreamingChatCompletion(ctx, "GenerateLocationDescription", reqJSON, startTime, streamGate.Write)
+	rawDeltaLogged := false
+	chatResp, err := c.doStreamingChatCompletion(ctx, "GenerateLocationDescription", reqJSON, startTime, func(delta string) error {
+		if !rawDeltaLogged {
+			rawDeltaLogged = true
+			log.Printf("[AI] action=upstream_first_delta function=GenerateLocationDescription duration=%v", time.Since(startTime))
+		}
+		return streamGate.Write(delta)
+	})
 	if err != nil {
 		return "", nil, err
 	}
@@ -932,7 +970,7 @@ func (c *client) GenerateDetailedLocationDescription(latitude, longitude float64
 
 func (c *client) StreamDetailedLocationDescription(parent context.Context, latitude, longitude float64, locationInfo map[string]string, scene *SceneImage, language string, onDelta func(string) error) (string, []Citation, error) {
 	startTime := time.Now()
-	detailedTimeout := 30 * time.Second
+	detailedTimeout := 35 * time.Second
 
 	log.Printf("[AI] action=request_start function=GenerateDetailedLocationDescription coords=(%.6f,%.6f) language=%s model=%s timeout=%s", latitude, longitude, language, c.modelName, detailedTimeout)
 
@@ -976,7 +1014,7 @@ func (c *client) StreamDetailedLocationDescription(parent context.Context, latit
 			"- Geography and environment: terrain, climate, natural features\n"+
 			"- How this place connects to and matters within its broader region\n\n"+
 			"Silently call the web search tool exactly once with one precise query about this location. After that single search, synthesize the answer and do not search again. Do not announce or describe the research step; the first visible output must be Atlas's bracketed scene note. Cross-reference the returned sources for historical dates, demographic data, economic figures, and recent local developments. Go deeper than surface-level knowledge.\n\n"+
-			"Write as Atlas — warm, playful, talking to a friend. Every sentence should carry actual information. 4-6 short paragraphs, 2-3 sentences each; never one long wall of text. You may drop one or two bracket lines with a quick inner thought between paragraphs (e.g. [翻资料的时候被这段历史惊到了]).\n"+
+			"Write as Atlas — warm, playful, talking to a friend. Every sentence should carry actual information. This is the explicitly requested deeper version: write 6-8 substantive body paragraphs, 2-4 sentences each. The opening bracket line and at most one later bracket aside do not count as body paragraphs.\n"+
 			"CRITICAL: pure plain text only, absolutely no markdown formatting (no asterisks, no bold, no headers, no bullet points).\n"+
 			"The app renders citations separately, so keep links, URL fragments, source lists, and trailing reference blocks out of the response body. End on a clean sentence about the place.\n"+
 			"If a specific claim is uncertain and unsupported by search results, keep it modest rather than inventing details.\n\n"+
@@ -996,9 +1034,21 @@ func (c *client) StreamDetailedLocationDescription(parent context.Context, latit
 	}
 
 	parallelToolCalls := false
-	streamGate := newDescriptionStreamGate(language, onDelta)
+	visibleDeltaLogged := false
+	visibleOnDelta := onDelta
+	if onDelta != nil {
+		visibleOnDelta = func(delta string) error {
+			if !visibleDeltaLogged {
+				visibleDeltaLogged = true
+				log.Printf("[AI] action=visible_first_delta function=GenerateDetailedLocationDescription duration=%v", time.Since(startTime))
+			}
+			return onDelta(delta)
+		}
+	}
+	streamGate := newDescriptionStreamGate(language, visibleOnDelta)
 	reqBody := visionChatRequest{
-		Model: c.modelName,
+		Model:    c.modelName,
+		Provider: selectProviderPreferences(),
 		Messages: []visionMessage{
 			{Role: messages[0].Role, Content: messages[0].Content},
 			{Role: "user", Content: userContent},
@@ -1023,7 +1073,14 @@ func (c *client) StreamDetailedLocationDescription(parent context.Context, latit
 		return "", nil, fmt.Errorf("编码请求失败: %w", err)
 	}
 
-	chatResp, err := c.doStreamingChatCompletion(ctx, "GenerateDetailedLocationDescription", reqJSON, startTime, streamGate.Write)
+	rawDeltaLogged := false
+	chatResp, err := c.doStreamingChatCompletion(ctx, "GenerateDetailedLocationDescription", reqJSON, startTime, func(delta string) error {
+		if !rawDeltaLogged {
+			rawDeltaLogged = true
+			log.Printf("[AI] action=upstream_first_delta function=GenerateDetailedLocationDescription duration=%v", time.Since(startTime))
+		}
+		return streamGate.Write(delta)
+	})
 	if err != nil {
 		return "", nil, err
 	}
@@ -1252,13 +1309,14 @@ type visionMessage struct {
 }
 
 type visionChatRequest struct {
-	Model             string          `json:"model"`
-	Messages          []visionMessage `json:"messages"`
-	Tools             []webSearchTool `json:"tools,omitempty"`
-	ToolChoice        string          `json:"tool_choice,omitempty"`
-	ParallelToolCalls *bool           `json:"parallel_tool_calls,omitempty"`
-	Stream            bool            `json:"stream,omitempty"`
-	MaxToolCalls      int             `json:"max_tool_calls,omitempty"`
+	Model             string               `json:"model"`
+	Messages          []visionMessage      `json:"messages"`
+	Provider          *providerPreferences `json:"provider,omitempty"`
+	Tools             []webSearchTool      `json:"tools,omitempty"`
+	ToolChoice        string               `json:"tool_choice,omitempty"`
+	ParallelToolCalls *bool                `json:"parallel_tool_calls,omitempty"`
+	Stream            bool                 `json:"stream,omitempty"`
+	MaxToolCalls      int                  `json:"max_tool_calls,omitempty"`
 }
 
 func sceneDataURI(scene *SceneImage) string {
@@ -1298,7 +1356,8 @@ func (c *client) GuessLocationFromImage(parentCtx context.Context, imageBase64 s
 	dataURI := "data:image/png;base64," + imageBase64
 
 	reqBody := visionChatRequest{
-		Model: c.modelName,
+		Model:    c.modelName,
+		Provider: selectProviderPreferences(),
 		Messages: []visionMessage{
 			{
 				Role:    "system",

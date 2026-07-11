@@ -54,7 +54,7 @@ describe("description SSE client", () => {
 
     expect(result.success).toBe(true);
     expect(result.data.description).toBe("第一段第二段");
-    expect(deltas).toEqual(["第一段", "第二段"]);
+    expect(deltas).toEqual(["第一段第二段"]);
     expect(fetchMock.mock.calls[0][0]).toContain("stream=1");
     expect(fetchMock.mock.calls[0][0]).toContain("heading=90");
   });
@@ -67,9 +67,17 @@ describe("description SSE client", () => {
       ]),
     );
 
-    const result = await streamLocationDescription("pano-2");
+    const onDelta = vi.fn();
+    const result = await streamLocationDescription(
+      "pano-2",
+      "zh",
+      null,
+      null,
+      onDelta,
+    );
 
     expect(result.success).toBe(false);
     expect(result.error).toContain("未执行要求的资料搜索");
+    expect(onDelta).not.toHaveBeenCalled();
   });
 });

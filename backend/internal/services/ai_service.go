@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/my-streetview-project/backend/internal/config"
@@ -16,33 +15,18 @@ import (
 )
 
 type AIService struct {
-	repo             repositories.Repository
-	openAI           openai.Client
-	maps             MapProvider
-	config           config.Config
-	descriptionMu    sync.Mutex
-	descriptionCache map[string]descriptionCacheEntry
-}
-
-const (
-	descriptionCacheTTL        = 30 * time.Minute
-	maxDescriptionCacheEntries = 256
-)
-
-type descriptionCacheEntry struct {
-	description string
-	citations   []openai.Citation
-	expiresAt   time.Time
-	lastAccess  time.Time
+	repo   repositories.Repository
+	openAI openai.Client
+	maps   MapProvider
+	config config.Config
 }
 
 func NewAIService(cfg config.Config, repo repositories.Repository, maps MapProvider, aiClient openai.Client) *AIService {
 	return &AIService{
-		repo:             repo,
-		openAI:           aiClient,
-		maps:             maps,
-		config:           cfg,
-		descriptionCache: make(map[string]descriptionCacheEntry),
+		repo:   repo,
+		openAI: aiClient,
+		maps:   maps,
+		config: cfg,
 	}
 }
 
@@ -76,20 +60,6 @@ type sceneImageResult struct {
 func (ai *AIService) generateDescription(ctx context.Context, loc models.Location, language string, view StreetViewView, detailed bool, onDelta func(string) error) (string, []openai.Citation, error) {
 	startTime := time.Now()
 	logger := utils.AILogger()
-	cacheKey := descriptionCacheKey(loc, language, view, detailed)
-	if desc, citations, ok := ai.getCachedDescription(cacheKey); ok {
-		if onDelta != nil {
-			if err := onDelta(desc); err != nil {
-				return "", nil, fmt.Errorf("向客户端发送缓存描述失败: %w", err)
-			}
-		}
-		logger.Info("description_cache_hit", "Reused cached Atlas description", map[string]interface{}{
-			"pano_id":  loc.PanoID,
-			"language": language,
-			"detailed": detailed,
-		})
-		return desc, citations, nil
-	}
 
 	locationInfo, scene, err := ai.prepareDescriptionContext(ctx, loc, language, view)
 	if err != nil {
@@ -100,6 +70,12 @@ func (ai *AIService) generateDescription(ctx context.Context, loc models.Locatio
 		})
 		return "", nil, err
 	}
+	logger.Info("description_context_ready", "Prepared Atlas location and scene context", map[string]interface{}{
+		"pano_id":  loc.PanoID,
+		"language": language,
+		"detailed": detailed,
+		"duration": time.Since(startTime).String(),
+	})
 
 	var desc string
 	var citations []openai.Citation
@@ -141,81 +117,7 @@ func (ai *AIService) generateDescription(ctx context.Context, loc models.Locatio
 		return "", nil, fmt.Errorf("生成的AI描述为空或无效")
 	}
 
-	ai.cacheDescription(cacheKey, desc, citations)
 	return desc, citations, nil
-}
-
-func descriptionCacheKey(loc models.Location, language string, view StreetViewView, detailed bool) string {
-	view = normalizeStreetViewView(view)
-	scenePanoID := strings.TrimSpace(view.PanoID)
-	if scenePanoID == "" {
-		scenePanoID = strings.TrimSpace(loc.PanoID)
-	}
-	return fmt.Sprintf(
-		"%s|%s|%s|%d|%d|%d|%t",
-		strings.TrimSpace(loc.PanoID),
-		strings.ToLower(strings.TrimSpace(language)),
-		scenePanoID,
-		view.Heading,
-		view.Pitch,
-		view.FOV,
-		detailed,
-	)
-}
-
-func cloneCitations(citations []openai.Citation) []openai.Citation {
-	if len(citations) == 0 {
-		return nil
-	}
-	return append([]openai.Citation(nil), citations...)
-}
-
-func (ai *AIService) getCachedDescription(key string) (string, []openai.Citation, bool) {
-	now := time.Now()
-	ai.descriptionMu.Lock()
-	defer ai.descriptionMu.Unlock()
-	entry, ok := ai.descriptionCache[key]
-	if !ok {
-		return "", nil, false
-	}
-	if now.After(entry.expiresAt) {
-		delete(ai.descriptionCache, key)
-		return "", nil, false
-	}
-	entry.lastAccess = now
-	ai.descriptionCache[key] = entry
-	return entry.description, cloneCitations(entry.citations), true
-}
-
-func (ai *AIService) cacheDescription(key, description string, citations []openai.Citation) {
-	now := time.Now()
-	ai.descriptionMu.Lock()
-	defer ai.descriptionMu.Unlock()
-	if ai.descriptionCache == nil {
-		ai.descriptionCache = make(map[string]descriptionCacheEntry)
-	}
-	for cacheKey, entry := range ai.descriptionCache {
-		if now.After(entry.expiresAt) {
-			delete(ai.descriptionCache, cacheKey)
-		}
-	}
-	if len(ai.descriptionCache) >= maxDescriptionCacheEntries {
-		oldestKey := ""
-		var oldestAccess time.Time
-		for cacheKey, entry := range ai.descriptionCache {
-			if oldestKey == "" || entry.lastAccess.Before(oldestAccess) {
-				oldestKey = cacheKey
-				oldestAccess = entry.lastAccess
-			}
-		}
-		delete(ai.descriptionCache, oldestKey)
-	}
-	ai.descriptionCache[key] = descriptionCacheEntry{
-		description: description,
-		citations:   cloneCitations(citations),
-		expiresAt:   now.Add(descriptionCacheTTL),
-		lastAccess:  now,
-	}
 }
 
 func (ai *AIService) prepareDescriptionContext(ctx context.Context, loc models.Location, language string, view StreetViewView) (map[string]string, *openai.SceneImage, error) {

@@ -167,6 +167,12 @@ func TestGenerateLocationDescriptionSendsSceneImageWithoutPlusCodeMetadata(t *te
 	if !strings.Contains(body, `"engine":"auto"`) {
 		t.Fatalf("request did not use OpenRouter's model-aware search routing: %s", body)
 	}
+	if !strings.Contains(body, `"provider"`) || !strings.Contains(body, `"sort":"latency"`) {
+		t.Fatalf("request did not prefer a low-latency provider: %s", body)
+	}
+	if strings.Contains(body, `"require_parameters"`) {
+		t.Fatalf("request used a hard parameter filter that can exclude every server-tool endpoint: %s", body)
+	}
 	if !strings.Contains(body, `"tool_choice":"auto"`) {
 		t.Fatalf("request did not allow synthesis after the required search step: %s", body)
 	}
@@ -396,6 +402,25 @@ func TestSelectModelUsesCNModelOnlyWithoutProxy(t *testing.T) {
 	}
 	if got := selectModel("http://127.0.0.1:10086"); got != defaultModel {
 		t.Fatalf("selectModel with proxy = %q, want %q", got, defaultModel)
+	}
+}
+
+func TestSelectProviderPreferences(t *testing.T) {
+	t.Setenv("OPENROUTER_PROVIDER_SORT", "")
+	preferences := selectProviderPreferences()
+	if preferences == nil || preferences.Sort != "latency" {
+		t.Fatalf("default provider preferences = %#v", preferences)
+	}
+
+	t.Setenv("OPENROUTER_PROVIDER_SORT", "throughput")
+	preferences = selectProviderPreferences()
+	if preferences == nil || preferences.Sort != "throughput" {
+		t.Fatalf("configured provider preferences = %#v", preferences)
+	}
+
+	t.Setenv("OPENROUTER_PROVIDER_SORT", "off")
+	if preferences := selectProviderPreferences(); preferences != nil {
+		t.Fatalf("disabled provider preferences = %#v, want nil", preferences)
 	}
 }
 

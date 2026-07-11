@@ -379,7 +379,6 @@ export default function StreetView({
         let isMounted = true;
         let panorama = null;
         let cleanup = null;
-        let timeoutId = null;
         let loadTimeoutId = null;
         let tipTimeoutId = null;
         let autoRotateTimeoutId = null;
@@ -573,13 +572,9 @@ export default function StreetView({
             }
         };
 
-        if (latitude && longitude) {
-            // 延迟执行以避免与其他地图组件的竞态条件
-            timeoutId = setTimeout(() => {
-                if (isMounted && mountedRef.current) {
-                    initStreetView();
-                }
-            }, 200); // StreetView延迟最多，因为它通常更耗资源
+        if (latitude && longitude && isMounted && mountedRef.current) {
+            // Street View is the primary visual surface; start it before secondary maps.
+            initStreetView();
         }
 
         return () => {
@@ -590,7 +585,6 @@ export default function StreetView({
             stopAutoRotate();
             
             // 清理所有定时器
-            if (timeoutId) clearTimeout(timeoutId);
             if (loadTimeoutId) clearTimeout(loadTimeoutId);
             if (tipTimeoutId) clearTimeout(tipTimeoutId);
             if (autoRotateTimeoutId) clearTimeout(autoRotateTimeoutId);

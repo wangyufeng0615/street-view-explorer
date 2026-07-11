@@ -91,7 +91,7 @@ func (s *MapsService) configureHTTPClient() (*http.Client, bool) {
 
 	// 如果没有代理配置，返回默认客户端
 	if proxyURL == "" {
-		return &http.Client{}, false
+		return &http.Client{Timeout: 15 * time.Second}, false
 	}
 
 	proxyType := os.Getenv("PROXY_TYPE")
@@ -108,7 +108,7 @@ func (s *MapsService) configureHTTPClient() (*http.Client, bool) {
 		utils.MapsLogger().Error("proxy_parse_failed", "Failed to parse proxy URL, using direct connection", err, map[string]interface{}{
 			"proxy_url": proxyURL,
 		})
-		return &http.Client{}, false
+		return &http.Client{Timeout: 15 * time.Second}, false
 	}
 
 	// 如果提供了用户名和密码，添加到代理URL
@@ -117,12 +117,12 @@ func (s *MapsService) configureHTTPClient() (*http.Client, bool) {
 	}
 
 	// 创建带有代理的Transport
-	transport := &http.Transport{
-		Proxy: http.ProxyURL(proxy),
-	}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.Proxy = http.ProxyURL(proxy)
 
 	httpClient := &http.Client{
 		Transport: transport,
+		Timeout:   15 * time.Second,
 	}
 
 	return httpClient, true
@@ -136,7 +136,7 @@ func (s *MapsService) getHTTPClient() *http.Client {
 	if s.httpClient != nil {
 		return s.httpClient
 	}
-	return &http.Client{}
+	return &http.Client{Timeout: 15 * time.Second}
 }
 
 // HTTPClient returns the proxy-aware HTTP client for reuse by other components.
@@ -299,10 +299,9 @@ func (s *MapsService) findStreetView(ctx context.Context, latitude, longitude fl
 		if err != nil {
 			continue
 		}
-		defer resp.Body.Close()
-
 		// 读取完整的响应体
 		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
 		if err != nil {
 			continue
 		}

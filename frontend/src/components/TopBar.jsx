@@ -1,7 +1,7 @@
 import React, {
   memo,
   useState,
-  useLayoutEffect,
+  useEffect,
   useRef,
 } from "react";
 import { useNavigate } from "react-router-dom";
@@ -32,34 +32,41 @@ const TopBar = memo(function TopBar({
   const [tempInterest, setTempInterest] = useState(explorationInterest || "");
   const topBarRef = useRef(null);
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     const topBar = topBarRef.current;
     if (!topBar || typeof document === "undefined") {
       return undefined;
     }
 
-    const updateTopBarHeight = () => {
-      const height = Math.ceil(topBar.getBoundingClientRect().height);
+    const setTopBarHeight = (height) => {
       document.documentElement.style.setProperty(
         "--top-bar-height",
-        `${height}px`,
+        `${Math.ceil(height)}px`,
       );
     };
 
-    updateTopBarHeight();
-
     let observer = null;
+    let updateTopBarHeight = null;
     if (typeof ResizeObserver !== "undefined") {
-      observer = new ResizeObserver(() => {
-        updateTopBarHeight();
+      observer = new ResizeObserver(([entry]) => {
+        const borderBoxSize = Array.isArray(entry.borderBoxSize)
+          ? entry.borderBoxSize[0]
+          : entry.borderBoxSize;
+        setTopBarHeight(borderBoxSize?.blockSize ?? entry.contentRect.height);
       });
       observer.observe(topBar);
+    } else {
+      updateTopBarHeight = () => {
+        setTopBarHeight(topBar.getBoundingClientRect().height);
+      };
+      updateTopBarHeight();
+      window.addEventListener("resize", updateTopBarHeight);
     }
 
-    window.addEventListener("resize", updateTopBarHeight);
-
     return () => {
-      window.removeEventListener("resize", updateTopBarHeight);
+      if (updateTopBarHeight) {
+        window.removeEventListener("resize", updateTopBarHeight);
+      }
       if (observer) {
         observer.disconnect();
       }

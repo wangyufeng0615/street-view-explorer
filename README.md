@@ -128,6 +128,7 @@ Backend variables live in `backend/.env`.
 | `DOUBAO_TTS_PROXY_URL` | No | Doubao-specific outbound proxy. Falls back to `AI_PROXY_URL` or `PROXY_URL`. |
 | `OPENROUTER_MODEL`, `AI_MODEL` | No | Optional OpenRouter model override. `OPENROUTER_MODEL` takes precedence. |
 | `CN_AI_MODEL` | No | Optional fallback model used only when no AI/shared proxy is configured. |
+| `OPENROUTER_PROVIDER_SORT` | No | OpenRouter provider preference: `latency` (default), `throughput`, `price`, or `off`. |
 | `GOOGLE_API_KEY` | Yes | Backend Google Maps, Street View, and Static Maps access. |
 | `GOOGLE_MAPS_MAP_ID` | No | Optional map ID, mainly useful to mirror frontend config. |
 | `SENTRY_DSN` | No | Backend Sentry DSN. |

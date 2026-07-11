@@ -39,7 +39,8 @@ export default defineConfig({
   // Build configuration
   build: {
     outDir: 'build',
-    sourcemap: true,
+    // Keep production source code out of the public static bundle.
+    sourcemap: false,
     // Enable module preload polyfill for older browsers
     modulePreload: {
       polyfill: true,

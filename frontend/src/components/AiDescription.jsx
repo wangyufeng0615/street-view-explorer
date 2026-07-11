@@ -95,7 +95,9 @@ const ThinkingIndicator = memo(function ThinkingIndicator({
       aria-label={title}
     >
       <div className="atlas-thinking-mark" aria-hidden="true">
-        <CompassGlyph needleClassName="compass-needle" />
+        <div className="compass-seek-motion">
+          <CompassGlyph />
+        </div>
       </div>
       <div className="atlas-thinking-title">{title}</div>
     </div>

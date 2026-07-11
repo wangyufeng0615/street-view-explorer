@@ -40,17 +40,16 @@ export function preloadGoogleMaps() {
     link.href = 'https://maps.googleapis.com';
     document.head.appendChild(link);
     
-    // Also prefetch the actual script URL without executing
-    const prefetchLink = document.createElement('link');
-    prefetchLink.rel = 'prefetch';
-    prefetchLink.href = `https://maps.googleapis.com/maps/api/js?key=${import.meta.env.VITE_GOOGLE_MAPS_API_KEY}&loading=async&libraries=marker&language=${i18n.language}&v=weekly`;
-    document.head.appendChild(prefetchLink);
+    const tileLink = document.createElement('link');
+    tileLink.rel = 'preconnect';
+    tileLink.href = 'https://streetviewpixels-pa.googleapis.com';
+    document.head.appendChild(tileLink);
 }
 
 /**
  * Load Google Maps Script with improved performance
  * - Uses IntersectionObserver for viewport-based loading
- * - Implements request idle callback for non-blocking load
+ * - Starts immediately because Street View is the primary visual surface
  * - Adds performance marks for monitoring
  */
 export function loadGoogleMapsScript() {
@@ -108,7 +107,6 @@ export function loadGoogleMapsScript() {
             return;
         }
         
-        // Use requestIdleCallback for non-blocking load
         const loadScript = () => {
             // 再次检查是否已经加载，避免重复
             if (isGoogleMapsLoaded()) {
@@ -187,12 +185,8 @@ export function loadGoogleMapsScript() {
             document.head.appendChild(script);
         };
         
-        // Use requestIdleCallback if available, otherwise setTimeout
-        if ('requestIdleCallback' in window) {
-            window.requestIdleCallback(loadScript, { timeout: 2000 });
-        } else {
-            setTimeout(loadScript, 0);
-        }
+        // Street View is the primary page surface, so load its API immediately.
+        loadScript();
     }).catch(err => {
         isLoadingScript = false;
         googleMapsPromise = null;
@@ -269,13 +263,8 @@ export function hardResetGoogleMapsPromise() {
 
 // Preload Google Maps connections early but non-blocking
 if (typeof window !== 'undefined') {
-    // Use requestIdleCallback for non-blocking preload, or DOMContentLoaded as fallback
     const schedulePreload = () => {
-        if ('requestIdleCallback' in window) {
-            window.requestIdleCallback(() => preloadGoogleMaps(), { timeout: 3000 });
-        } else {
-            setTimeout(preloadGoogleMaps, 100);
-        }
+        preloadGoogleMaps();
     };
 
     // Start preloading as soon as DOM is ready (earlier than 'load' event)

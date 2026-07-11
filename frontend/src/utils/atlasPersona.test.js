@@ -31,6 +31,21 @@ describe("buildAtlasVoiceInstructions", () => {
     expect(instructions).toContain("不要只用嘴承诺行动");
   });
 
+  it("keeps voice replies conversational without forcing one-line arrivals", () => {
+    const instructions = buildAtlasVoiceInstructions("zh", {
+      location: null,
+      currentLocationRef: null,
+      heading: 0,
+      description: "",
+    });
+
+    expect(instructions).toContain("默认 2-4 句");
+    expect(instructions).toContain("80-160 个中文字");
+    expect(instructions).toContain("历史或生活趣闻");
+    expect(instructions).not.toContain("默认 1-2 句");
+    expect(instructions).not.toContain("只用一句");
+  });
+
   it("keeps Plus Codes out of the human-facing place label and instructions", () => {
     const location = {
       formatted_address: "8G5Q7QGF+9X",

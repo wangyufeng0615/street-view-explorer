@@ -183,9 +183,13 @@
     height: 14px;
 }
 
-/* 罗盘指针来回找北 */
-.compass-needle {
-    transform-origin: 12px 12px;
+/* 动画 HTML 包装层，避免直接变换 SVG path 触发布局/合成回退 */
+.compass-seek-motion {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transform-origin: center;
+    will-change: transform;
     animation: compassSeek 2.2s ease-in-out infinite;
 }
 
