@@ -1,14 +1,18 @@
 package api
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/getsentry/sentry-go"
 	sentrygin "github.com/getsentry/sentry-go/gin"
 	"github.com/gin-gonic/gin"
 	mysentry "github.com/my-streetview-project/backend/internal/sentry"
+	"github.com/my-streetview-project/backend/internal/utils"
 )
 
 // ErrorResponse 定义统一的错误响应结构
@@ -37,8 +41,30 @@ func PublicErrorMessage(err error) string {
 	return mysentry.RedactSensitiveString(err.Error())
 }
 
+// reportableErrorMessage keeps the public response safe while preserving the
+// redacted underlying cause for Sentry. AppError.Error intentionally returns
+// only UserMsg, which previously collapsed unrelated upstream failures into a
+// single, unactionable issue such as "AI 描述生成失败".
+func reportableErrorMessage(err error) string {
+	if err == nil {
+		return ""
+	}
+
+	var appErr *utils.AppError
+	if errors.As(err, &appErr) && strings.TrimSpace(appErr.InternalMsg) != "" {
+		return mysentry.RedactSensitiveString(appErr.InternalMsg)
+	}
+	return mysentry.RedactSensitiveString(err.Error())
+}
+
 func CaptureHandlerError(c *gin.Context, err error, status int, contexts map[string]interface{}) {
 	if err == nil || status < http.StatusInternalServerError {
+		return
+	}
+	// A disconnected browser/curl request is not a backend incident. Streaming
+	// callbacks surface the request cancellation as an error, so reporting it
+	// creates noisy false-positive AI failures.
+	if errors.Is(err, context.Canceled) || errors.Is(c.Request.Context().Err(), context.Canceled) {
 		return
 	}
 
@@ -69,7 +95,7 @@ func CaptureHandlerError(c *gin.Context, err error, status int, contexts map[str
 				"data": mysentry.RedactSensitiveValue(value),
 			})
 		}
-		hub.CaptureException(fmt.Errorf("%s", mysentry.RedactSensitiveString(err.Error())))
+		hub.CaptureException(errors.New(reportableErrorMessage(err)))
 	})
 	c.Set(mysentry.ErrorReportedKey, true)
 }
