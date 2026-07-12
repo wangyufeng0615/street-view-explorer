@@ -1,8 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+const apiMocks = vi.hoisted(() => ({
+  streamLocationDescription: vi.fn(),
+}));
+
 vi.mock("../services/api", () => ({
   getRandomLocation: vi.fn(),
-  streamLocationDescription: vi.fn(),
+  streamLocationDescription: apiMocks.streamLocationDescription,
   setExplorationPreference: vi.fn(),
   deleteExplorationPreference: vi.fn(),
   lookupLocation: vi.fn(),
@@ -21,7 +25,14 @@ import useStore from "./useStore";
 describe("toast lifecycle", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    useStore.setState({ toastMessage: "", showToast: false });
+    apiMocks.streamLocationDescription.mockReset();
+    useStore.setState({
+      toastMessage: "",
+      showToast: false,
+      isDescriptionLoading: false,
+      descriptionRequestKey: null,
+      currentLocationRef: null,
+    });
   });
 
   afterEach(() => {
@@ -40,5 +51,44 @@ describe("toast lifecycle", () => {
 
     vi.advanceTimersByTime(1900);
     expect(useStore.getState().showToast).toBe(false);
+  });
+});
+
+describe("description request lifecycle", () => {
+  beforeEach(() => {
+    apiMocks.streamLocationDescription.mockReset();
+    useStore.setState({
+      isDescriptionLoading: false,
+      descriptionRequestKey: null,
+      currentLocationRef: { pano_id: "pano-1" },
+      streetViewView: null,
+      heading: 0,
+    });
+  });
+
+  it("aborts the active request when the page cleanup runs", async () => {
+    let receivedSignal;
+    apiMocks.streamLocationDescription.mockImplementation(
+      (_panoId, _language, signal) => {
+        receivedSignal = signal;
+        return new Promise((resolve) => {
+          signal.addEventListener(
+            "abort",
+            () => resolve({ success: false, aborted: true }),
+            { once: true },
+          );
+        });
+      },
+    );
+
+    const request = useStore.getState().loadLocationDescription("pano-1");
+    expect(useStore.getState().isDescriptionLoading).toBe(true);
+
+    useStore.getState().cancelLocationDescription();
+    await request;
+
+    expect(receivedSignal.aborted).toBe(true);
+    expect(useStore.getState().isDescriptionLoading).toBe(false);
+    expect(useStore.getState().descriptionRequestKey).toBeNull();
   });
 });

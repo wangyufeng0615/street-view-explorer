@@ -376,6 +376,15 @@ const useStore = create(
                 return promise;
             },
 
+            cancelLocationDescription: () => {
+                activeDescriptionRequest?.controller.abort();
+                activeDescriptionRequest = null;
+                set({
+                    isDescriptionLoading: false,
+                    descriptionRequestKey: null,
+                });
+            },
+
             // Exploration Mode Actions
             initializeExplorationMode: () => {
                 const savedMode = localStorage.getItem(EXPLORATION_MODE_KEY);

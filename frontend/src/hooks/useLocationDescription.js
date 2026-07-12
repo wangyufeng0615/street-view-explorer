@@ -9,6 +9,7 @@ export default function useLocationDescription() {
     const descError = useStore(state => state.descriptionError);
     const descRetries = useStore(state => state.descriptionRetries);
     const loadLocationDescriptionFromStore = useStore(state => state.loadLocationDescription);
+    const cancelLocationDescription = useStore(state => state.cancelLocationDescription);
     const resetDescriptionError = useStore(state => state.resetDescriptionError);
     const setNetworkState = useStore(state => state.setNetworkState);
     const networkState = useStore(state => state.networkState);
@@ -32,6 +33,7 @@ export default function useLocationDescription() {
     
     // 清理函数
     const cleanup = useCallback(() => {
+        cancelLocationDescription();
         if (abortControllerRef.current) {
             abortControllerRef.current.abort();
             abortControllerRef.current = null;
@@ -48,7 +50,7 @@ export default function useLocationDescription() {
             clearTimeout(timeoutRef.current);
             timeoutRef.current = null;
         }
-    }, []);
+    }, [cancelLocationDescription]);
     
     // 包装store的loadLocationDescription
     const loadLocationDescription = useCallback((panoId) => {
