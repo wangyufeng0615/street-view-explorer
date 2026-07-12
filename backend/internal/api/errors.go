@@ -137,7 +137,9 @@ func ErrorHandler() gin.HandlerFunc {
 			if hub == nil {
 				// Try getting from context
 				if h, exists := c.Get("sentry"); exists {
-					hub = h.(*sentry.Hub)
+					if typedHub, ok := h.(*sentry.Hub); ok {
+						hub = typedHub
+					}
 				}
 			}
 

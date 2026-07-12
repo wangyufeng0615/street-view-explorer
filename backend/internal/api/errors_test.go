@@ -2,9 +2,12 @@ package api
 
 import (
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/gin-gonic/gin"
 	"github.com/my-streetview-project/backend/internal/utils"
 )
 
@@ -39,5 +42,21 @@ func TestReportableErrorMessageRedactsSecrets(t *testing.T) {
 	}
 	if !strings.Contains(got, "[redacted]") {
 		t.Fatalf("reportableErrorMessage() missing redaction marker: %q", got)
+	}
+}
+
+func TestErrorHandlerIgnoresInvalidSentryContextValue(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(ErrorHandler())
+	router.GET("/fails", func(c *gin.Context) {
+		c.Set("sentry", "invalid-hub")
+		_ = c.Error(errors.New("boom"))
+	})
+
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/fails", nil))
+	if response.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500; body: %s", response.Code, response.Body.String())
 	}
 }

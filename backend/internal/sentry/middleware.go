@@ -140,8 +140,11 @@ func TestSentry() gin.HandlerFunc {
 		if hub == nil {
 			// Try getting from context
 			if h, exists := c.Get("sentry"); exists {
-				hub = h.(*sentry.Hub)
-			} else {
+				if typedHub, ok := h.(*sentry.Hub); ok {
+					hub = typedHub
+				}
+			}
+			if hub == nil {
 				c.JSON(http.StatusInternalServerError, gin.H{
 					"success": false,
 					"error":   "Sentry hub not found",

@@ -5,8 +5,8 @@
 
 let sentryLoaded = false;
 let sentryLoadPromise = null;
-let errorQueue = [];
 let Sentry = null;
+let errorHandlersInitialized = false;
 
 const sensitiveParamRegex = /(\b(?:key|api[_-]?key|apikey|token|access[_-]?token|secret|client[_-]?secret|password|dsn|authorization|app[_-]?id|appid|access[_-]?key)=)([^&\s"'<>]+)/gi;
 const sensitiveAuthorizationRegex = /(authorization[:=]\s*(?:bearer\s+)?)([^&\s"'<>]+)/gi;
@@ -115,19 +115,6 @@ async function loadSentry() {
 
     sentryLoaded = true;
 
-    // Process queued errors
-    if (errorQueue.length > 0) {
-      console.log(`Processing ${errorQueue.length} queued errors for Sentry`);
-      errorQueue.forEach(({ type, data }) => {
-        if (type === 'exception') {
-          Sentry.captureException(data.error, data.context);
-        } else if (type === 'message') {
-          Sentry.captureMessage(data.message, data.level);
-        }
-      });
-      errorQueue = [];
-    }
-
     return Sentry;
   }).catch((error) => {
     console.error('Failed to load Sentry:', error);
@@ -149,10 +136,6 @@ export async function captureException(error, context) {
   }
 
   if (!sentryLoaded) {
-    // Queue the error
-    errorQueue.push({ type: 'exception', data: { error, context } });
-    
-    // Start loading Sentry
     try {
       const loadedSentry = await loadSentry();
       return loadedSentry.captureException(error, context);
@@ -176,10 +159,6 @@ export async function captureMessage(message, level = 'info') {
   }
 
   if (!sentryLoaded) {
-    // Queue the message
-    errorQueue.push({ type: 'message', data: { message, level } });
-    
-    // Start loading Sentry
     try {
       const loadedSentry = await loadSentry();
       return loadedSentry.captureMessage(message, level);
@@ -251,6 +230,11 @@ export async function testSentry() {
  * Initialize error handlers (lightweight, no Sentry loading)
  */
 export function initErrorHandlers() {
+  if (errorHandlersInitialized) {
+    return;
+  }
+  errorHandlersInitialized = true;
+
   // Global error handler
   window.addEventListener('error', (event) => {
     captureException(event.error || new Error(event.message), {
@@ -263,7 +247,10 @@ export function initErrorHandlers() {
 
   // Unhandled promise rejection handler
   window.addEventListener('unhandledrejection', (event) => {
-    captureException(new Error(event.reason || 'Unhandled Promise Rejection'), {
+    const rejectionError = event.reason instanceof Error
+      ? event.reason
+      : new Error(String(event.reason || 'Unhandled Promise Rejection'));
+    captureException(rejectionError, {
       source: 'unhandledrejection',
       promise: event.promise,
     });

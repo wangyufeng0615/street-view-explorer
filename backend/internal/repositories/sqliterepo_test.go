@@ -32,6 +32,27 @@ func TestGetLocationByPanoIDNotFound(t *testing.T) {
 	}
 }
 
+func TestCloseStopsCleanupLoopAndIsIdempotent(t *testing.T) {
+	repo, err := NewSQLiteRepository(testSQLiteConfig{
+		path: filepath.Join(t.TempDir(), "close-cleanup.db"),
+	})
+	if err != nil {
+		t.Fatalf("NewSQLiteRepository() error = %v", err)
+	}
+
+	if err := repo.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+	select {
+	case <-repo.cleanupDone:
+	default:
+		t.Fatal("cleanup loop still running after Close")
+	}
+	if err := repo.Close(); err != nil {
+		t.Fatalf("second Close() error = %v", err)
+	}
+}
+
 func TestGetVisitHistoryReturnsVisitAndUniqueCounts(t *testing.T) {
 	repo, err := NewSQLiteRepository(testSQLiteConfig{
 		path: filepath.Join(t.TempDir(), "visit-history.db"),

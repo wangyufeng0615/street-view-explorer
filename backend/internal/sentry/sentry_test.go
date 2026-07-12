@@ -1,8 +1,12 @@
 package sentry
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/gin-gonic/gin"
 )
 
 func TestRedactSensitiveString(t *testing.T) {
@@ -46,5 +50,20 @@ func TestDefaultTracesSampleRate(t *testing.T) {
 	}
 	if got := defaultTracesSampleRate("development"); got != 1.0 {
 		t.Fatalf("development default sample rate = %v, want 1.0", got)
+	}
+}
+
+func TestSentryEndpointRejectsInvalidHubWithoutPanicking(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.GET("/test/sentry", func(c *gin.Context) {
+		c.Set("sentry", "invalid-hub")
+		TestSentry()(c)
+	})
+
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/test/sentry", nil))
+	if response.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500; body: %s", response.Code, response.Body.String())
 	}
 }

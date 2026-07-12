@@ -12,8 +12,12 @@ import (
 
 // SQLiteRepository SQLite 实现的数据存储 + 限流器
 type SQLiteRepository struct {
-	db *sql.DB
-	mu sync.RWMutex // 保护写操作的序列化
+	db          *sql.DB
+	mu          sync.RWMutex // 保护写操作的序列化
+	cleanupStop chan struct{}
+	cleanupDone chan struct{}
+	closeOnce   sync.Once
+	closeErr    error
 }
 
 // SQLiteConfig SQLite 配置接口
@@ -42,13 +46,19 @@ func NewSQLiteRepository(cfg SQLiteConfig) (*SQLiteRepository, error) {
 
 	// 验证连接
 	if err := db.Ping(); err != nil {
+		_ = db.Close()
 		return nil, fmt.Errorf("SQLite 连接验证失败: %w", err)
 	}
 
-	repo := &SQLiteRepository{db: db}
+	repo := &SQLiteRepository{
+		db:          db,
+		cleanupStop: make(chan struct{}),
+		cleanupDone: make(chan struct{}),
+	}
 
 	// 自动建表
 	if err := repo.migrate(); err != nil {
+		_ = db.Close()
 		return nil, fmt.Errorf("SQLite 建表失败: %w", err)
 	}
 
@@ -147,15 +157,26 @@ func (r *SQLiteRepository) migrate() error {
 func (r *SQLiteRepository) cleanupLoop() {
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
+	defer close(r.cleanupDone)
 
-	for range ticker.C {
-		r.db.Exec("DELETE FROM rate_limits WHERE expires_at < datetime('now')")
+	for {
+		select {
+		case <-ticker.C:
+			_, _ = r.db.Exec("DELETE FROM rate_limits WHERE expires_at < datetime('now')")
+		case <-r.cleanupStop:
+			return
+		}
 	}
 }
 
 // Close 关闭数据库连接
 func (r *SQLiteRepository) Close() error {
-	return r.db.Close()
+	r.closeOnce.Do(func() {
+		close(r.cleanupStop)
+		<-r.cleanupDone
+		r.closeErr = r.db.Close()
+	})
+	return r.closeErr
 }
 
 // ==================== 位置相关方法 ====================
