@@ -1,12 +1,39 @@
 package api
 
 import (
+	"context"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"github.com/my-streetview-project/backend/internal/services"
 )
+
+type noStreetViewMapProvider struct{}
+
+func (noStreetViewMapProvider) HasStreetView(context.Context, float64, float64, bool) (bool, float64, float64, string) {
+	return false, 0, 0, ""
+}
+func (noStreetViewMapProvider) FindNearbyStreetView(context.Context, float64, float64) (bool, float64, float64, string) {
+	return false, 0, 0, ""
+}
+func (noStreetViewMapProvider) FindNearestStreetView(context.Context, float64, float64) (bool, float64, float64, string) {
+	return false, 0, 0, ""
+}
+func (noStreetViewMapProvider) GetLocationInfo(context.Context, float64, float64, string) (map[string]string, error) {
+	return nil, nil
+}
+func (noStreetViewMapProvider) GeocodeAddress(context.Context, string) (float64, float64, string, error) {
+	return 0, 0, "", nil
+}
+func (noStreetViewMapProvider) SearchPlace(context.Context, string, string) (*services.PlaceCandidate, error) {
+	return nil, nil
+}
+func (noStreetViewMapProvider) GetStreetViewFrame(context.Context, string, services.StreetViewView) (*services.StreetViewFrame, error) {
+	return nil, nil
+}
 
 func TestParseCoordinate(t *testing.T) {
 	tests := []struct {
@@ -41,6 +68,21 @@ func TestParseCoordinate(t *testing.T) {
 				t.Fatalf("got %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestLookupLocationWithoutStreetViewReturnsNotFound(t *testing.T) {
+	locationService := services.NewLocationService(nil, nil, noStreetViewMapProvider{})
+	handlers := NewHandlers(locationService, nil)
+	router := gin.New()
+	router.GET("/api/v1/locations/lookup", handlers.LookupLocation)
+
+	response := doJSON(router, http.MethodGet, "/api/v1/locations/lookup?lat=41.05916&lng=47.26079&lang=zh", nil)
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404; body: %s", response.Code, response.Body.String())
+	}
+	if !strings.Contains(response.Body.String(), services.ErrStreetViewNotFound.Error()) {
+		t.Fatalf("body missing no-street-view message: %s", response.Body.String())
 	}
 }
 

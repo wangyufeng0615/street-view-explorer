@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"strings"
@@ -11,6 +12,8 @@ import (
 	"github.com/my-streetview-project/backend/internal/repositories"
 	"github.com/my-streetview-project/backend/internal/utils"
 )
+
+var ErrStreetViewNotFound = errors.New("该坐标附近没有可用街景")
 
 type LocationService struct {
 	repo      repositories.Repository
@@ -304,7 +307,7 @@ func (ls *LocationService) LookupLocation(lat, lng float64, language string) (*m
 	// URL lookup 只接受附近街景，不做全局兜底跳转。
 	hasStreetView, validLat, validLng, panoId := ls.maps.FindNearbyStreetView(ctx, lat, lng)
 	if !hasStreetView {
-		return nil, fmt.Errorf("该坐标附近没有可用街景")
+		return nil, ErrStreetViewNotFound
 	}
 
 	locationInfo, err := ls.maps.GetLocationInfo(ctx, validLat, validLng, language)
@@ -336,7 +339,7 @@ func (ls *LocationService) LookupNearestLocation(lat, lng float64, language stri
 
 	hasStreetView, validLat, validLng, panoId := ls.maps.FindNearestStreetView(ctx, lat, lng)
 	if !hasStreetView {
-		return nil, fmt.Errorf("没有找到可用街景")
+		return nil, ErrStreetViewNotFound
 	}
 
 	locationInfo, err := ls.maps.GetLocationInfo(ctx, validLat, validLng, language)

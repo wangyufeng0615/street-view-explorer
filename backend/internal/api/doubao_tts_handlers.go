@@ -17,6 +17,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	mysentry "github.com/my-streetview-project/backend/internal/sentry"
 )
 
 const (
@@ -108,6 +109,17 @@ func (h *RealtimeHandlers) SynthesizeDoubaoTTS(c *gin.Context) {
 		if !config.configured() {
 			code = "doubao_tts_missing_credentials"
 		}
+		if atlasVoiceProvider() == atlasVoiceProviderDoubao {
+			CaptureHandlerError(c, err, http.StatusServiceUnavailable, map[string]interface{}{
+				"operation":  "doubao_tts_config",
+				"configured": config.configured(),
+				"resource":   config.ResourceID,
+			})
+		} else {
+			// The optional Doubao endpoint can be probed while OpenAI is the active
+			// provider. Its expected 503 must not become a generic Sentry incident.
+			c.Set(mysentry.ErrorReportedKey, true)
+		}
 		c.JSON(http.StatusServiceUnavailable, gin.H{
 			"success": false,
 			"code":    code,
@@ -160,6 +172,14 @@ func (h *RealtimeHandlers) SynthesizeDoubaoTTS(c *gin.Context) {
 			time.Since(startedAt).Round(time.Millisecond),
 			err,
 		)
+		CaptureHandlerError(c, err, http.StatusBadGateway, map[string]interface{}{
+			"operation": "doubao_tts_stream",
+			"chars":     charCount,
+			"language":  doubaoExplicitLanguage(request.Language),
+			"resource":  config.ResourceID,
+			"speaker":   config.Speaker,
+			"duration":  time.Since(startedAt).Round(time.Millisecond).String(),
+		})
 		writeDoubaoTTSLine(c.Writer, gin.H{
 			"type":  "error",
 			"error": PublicErrorMessage(err),

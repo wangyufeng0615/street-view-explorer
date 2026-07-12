@@ -670,6 +670,13 @@ func (h *Handlers) LookupLocation(c *gin.Context) {
 		loc, lookupErr = svc.LocationService.LookupLocation(lat, lng, language)
 	}
 	if lookupErr != nil {
+		if errors.Is(lookupErr, services.ErrStreetViewNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{
+				"success": false,
+				"error":   PublicErrorMessage(lookupErr),
+			})
+			return
+		}
 		CaptureHandlerError(c, lookupErr, http.StatusInternalServerError, map[string]interface{}{
 			"operation": "lookup_location",
 			"latitude":  lat,
