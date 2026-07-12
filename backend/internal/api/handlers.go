@@ -245,7 +245,7 @@ func (h *Handlers) GetRandomLocation(c *gin.Context) {
 	}
 
 	// 获取随机位置（自动处理用户偏好）
-	loc, err := svc.LocationService.GetRandomLocation(sessionID, language, countryCode)
+	loc, err := svc.LocationService.GetRandomLocationWithContext(c.Request.Context(), sessionID, language, countryCode)
 	if err != nil {
 		status := http.StatusInternalServerError
 		if countryCode != "" && strings.Contains(err.Error(), "不支持的国家代码") {
@@ -337,7 +337,7 @@ func (h *Handlers) GetLocationDescription(c *gin.Context) {
 	startTime := time.Now()
 	logger := utils.APILogger()
 
-	desc, citations, err := svc.AIService.GetDescriptionForLocation(*loc, language, view)
+	desc, citations, err := svc.AIService.GetDescriptionForLocationContext(c.Request.Context(), *loc, language, view)
 	if err != nil {
 		duration := time.Since(startTime)
 		statusCode := http.StatusInternalServerError
@@ -447,7 +447,7 @@ func (h *Handlers) GetLocationDetailedDescription(c *gin.Context) {
 	startTime := time.Now()
 	logger := utils.APILogger()
 
-	desc, citations, err := svc.AIService.GetDetailedDescriptionForLocation(*loc, language, view)
+	desc, citations, err := svc.AIService.GetDetailedDescriptionForLocationContext(c.Request.Context(), *loc, language, view)
 	if err != nil {
 		duration := time.Since(startTime)
 		statusCode := http.StatusInternalServerError
@@ -665,9 +665,9 @@ func (h *Handlers) LookupLocation(c *gin.Context) {
 	var loc *models.Location
 	var lookupErr error
 	if scope == "nearest" {
-		loc, lookupErr = svc.LocationService.LookupNearestLocation(lat, lng, language)
+		loc, lookupErr = svc.LocationService.LookupNearestLocationWithContext(c.Request.Context(), lat, lng, language)
 	} else {
-		loc, lookupErr = svc.LocationService.LookupLocation(lat, lng, language)
+		loc, lookupErr = svc.LocationService.LookupLocationWithContext(c.Request.Context(), lat, lng, language)
 	}
 	if lookupErr != nil {
 		if errors.Is(lookupErr, services.ErrStreetViewNotFound) {
@@ -737,7 +737,7 @@ func (h *Handlers) SearchLocation(c *gin.Context) {
 	}
 
 	svc := h.servicesForMode(c)
-	loc, place, err := svc.LocationService.SearchLocation(query, language)
+	loc, place, err := svc.LocationService.SearchLocationWithContext(c.Request.Context(), query, language)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{
 			"success": false,

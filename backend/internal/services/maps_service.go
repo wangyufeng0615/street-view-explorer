@@ -236,8 +236,8 @@ func (s *MapsService) GetStreetViewFrame(ctx context.Context, panoID string, vie
 	return cloneStreetViewFrame(frame), nil
 }
 
-// 检查坐标是否有街景可用，并返回街景坐标
-// 使用兜底措施确保总是能找到可用的街景
+// 检查坐标是否有街景可用，并返回街景坐标。
+// 可以扩大搜索范围，但绝不伪造一个并不存在的 panorama。
 func (s *MapsService) HasStreetView(ctx context.Context, latitude, longitude float64, hasInterest bool) (bool, float64, float64, string) {
 	var searchRadii []int
 	if hasInterest {
@@ -364,13 +364,13 @@ func (s *MapsService) findStreetView(ctx context.Context, latitude, longitude fl
 		}
 	}
 
-	// 如果真的都失败了，记录严重错误但返回一个默认位置（这种情况极少发生）
+	// 所有真实查询都失败时必须失败关闭。返回合成 pano ID 会让后续
+	// Street View 图片与 Atlas 描述请求在错误地点继续执行。
 	logger := utils.MapsLogger()
-	logger.Error("streetview_complete_failure", "All street view searches failed, using default location", nil, map[string]interface{}{
+	logger.Error("streetview_complete_failure", "All street view searches failed", nil, map[string]interface{}{
 		"coords": fmt.Sprintf("(%.6f,%.6f)", latitude, longitude),
 	})
-	// 返回纽约时代广场作为默认位置（有街景保证）
-	return true, 40.758896, -73.985130, "default-location"
+	return false, 0, 0, ""
 }
 
 // GeocodeAddress 将地址/地名转为坐标

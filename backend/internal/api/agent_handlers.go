@@ -302,7 +302,7 @@ func (ah *AgentHandlers) AgentExplore(c *gin.Context) {
 		}
 	}
 
-	loc, err := ah.global.LocationService.LookupLocation(lat, lng, language)
+	loc, err := ah.global.LocationService.LookupLocationWithContext(c.Request.Context(), lat, lng, language)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{
 			"success": false,

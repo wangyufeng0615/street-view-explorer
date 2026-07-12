@@ -13,6 +13,7 @@ const RATE_LIMIT_MS = 1000; // 1秒限制
 const EXPLORATION_MODE_KEY = 'exploration_mode';
 const EXPLORATION_INTEREST_KEY = 'exploration_interest';
 let activeDescriptionRequest = null;
+let toastHideTimer = null;
 
 function getActiveLanguage() {
     const language = i18n.resolvedLanguage || i18n.language || 'en';
@@ -510,14 +511,18 @@ const useStore = create(
             setScale: (scale) => set({ scale }),
 
             showToastMessage: (message) => {
+                if (toastHideTimer !== null) {
+                    clearTimeout(toastHideTimer);
+                }
                 set({
                     toastMessage: message,
                     showToast: true,
                 });
 
                 // 3秒后自动隐藏
-                setTimeout(() => {
+                toastHideTimer = setTimeout(() => {
                     set({ showToast: false });
+                    toastHideTimer = null;
                 }, 3000);
             },
 

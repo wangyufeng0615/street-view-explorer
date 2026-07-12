@@ -45,6 +45,10 @@ func (ls *LocationService) GetLocation(panoID string) (*models.Location, error) 
 // GetRandomLocation 获取随机位置，支持用户偏好
 // 如果 sessionID 为空，则使用默认的全球随机生成
 func (ls *LocationService) GetRandomLocation(sessionID string, language string, countryCodes ...string) (models.Location, error) {
+	return ls.GetRandomLocationWithContext(context.Background(), sessionID, language, countryCodes...)
+}
+
+func (ls *LocationService) GetRandomLocationWithContext(ctx context.Context, sessionID string, language string, countryCodes ...string) (models.Location, error) {
 	var regions []models.Region
 	countryCode := ""
 	if len(countryCodes) > 0 && countryCodes[0] != "" {
@@ -76,14 +80,13 @@ func (ls *LocationService) GetRandomLocation(sessionID string, language string, 
 	}
 
 	// 生成随机位置（regions 为 nil 时使用默认全球区域）
-	return ls.generateRandomLocation(regions, language, sessionID, countryCode)
+	return ls.generateRandomLocation(ctx, regions, language, sessionID, countryCode)
 }
 
 // generateRandomLocation 统一的随机位置生成逻辑
 // regions 为 nil 时使用默认大陆区域，否则使用用户偏好区域
-// 使用带兜底机制的街景搜索，确保总是能找到可用位置
-func (ls *LocationService) generateRandomLocation(regions []models.Region, language string, sessionID string, countryCode string) (models.Location, error) {
-	ctx := context.Background()
+// 使用逐步扩大半径的街景搜索；所有真实查询失败时向上返回错误。
+func (ls *LocationService) generateRandomLocation(ctx context.Context, regions []models.Region, language string, sessionID string, countryCode string) (models.Location, error) {
 	logger := utils.LocationLogger()
 	attempts := 1
 	if countryCode != "" {
@@ -92,6 +95,9 @@ func (ls *LocationService) generateRandomLocation(regions []models.Region, langu
 
 	var lastErr error
 	for attempt := 1; attempt <= attempts; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return models.Location{}, fmt.Errorf("生成位置请求已取消: %w", err)
+		}
 		// 生成随机坐标
 		var lat, lng float64
 		if countryCode != "" {
@@ -104,13 +110,15 @@ func (ls *LocationService) generateRandomLocation(regions []models.Region, langu
 			lat, lng = utils.GenerateRandomCoordinate(regions)
 		}
 
-		// 使用带兜底机制的街景搜索，总是能找到可用街景
+		// 使用逐步扩大半径的街景搜索。
 		hasStreetView, validLat, validLng, panoId := ls.maps.HasStreetView(ctx, lat, lng, regions != nil || countryCode != "")
 
-		// 由于有兜底机制，这里应该总是成功，但保留检查以防万一
 		if !hasStreetView {
-			lastErr = fmt.Errorf("严重错误：即使使用兜底机制也无法找到街景")
-			logger.Error("streetview_fallback_failed", "Critical error: fallback mechanism failed", nil, map[string]interface{}{
+			if err := ctx.Err(); err != nil {
+				return models.Location{}, fmt.Errorf("生成位置请求已取消: %w", err)
+			}
+			lastErr = fmt.Errorf("无法找到可用街景")
+			logger.Error("streetview_search_failed", "Street view search failed", nil, map[string]interface{}{
 				"original_lat": lat,
 				"original_lng": lng,
 				"session_id":   sessionID,
@@ -302,11 +310,17 @@ func validateRegions(regions []models.Region) error {
 
 // LookupLocation 根据坐标查找或创建位置
 func (ls *LocationService) LookupLocation(lat, lng float64, language string) (*models.Location, error) {
-	ctx := context.Background()
+	return ls.LookupLocationWithContext(context.Background(), lat, lng, language)
+}
+
+func (ls *LocationService) LookupLocationWithContext(ctx context.Context, lat, lng float64, language string) (*models.Location, error) {
 
 	// URL lookup 只接受附近街景，不做全局兜底跳转。
 	hasStreetView, validLat, validLng, panoId := ls.maps.FindNearbyStreetView(ctx, lat, lng)
 	if !hasStreetView {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		return nil, ErrStreetViewNotFound
 	}
 
@@ -335,10 +349,16 @@ func (ls *LocationService) LookupLocation(lat, lng float64, language string) (*m
 
 // LookupNearestLocation 根据坐标查找最近的可用街景并创建位置记录。
 func (ls *LocationService) LookupNearestLocation(lat, lng float64, language string) (*models.Location, error) {
-	ctx := context.Background()
+	return ls.LookupNearestLocationWithContext(context.Background(), lat, lng, language)
+}
+
+func (ls *LocationService) LookupNearestLocationWithContext(ctx context.Context, lat, lng float64, language string) (*models.Location, error) {
 
 	hasStreetView, validLat, validLng, panoId := ls.maps.FindNearestStreetView(ctx, lat, lng)
 	if !hasStreetView {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		return nil, ErrStreetViewNotFound
 	}
 
@@ -367,12 +387,15 @@ func (ls *LocationService) LookupNearestLocation(lat, lng float64, language stri
 
 // SearchLocation resolves a concrete place/landmark query and loads nearby Street View.
 func (ls *LocationService) SearchLocation(query, language string) (*models.Location, *PlaceResolution, error) {
+	return ls.SearchLocationWithContext(context.Background(), query, language)
+}
+
+func (ls *LocationService) SearchLocationWithContext(ctx context.Context, query, language string) (*models.Location, *PlaceResolution, error) {
 	trimmedQuery := strings.TrimSpace(query)
 	if trimmedQuery == "" {
 		return nil, nil, fmt.Errorf("缺少地点关键词")
 	}
 
-	ctx := context.Background()
 	candidate, err := ls.maps.SearchPlace(ctx, trimmedQuery, language)
 	if err != nil {
 		return nil, nil, err

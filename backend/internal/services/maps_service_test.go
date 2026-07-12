@@ -169,3 +169,28 @@ func TestFindNearestStreetViewExpandsBeyondNearbyRadius(t *testing.T) {
 		t.Fatalf("last requested radius = %d, want 1000000", lastRadius)
 	}
 }
+
+func TestHasStreetViewDoesNotReturnSyntheticFallback(t *testing.T) {
+	requests := 0
+	service := &MapsService{
+		apiKey: "test-key",
+		httpClient: &http.Client{
+			Transport: roundTripFunc(func(_ *http.Request) (*http.Response, error) {
+				requests++
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(strings.NewReader(`{"status":"ZERO_RESULTS"}`)),
+					Header:     make(http.Header),
+				}, nil
+			}),
+		},
+	}
+
+	ok, lat, lng, panoID := service.HasStreetView(context.Background(), 1, 2, false)
+	if ok || lat != 0 || lng != 0 || panoID != "" {
+		t.Fatalf("HasStreetView() = (%t, %v, %v, %q), want a closed failure", ok, lat, lng, panoID)
+	}
+	if requests != 6 {
+		t.Fatalf("requests = %d, want 6 real metadata attempts", requests)
+	}
+}
