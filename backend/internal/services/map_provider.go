@@ -4,10 +4,9 @@ import "context"
 
 // MapProvider abstracts map service operations.
 type MapProvider interface {
-	// HasStreetView checks if street view is available near given coordinates.
-	// Returns the validated coordinates and pano ID if found.
-	// Implementations should include fallback logic to maximize success rate.
-	HasStreetView(ctx context.Context, latitude, longitude float64, hasInterest bool) (bool, float64, float64, string)
+	// FindRandomStreetView performs one bounded lookup for speculative random
+	// candidates. It never expands beyond maxRadiusMeters.
+	FindRandomStreetView(ctx context.Context, latitude, longitude float64, maxRadiusMeters int) (bool, float64, float64, string)
 
 	// FindNearbyStreetView searches for street view within a limited radius.
 	// No global fallback - used for URL-based coordinate lookups.

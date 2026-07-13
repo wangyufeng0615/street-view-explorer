@@ -913,8 +913,13 @@ func (h *Handlers) GetVisitHistory(c *gin.Context) {
 	}
 
 	svc := h.servicesForMode(c)
+	source := strings.TrimSpace(c.Query("source"))
+	if source != "" && source != models.VisitSourceRandom && source != models.VisitSourceShared && source != models.VisitSourceLookup && source != models.VisitSourceMapPick {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "invalid visit source"})
+		return
+	}
 
-	visits, totalVisits, uniquePlaces, err := svc.LocationService.GetGlobalVisitHistory(limit, offset)
+	visits, totalVisits, uniquePlaces, err := svc.LocationService.GetGlobalVisitHistory(limit, offset, source)
 	if err != nil {
 		CaptureHandlerError(c, err, http.StatusInternalServerError, map[string]interface{}{
 			"operation": "get_visit_history",

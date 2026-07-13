@@ -77,6 +77,7 @@ func (r *SQLiteRepository) migrate() error {
 			longitude REAL NOT NULL,
 			formatted_address TEXT DEFAULT '',
 			country TEXT DEFAULT '',
+			country_code TEXT DEFAULT '',
 			city TEXT DEFAULT '',
 			is_mock INTEGER DEFAULT 0,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -105,9 +106,17 @@ func (r *SQLiteRepository) migrate() error {
 		latitude REAL NOT NULL,
 		longitude REAL NOT NULL,
 		country TEXT DEFAULT '',
+		country_code TEXT DEFAULT '',
 		city TEXT DEFAULT '',
 		formatted_address TEXT DEFAULT '',
 		source TEXT DEFAULT 'random',
+		selection_strategy TEXT DEFAULT '',
+		target_country_code TEXT DEFAULT '',
+		origin_latitude REAL DEFAULT 0,
+		origin_longitude REAL DEFAULT 0,
+		snap_distance_km REAL DEFAULT 0,
+		search_radius_m INTEGER DEFAULT 0,
+		selection_attempt INTEGER DEFAULT 0,
 		visited_at DATETIME DEFAULT (datetime('now'))
 	);
 
@@ -115,6 +124,7 @@ func (r *SQLiteRepository) migrate() error {
 	CREATE INDEX IF NOT EXISTS idx_visit_history_visited_at ON visit_history(visited_at);
 	CREATE INDEX IF NOT EXISTS idx_visit_history_session_pano ON visit_history(session_id, pano_id);
 	CREATE INDEX IF NOT EXISTS idx_visit_history_session_visited_at ON visit_history(session_id, visited_at DESC, id DESC);
+	CREATE INDEX IF NOT EXISTS idx_visit_history_source_visited_at ON visit_history(source, visited_at DESC, id DESC);
 
 	CREATE TABLE IF NOT EXISTS agent_journeys (
 		id TEXT PRIMARY KEY,
@@ -149,8 +159,63 @@ func (r *SQLiteRepository) migrate() error {
 	CREATE INDEX IF NOT EXISTS idx_agent_stops_journey ON agent_journey_stops(journey_id);
 	`
 
-	_, err := r.db.Exec(schema)
-	return err
+	if _, err := r.db.Exec(schema); err != nil {
+		return err
+	}
+	// CREATE TABLE IF NOT EXISTS does not add columns to existing production
+	// databases. Keep migrations additive and idempotent.
+	columns := []struct {
+		table      string
+		name       string
+		definition string
+	}{
+		{"locations", "country_code", "TEXT DEFAULT ''"},
+		{"visit_history", "country_code", "TEXT DEFAULT ''"},
+		{"visit_history", "selection_strategy", "TEXT DEFAULT ''"},
+		{"visit_history", "target_country_code", "TEXT DEFAULT ''"},
+		{"visit_history", "origin_latitude", "REAL DEFAULT 0"},
+		{"visit_history", "origin_longitude", "REAL DEFAULT 0"},
+		{"visit_history", "snap_distance_km", "REAL DEFAULT 0"},
+		{"visit_history", "search_radius_m", "INTEGER DEFAULT 0"},
+		{"visit_history", "selection_attempt", "INTEGER DEFAULT 0"},
+	}
+	for _, column := range columns {
+		if err := r.ensureColumn(column.table, column.name, column.definition); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *SQLiteRepository) ensureColumn(table, name, definition string) error {
+	rows, err := r.db.Query("PRAGMA table_info(" + table + ")")
+	if err != nil {
+		return fmt.Errorf("读取 %s 表结构失败: %w", table, err)
+	}
+	found := false
+	for rows.Next() {
+		var cid int
+		var columnName, columnType string
+		var notNull, primaryKey int
+		var defaultValue sql.NullString
+		if err := rows.Scan(&cid, &columnName, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
+			rows.Close()
+			return fmt.Errorf("读取 %s 列失败: %w", table, err)
+		}
+		if columnName == name {
+			found = true
+		}
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if found {
+		return nil
+	}
+	if _, err := r.db.Exec("ALTER TABLE " + table + " ADD COLUMN " + name + " " + definition); err != nil {
+		return fmt.Errorf("添加 %s.%s 失败: %w", table, name, err)
+	}
+	return nil
 }
 
 // cleanupLoop 定期清理过期的 rate limit 记录
@@ -187,18 +252,19 @@ func (r *SQLiteRepository) SaveLocation(location models.Location) error {
 	}
 
 	_, err := r.db.Exec(`
-		INSERT INTO locations (pano_id, latitude, longitude, formatted_address, country, city, is_mock, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO locations (pano_id, latitude, longitude, formatted_address, country, country_code, city, is_mock, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(pano_id) DO UPDATE SET
 			latitude = excluded.latitude,
 			longitude = excluded.longitude,
 			formatted_address = excluded.formatted_address,
 			country = excluded.country,
+			country_code = excluded.country_code,
 			city = excluded.city,
 			is_mock = excluded.is_mock
 	`,
 		location.PanoID, location.Latitude, location.Longitude,
-		location.FormattedAddress, location.Country, location.City,
+		location.FormattedAddress, location.Country, location.CountryCode, location.City,
 		boolToInt(location.IsMock), location.CreatedAt,
 	)
 	if err != nil {
@@ -209,7 +275,7 @@ func (r *SQLiteRepository) SaveLocation(location models.Location) error {
 
 func (r *SQLiteRepository) GetLocationByPanoID(panoID string) (*models.Location, error) {
 	row := r.db.QueryRow(`
-		SELECT pano_id, latitude, longitude, formatted_address, country, city,
+		SELECT pano_id, latitude, longitude, formatted_address, country, country_code, city,
 		       is_mock, created_at
 		FROM locations WHERE pano_id = ?
 	`, panoID)
@@ -219,7 +285,7 @@ func (r *SQLiteRepository) GetLocationByPanoID(panoID string) (*models.Location,
 
 	err := row.Scan(
 		&loc.PanoID, &loc.Latitude, &loc.Longitude,
-		&loc.FormattedAddress, &loc.Country, &loc.City,
+		&loc.FormattedAddress, &loc.Country, &loc.CountryCode, &loc.City,
 		&isMock, &loc.CreatedAt,
 	)
 	if err == sql.ErrNoRows {
@@ -372,11 +438,19 @@ func (r *SQLiteRepository) GetCount(key string) (int64, error) {
 
 func (r *SQLiteRepository) RecordVisit(sessionID string, loc models.Location, source string) error {
 	_, err := r.db.Exec(`
-		INSERT INTO visit_history (session_id, pano_id, latitude, longitude, country, city, formatted_address, source)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO visit_history (
+			session_id, pano_id, latitude, longitude, country, country_code, city,
+			formatted_address, source, selection_strategy, target_country_code,
+			origin_latitude, origin_longitude, snap_distance_km, search_radius_m,
+			selection_attempt
+		)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		sessionID, loc.PanoID, loc.Latitude, loc.Longitude,
-		loc.Country, loc.City, loc.FormattedAddress, source,
+		loc.Country, loc.CountryCode, loc.City, loc.FormattedAddress, source,
+		loc.SelectionStrategy, loc.TargetCountryCode, loc.OriginLatitude,
+		loc.OriginLongitude, loc.SnapDistanceKm, loc.SearchRadiusM,
+		loc.SelectionAttempt,
 	)
 	if err != nil {
 		return fmt.Errorf("记录访问失败: %w", err)
@@ -401,7 +475,10 @@ func (r *SQLiteRepository) GetVisitHistory(sessionID string, limit, offset int) 
 
 	// 获取分页数据
 	rows, err := r.db.Query(`
-		SELECT id, session_id, pano_id, latitude, longitude, country, city, formatted_address, source, visited_at
+		SELECT id, session_id, pano_id, latitude, longitude, country, country_code, city,
+		       formatted_address, source, selection_strategy, target_country_code,
+		       origin_latitude, origin_longitude, snap_distance_km, search_radius_m,
+		       selection_attempt, visited_at
 		FROM visit_history
 		WHERE session_id = ?
 		ORDER BY visited_at DESC, id DESC
@@ -420,27 +497,50 @@ func (r *SQLiteRepository) GetVisitHistory(sessionID string, limit, offset int) 
 	return visits, totalVisits, uniquePlaces, nil
 }
 
-func (r *SQLiteRepository) GetGlobalVisitHistory(limit, offset int) ([]models.VisitRecord, int64, int64, error) {
+func (r *SQLiteRepository) GetGlobalVisitHistory(limit, offset int, sources ...string) ([]models.VisitRecord, int64, int64, error) {
+	source := ""
+	if len(sources) > 0 {
+		source = sources[0]
+	}
 	// 获取全站总访问次数
 	var totalVisits int64
-	err := r.db.QueryRow("SELECT COUNT(*) FROM visit_history").Scan(&totalVisits)
+	countQuery := "SELECT COUNT(*) FROM visit_history"
+	countArgs := []interface{}{}
+	if source != "" {
+		countQuery += " WHERE source = ?"
+		countArgs = append(countArgs, source)
+	}
+	err := r.db.QueryRow(countQuery, countArgs...).Scan(&totalVisits)
 	if err != nil {
 		return nil, 0, 0, fmt.Errorf("获取全站访问记录总数失败: %w", err)
 	}
 
 	// 获取全站唯一地点数
 	var uniquePlaces int64
-	err = r.db.QueryRow("SELECT COUNT(DISTINCT pano_id) FROM visit_history").Scan(&uniquePlaces)
+	uniqueQuery := "SELECT COUNT(DISTINCT pano_id) FROM visit_history"
+	if source != "" {
+		uniqueQuery += " WHERE source = ?"
+	}
+	err = r.db.QueryRow(uniqueQuery, countArgs...).Scan(&uniquePlaces)
 	if err != nil {
 		return nil, 0, 0, fmt.Errorf("获取全站唯一地点数失败: %w", err)
 	}
 
-	rows, err := r.db.Query(`
-		SELECT id, session_id, pano_id, latitude, longitude, country, city, formatted_address, source, visited_at
+	query := `
+		SELECT id, session_id, pano_id, latitude, longitude, country, country_code, city,
+		       formatted_address, source, selection_strategy, target_country_code,
+		       origin_latitude, origin_longitude, snap_distance_km, search_radius_m,
+		       selection_attempt, visited_at
 		FROM visit_history
-		ORDER BY visited_at DESC, id DESC
-		LIMIT ? OFFSET ?
-	`, limit, offset)
+	`
+	queryArgs := []interface{}{}
+	if source != "" {
+		query += " WHERE source = ?"
+		queryArgs = append(queryArgs, source)
+	}
+	query += " ORDER BY visited_at DESC, id DESC LIMIT ? OFFSET ?"
+	queryArgs = append(queryArgs, limit, offset)
+	rows, err := r.db.Query(query, queryArgs...)
 	if err != nil {
 		return nil, 0, 0, fmt.Errorf("获取全站访问记录失败: %w", err)
 	}
@@ -459,7 +559,10 @@ func scanVisitRows(rows *sql.Rows) ([]models.VisitRecord, error) {
 	for rows.Next() {
 		var v models.VisitRecord
 		if err := rows.Scan(&v.ID, &v.SessionID, &v.PanoID, &v.Latitude, &v.Longitude,
-			&v.Country, &v.City, &v.FormattedAddress, &v.Source, &v.VisitedAt); err != nil {
+			&v.Country, &v.CountryCode, &v.City, &v.FormattedAddress, &v.Source,
+			&v.SelectionStrategy, &v.TargetCountryCode, &v.OriginLatitude,
+			&v.OriginLongitude, &v.SnapDistanceKm, &v.SearchRadiusM,
+			&v.SelectionAttempt, &v.VisitedAt); err != nil {
 			return nil, fmt.Errorf("扫描访问记录失败: %w", err)
 		}
 		v.SessionID = "" // 不返回 session_id 给前端

@@ -1,6 +1,7 @@
 package repositories
 
 import (
+	"database/sql"
 	"errors"
 	"path/filepath"
 	"testing"
@@ -29,6 +30,58 @@ func TestGetLocationByPanoIDNotFound(t *testing.T) {
 	_, err = repo.GetLocationByPanoID("does.not.exist")
 	if !errors.Is(err, ErrLocationNotFound) {
 		t.Fatalf("GetLocationByPanoID() error = %v, want ErrLocationNotFound", err)
+	}
+}
+
+func TestMigrationAddsRandomSelectionColumnsToExistingDatabase(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "legacy.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(`
+		CREATE TABLE locations (
+			pano_id TEXT PRIMARY KEY, latitude REAL NOT NULL, longitude REAL NOT NULL,
+			formatted_address TEXT DEFAULT '', country TEXT DEFAULT '', city TEXT DEFAULT '',
+			is_mock INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);
+		CREATE TABLE visit_history (
+			id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, pano_id TEXT NOT NULL,
+			latitude REAL NOT NULL, longitude REAL NOT NULL, country TEXT DEFAULT '', city TEXT DEFAULT '',
+			formatted_address TEXT DEFAULT '', source TEXT DEFAULT 'random',
+			visited_at DATETIME DEFAULT (datetime('now'))
+		);
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	repo, err := NewSQLiteRepository(testSQLiteConfig{path: path})
+	if err != nil {
+		t.Fatalf("NewSQLiteRepository() migration error = %v", err)
+	}
+	defer repo.Close()
+	location := models.Location{
+		PanoID: "migrated", Latitude: 1, Longitude: 2, CountryCode: "JP",
+		SelectionStrategy: "country_fair", TargetCountryCode: "JP",
+		OriginLatitude: 1.1, OriginLongitude: 2.1, SnapDistanceKm: 0.5,
+		SearchRadiusM: 25000, SelectionAttempt: 3,
+	}
+	if err := repo.SaveLocation(location); err != nil {
+		t.Fatalf("SaveLocation() after migration error = %v", err)
+	}
+	if err := repo.RecordVisit("session", location, models.VisitSourceRandom); err != nil {
+		t.Fatalf("RecordVisit() after migration error = %v", err)
+	}
+	visits, _, _, err := repo.GetVisitHistory("session", 10, 0)
+	if err != nil || len(visits) != 1 {
+		t.Fatalf("GetVisitHistory() = %v, %v", visits, err)
+	}
+	if visits[0].CountryCode != "JP" || visits[0].SearchRadiusM != 25000 || visits[0].SelectionAttempt != 3 {
+		t.Fatalf("migration lost diagnostics: %#v", visits[0])
 	}
 }
 
@@ -223,6 +276,30 @@ func TestGetGlobalVisitHistoryReturnsVisitsAcrossSessions(t *testing.T) {
 		if visit.SessionID != "" {
 			t.Fatalf("visit.SessionID = %q, want empty string", visit.SessionID)
 		}
+	}
+}
+
+func TestGetGlobalVisitHistoryFiltersSource(t *testing.T) {
+	repo, err := NewSQLiteRepository(testSQLiteConfig{path: filepath.Join(t.TempDir(), "source-filter.db")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer repo.Close()
+	location := models.Location{PanoID: "random", Latitude: 1, Longitude: 2}
+	if err := repo.RecordVisit("a", location, models.VisitSourceRandom); err != nil {
+		t.Fatal(err)
+	}
+	location.PanoID = "shared"
+	if err := repo.RecordVisit("b", location, models.VisitSourceShared); err != nil {
+		t.Fatal(err)
+	}
+
+	visits, total, unique, err := repo.GetGlobalVisitHistory(10, 0, models.VisitSourceRandom)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != 1 || unique != 1 || len(visits) != 1 || visits[0].Source != models.VisitSourceRandom {
+		t.Fatalf("filtered history = %#v total=%d unique=%d", visits, total, unique)
 	}
 }
 

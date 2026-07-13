@@ -32,16 +32,24 @@ const (
 
 // VisitRecord 访问记录
 type VisitRecord struct {
-	ID               int64     `json:"id"`
-	SessionID        string    `json:"session_id,omitempty"`
-	PanoID           string    `json:"pano_id"`
-	Latitude         float64   `json:"latitude"`
-	Longitude        float64   `json:"longitude"`
-	Country          string    `json:"country"`
-	City             string    `json:"city"`
-	FormattedAddress string    `json:"formatted_address"`
-	Source           string    `json:"source"`
-	VisitedAt        time.Time `json:"visited_at"`
+	ID                int64     `json:"id"`
+	SessionID         string    `json:"session_id,omitempty"`
+	PanoID            string    `json:"pano_id"`
+	Latitude          float64   `json:"latitude"`
+	Longitude         float64   `json:"longitude"`
+	Country           string    `json:"country"`
+	CountryCode       string    `json:"country_code,omitempty"`
+	City              string    `json:"city"`
+	FormattedAddress  string    `json:"formatted_address"`
+	Source            string    `json:"source"`
+	SelectionStrategy string    `json:"selection_strategy,omitempty"`
+	TargetCountryCode string    `json:"target_country_code,omitempty"`
+	OriginLatitude    float64   `json:"origin_latitude,omitempty"`
+	OriginLongitude   float64   `json:"origin_longitude,omitempty"`
+	SnapDistanceKm    float64   `json:"snap_distance_km,omitempty"`
+	SearchRadiusM     int       `json:"search_radius_m,omitempty"`
+	SelectionAttempt  int       `json:"selection_attempt,omitempty"`
+	VisitedAt         time.Time `json:"visited_at"`
 }
 
 // PaginatedResult 分页结果通用结构
@@ -75,16 +83,16 @@ type AgentJourney struct {
 
 // AgentJourneyStop 旅程中的一站
 type AgentJourneyStop struct {
-	ID             int64     `json:"id"`
-	JourneyID      string    `json:"journey_id"`
-	StopNumber     int       `json:"stop_number"`
-	Lat            float64   `json:"lat"`
-	Lng            float64   `json:"lng"`
-	PanoID         string    `json:"pano_id,omitempty"`
-	PhotoHeading   int       `json:"photo_heading"`
-	LocationInfo   string    `json:"location_info,omitempty"`
-	AIDescription  string    `json:"ai_description,omitempty"`
-	JournalEntry   string    `json:"journal_entry,omitempty"`
-	NextReasoning  string    `json:"next_reasoning,omitempty"`
-	CreatedAt      time.Time `json:"created_at"`
+	ID            int64     `json:"id"`
+	JourneyID     string    `json:"journey_id"`
+	StopNumber    int       `json:"stop_number"`
+	Lat           float64   `json:"lat"`
+	Lng           float64   `json:"lng"`
+	PanoID        string    `json:"pano_id,omitempty"`
+	PhotoHeading  int       `json:"photo_heading"`
+	LocationInfo  string    `json:"location_info,omitempty"`
+	AIDescription string    `json:"ai_description,omitempty"`
+	JournalEntry  string    `json:"journal_entry,omitempty"`
+	NextReasoning string    `json:"next_reasoning,omitempty"`
+	CreatedAt     time.Time `json:"created_at"`
 }

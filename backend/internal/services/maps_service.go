@@ -236,23 +236,17 @@ func (s *MapsService) GetStreetViewFrame(ctx context.Context, panoID string, vie
 	return cloneStreetViewFrame(frame), nil
 }
 
-// 检查坐标是否有街景可用，并返回街景坐标。
-// 可以扩大搜索范围，但绝不伪造一个并不存在的 panorama。
-func (s *MapsService) HasStreetView(ctx context.Context, latitude, longitude float64, hasInterest bool) (bool, float64, float64, string) {
-	var searchRadii []int
-	if hasInterest {
-		searchRadii = []int{100, 5000, 50000, 500000, 5000000} // 0.1km, 5km, 50km, 500km, 5000km
-	} else {
-		searchRadii = []int{10000, 50000, 200000, 1000000, 5000000} // 10km, 50km, 200km, 1000km, 5000km
+func (s *MapsService) FindRandomStreetView(ctx context.Context, latitude, longitude float64, maxRadiusMeters int) (bool, float64, float64, string) {
+	if maxRadiusMeters < 100 || maxRadiusMeters > 50000 {
+		return false, 0, 0, ""
 	}
-
-	return s.findStreetView(ctx, latitude, longitude, searchRadii, true)
+	return s.findStreetView(ctx, latitude, longitude, []int{maxRadiusMeters})
 }
 
 // FindNearbyStreetView 在有限半径内查找街景，不做全局兜底。
 func (s *MapsService) FindNearbyStreetView(ctx context.Context, latitude, longitude float64) (bool, float64, float64, string) {
 	searchRadii := []int{100, 500, 1000, 5000, 10000}
-	return s.findStreetView(ctx, latitude, longitude, searchRadii, false)
+	return s.findStreetView(ctx, latitude, longitude, searchRadii)
 }
 
 // FindNearestStreetView 从近到远查找街景，尽量返回点击点附近最近的可用全景图。
@@ -269,10 +263,10 @@ func (s *MapsService) FindNearestStreetView(ctx context.Context, latitude, longi
 		5000000,
 		20037500,
 	}
-	return s.findStreetView(ctx, latitude, longitude, searchRadii, false)
+	return s.findStreetView(ctx, latitude, longitude, searchRadii)
 }
 
-func (s *MapsService) findStreetView(ctx context.Context, latitude, longitude float64, searchRadii []int, allowGlobalFallback bool) (bool, float64, float64, string) {
+func (s *MapsService) findStreetView(ctx context.Context, latitude, longitude float64, searchRadii []int) (bool, float64, float64, string) {
 	for _, radius := range searchRadii {
 		streetViewURL := fmt.Sprintf(
 			"https://maps.googleapis.com/maps/api/streetview/metadata"+
@@ -326,50 +320,6 @@ func (s *MapsService) findStreetView(ctx context.Context, latitude, longitude fl
 		}
 	}
 
-	if !allowGlobalFallback {
-		return false, 0, 0, ""
-	}
-
-	// 如果所有半径都失败了，尝试最后的兜底策略：去除坐标限制
-	fallbackURL := fmt.Sprintf(
-		"https://maps.googleapis.com/maps/api/streetview/metadata"+
-			"?location=%.6f,%.6f"+
-			"&source=outdoor"+
-			"&key=%s", // 不设置半径限制
-		latitude, longitude,
-		s.apiKey,
-	)
-
-	req, err := http.NewRequestWithContext(ctx, "GET", fallbackURL, nil)
-	if err == nil {
-		client := s.getHTTPClient()
-
-		resp, err := client.Do(req)
-		if err == nil {
-			defer resp.Body.Close()
-			body, err := io.ReadAll(resp.Body)
-			if err == nil {
-				var result struct {
-					Status   string `json:"status"`
-					Location struct {
-						Lat float64 `json:"lat"`
-						Lng float64 `json:"lng"`
-					} `json:"location"`
-					PanoId string `json:"pano_id"`
-				}
-				if json.Unmarshal(body, &result) == nil && result.Status == "OK" {
-					return true, result.Location.Lat, result.Location.Lng, result.PanoId
-				}
-			}
-		}
-	}
-
-	// 所有真实查询都失败时必须失败关闭。返回合成 pano ID 会让后续
-	// Street View 图片与 Atlas 描述请求在错误地点继续执行。
-	logger := utils.MapsLogger()
-	logger.Error("streetview_complete_failure", "All street view searches failed", nil, map[string]interface{}{
-		"coords": fmt.Sprintf("(%.6f,%.6f)", latitude, longitude),
-	})
 	return false, 0, 0, ""
 }
 

@@ -23,7 +23,7 @@ type Repository interface {
 	// 访问记录相关
 	RecordVisit(sessionID string, loc models.Location, source string) error
 	GetVisitHistory(sessionID string, limit, offset int) ([]models.VisitRecord, int64, int64, error)
-	GetGlobalVisitHistory(limit, offset int) ([]models.VisitRecord, int64, int64, error)
+	GetGlobalVisitHistory(limit, offset int, sources ...string) ([]models.VisitRecord, int64, int64, error)
 
 	// Agent Journey 相关
 	CreateJourney(journey models.AgentJourney) error

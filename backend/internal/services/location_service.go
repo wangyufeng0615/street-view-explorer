@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	randv2 "math/rand/v2"
 	"strings"
 	"time"
 
@@ -14,6 +15,24 @@ import (
 )
 
 var ErrStreetViewNotFound = errors.New("该坐标附近没有可用街景")
+
+const (
+	randomCandidateCount      = 12
+	randomSearchRadiusMeters  = 25000
+	randomCandidateTimeout    = 4 * time.Second
+	randomFallbackGrace       = 300 * time.Millisecond
+	randomReservoirMaxWait    = 1500 * time.Millisecond
+	randomRecentHistoryLimit  = 100
+	randomRecentQueryLimit    = 250
+	randomNearbyExclusionKm   = 10.0
+	randomReservoirQueryLimit = 500
+)
+
+type randomCandidateResult struct {
+	location models.Location
+	penalty  int
+	err      error
+}
 
 type LocationService struct {
 	repo      repositories.Repository
@@ -83,121 +102,265 @@ func (ls *LocationService) GetRandomLocationWithContext(ctx context.Context, ses
 	return ls.generateRandomLocation(ctx, regions, language, sessionID, countryCode)
 }
 
-// generateRandomLocation 统一的随机位置生成逻辑
-// regions 为 nil 时使用默认大陆区域，否则使用用户偏好区域
-// 使用逐步扩大半径的街景搜索；所有真实查询失败时向上返回错误。
+// generateRandomLocation resolves a fixed-size batch of bounded candidates in
+// parallel. Retries remain internal to one request, so they do not multiply
+// user-visible latency or leak intermediate failures to the frontend.
 func (ls *LocationService) generateRandomLocation(ctx context.Context, regions []models.Region, language string, sessionID string, countryCode string) (models.Location, error) {
 	logger := utils.LocationLogger()
-	attempts := 1
-	if countryCode != "" {
-		attempts = 8
+	if err := ctx.Err(); err != nil {
+		return models.Location{}, fmt.Errorf("生成位置请求已取消: %w", err)
 	}
 
+	recent, err := ls.recentRandomVisits(sessionID)
+	if err != nil {
+		return models.Location{}, fmt.Errorf("读取最近探索记录失败: %w", err)
+	}
+	var reservoir models.Location
+	hasReservoir := false
+	// A global verified reservoir is a valid fallback only for unconstrained
+	// random Earth exploration. Country and interest requests must preserve
+	// their explicit geographic contract.
+	if len(regions) == 0 && countryCode == "" {
+		reservoir, hasReservoir = ls.verifiedReservoirFallback(recent)
+	}
+
+	strategy := utils.ChooseRandomStrategy()
+	if len(regions) > 0 {
+		strategy = utils.RandomStrategyInterest
+	} else if countryCode != "" {
+		strategy = utils.RandomStrategyCountry
+	}
+
+	candidates := make([]utils.RandomCoordinateCandidate, 0, randomCandidateCount)
+	for attempt := 1; attempt <= randomCandidateCount; attempt++ {
+		candidate, candidateErr := utils.GenerateRandomCoordinateCandidate(regions, countryCode, strategy)
+		if candidateErr != nil {
+			return models.Location{}, candidateErr
+		}
+		candidates = append(candidates, candidate)
+	}
+
+	searchCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	results := make(chan randomCandidateResult, len(candidates))
+	geocodeSlots := make(chan struct{}, 4)
+	for i, candidate := range candidates {
+		go func(attempt int, candidate utils.RandomCoordinateCandidate) {
+			candidateCtx, candidateCancel := context.WithTimeout(searchCtx, randomCandidateTimeout)
+			defer candidateCancel()
+			results <- ls.resolveRandomCandidate(candidateCtx, candidate, attempt, language, recent, geocodeSlots)
+		}(i+1, candidate)
+	}
+
+	var fallback *models.Location
+	fallbackPenalty := 3
+	var fallbackTimer *time.Timer
+	var fallbackTimerC <-chan time.Time
+	var reservoirTimer *time.Timer
+	var reservoirTimerC <-chan time.Time
+	if hasReservoir {
+		reservoirTimer = time.NewTimer(randomReservoirMaxWait)
+		reservoirTimerC = reservoirTimer.C
+		defer reservoirTimer.Stop()
+	}
 	var lastErr error
-	for attempt := 1; attempt <= attempts; attempt++ {
+	for completed := 0; completed < len(candidates); completed++ {
+		select {
+		case <-ctx.Done():
+			return models.Location{}, fmt.Errorf("生成位置请求已取消: %w", ctx.Err())
+		case <-fallbackTimerC:
+			cancel()
+			return ls.saveRandomLocation(*fallback, sessionID, language)
+		case <-reservoirTimerC:
+			cancel()
+			logger.Info("random_verified_reservoir_fallback", "Used a previously verified panorama to cap random selection latency", map[string]interface{}{
+				"pano_id":    reservoir.PanoID,
+				"session_id": sessionID,
+			})
+			return reservoir, nil
+		case result := <-results:
+			if result.err != nil {
+				lastErr = result.err
+				continue
+			}
+			if result.penalty == 0 {
+				cancel()
+				if fallbackTimer != nil {
+					fallbackTimer.Stop()
+				}
+				return ls.saveRandomLocation(result.location, sessionID, language)
+			}
+			if result.penalty < fallbackPenalty {
+				locationCopy := result.location
+				fallback = &locationCopy
+				fallbackPenalty = result.penalty
+			}
+			if fallbackTimer == nil {
+				fallbackTimer = time.NewTimer(randomFallbackGrace)
+				fallbackTimerC = fallbackTimer.C
+			}
+		}
+	}
+	if fallbackTimer != nil {
+		fallbackTimer.Stop()
+	}
+	if fallback != nil {
+		return ls.saveRandomLocation(*fallback, sessionID, language)
+	}
+	if hasReservoir {
+		logger.Info("random_verified_reservoir_fallback", "Used a previously verified panorama after bounded candidates failed", map[string]interface{}{
+			"pano_id":    reservoir.PanoID,
+			"session_id": sessionID,
+		})
+		return reservoir, nil
+	}
+	if lastErr != nil {
+		return models.Location{}, fmt.Errorf("无法生成可用位置: %w", lastErr)
+	}
+	return models.Location{}, fmt.Errorf("无法生成可用位置")
+}
+
+func (ls *LocationService) resolveRandomCandidate(ctx context.Context, candidate utils.RandomCoordinateCandidate, attempt int, language string, recent []models.VisitRecord, geocodeSlots chan struct{}) randomCandidateResult {
+	hasStreetView, validLat, validLng, panoID := ls.maps.FindRandomStreetView(ctx, candidate.Latitude, candidate.Longitude, randomSearchRadiusMeters)
+	if !hasStreetView {
 		if err := ctx.Err(); err != nil {
-			return models.Location{}, fmt.Errorf("生成位置请求已取消: %w", err)
+			return randomCandidateResult{err: err}
 		}
-		// 生成随机坐标
-		var lat, lng float64
-		if countryCode != "" {
-			var err error
-			lat, lng, err = utils.GenerateRandomCoordinateInCountry(countryCode)
-			if err != nil {
-				return models.Location{}, err
+		return randomCandidateResult{err: ErrStreetViewNotFound}
+	}
+	snapDistance := utils.CalculateDistance(candidate.Latitude, candidate.Longitude, validLat, validLng)
+	if snapDistance > float64(randomSearchRadiusMeters)/1000.0+0.25 {
+		return randomCandidateResult{err: fmt.Errorf("街景吸附距离超出限制")}
+	}
+
+	select {
+	case geocodeSlots <- struct{}{}:
+		defer func() { <-geocodeSlots }()
+	case <-ctx.Done():
+		return randomCandidateResult{err: ctx.Err()}
+	}
+	locationInfo, err := ls.maps.GetLocationInfo(ctx, validLat, validLng, language)
+	if err != nil {
+		return randomCandidateResult{err: err}
+	}
+	actualCountryCode := strings.ToUpper(strings.TrimSpace(locationInfo["country_code"]))
+	if candidate.TargetCountryCode != "" && !strings.EqualFold(actualCountryCode, candidate.TargetCountryCode) {
+		return randomCandidateResult{err: fmt.Errorf("街景结果不在目标国家内")}
+	}
+	location := models.Location{
+		PanoID:            panoID,
+		Latitude:          validLat,
+		Longitude:         validLng,
+		Country:           locationInfo["country"],
+		CountryCode:       actualCountryCode,
+		City:              locationInfo["city"],
+		FormattedAddress:  locationInfo["formatted_address"],
+		SelectionStrategy: candidate.Strategy,
+		TargetCountryCode: candidate.TargetCountryCode,
+		OriginLatitude:    candidate.Latitude,
+		OriginLongitude:   candidate.Longitude,
+		SnapDistanceKm:    snapDistance,
+		SearchRadiusM:     randomSearchRadiusMeters,
+		SelectionAttempt:  attempt,
+		CreatedAt:         time.Now(),
+		IsMock:            false,
+	}
+	return randomCandidateResult{location: location, penalty: randomLocationPenalty(location, recent)}
+}
+
+func (ls *LocationService) recentRandomVisits(sessionID string) ([]models.VisitRecord, error) {
+	if sessionID == "" || ls.repo == nil {
+		return nil, nil
+	}
+	visits, _, _, err := ls.repo.GetVisitHistory(sessionID, randomRecentQueryLimit, 0)
+	if err != nil {
+		return nil, err
+	}
+	recent := make([]models.VisitRecord, 0, randomRecentHistoryLimit)
+	for _, visit := range visits {
+		if visit.Source == models.VisitSourceRandom {
+			recent = append(recent, visit)
+			if len(recent) == randomRecentHistoryLimit {
+				break
 			}
-		} else {
-			lat, lng = utils.GenerateRandomCoordinate(regions)
 		}
+	}
+	return recent, nil
+}
 
-		// 使用逐步扩大半径的街景搜索。
-		hasStreetView, validLat, validLng, panoId := ls.maps.HasStreetView(ctx, lat, lng, regions != nil || countryCode != "")
-
-		if !hasStreetView {
-			if err := ctx.Err(); err != nil {
-				return models.Location{}, fmt.Errorf("生成位置请求已取消: %w", err)
-			}
-			lastErr = fmt.Errorf("无法找到可用街景")
-			logger.Error("streetview_search_failed", "Street view search failed", nil, map[string]interface{}{
-				"original_lat": lat,
-				"original_lng": lng,
-				"session_id":   sessionID,
-				"country_code": countryCode,
-			})
-			if countryCode != "" {
-				continue
-			}
-			return models.Location{}, lastErr
+func randomLocationPenalty(location models.Location, recent []models.VisitRecord) int {
+	nearby := false
+	for _, visit := range recent {
+		if visit.PanoID == location.PanoID {
+			return 2
 		}
-
-		// 获取位置信息
-		locationInfo, err := ls.maps.GetLocationInfo(ctx, validLat, validLng, language)
-		if err != nil {
-			lastErr = err
-			logger.Error("geocoding_failed", "Failed to get location info", err, map[string]interface{}{
-				"latitude":     validLat,
-				"longitude":    validLng,
-				"language":     language,
-				"session_id":   sessionID,
-				"country_code": countryCode,
-			})
-			if countryCode != "" {
-				continue
-			}
-			return models.Location{}, fmt.Errorf("获取位置信息失败: %w", err)
+		if utils.CalculateDistance(location.Latitude, location.Longitude, visit.Latitude, visit.Longitude) < randomNearbyExclusionKm {
+			nearby = true
 		}
+	}
+	if nearby {
+		return 1
+	}
+	return 0
+}
 
-		if countryCode != "" && !strings.EqualFold(locationInfo["country_code"], countryCode) {
-			lastErr = fmt.Errorf("街景结果不在指定国家内")
-			logger.Info("country_filter_mismatch", "Discarded location outside requested country", map[string]interface{}{
-				"requested_country_code": countryCode,
-				"actual_country_code":    locationInfo["country_code"],
-				"original_coords":        fmt.Sprintf("(%.6f,%.6f)", lat, lng),
-				"final_coords":           fmt.Sprintf("(%.6f,%.6f)", validLat, validLng),
-				"attempt":                attempt,
-			})
+func (ls *LocationService) verifiedReservoirFallback(recent []models.VisitRecord) (models.Location, bool) {
+	if ls.repo == nil {
+		return models.Location{}, false
+	}
+	visits, _, _, err := ls.repo.GetGlobalVisitHistory(randomReservoirQueryLimit, 0, models.VisitSourceRandom)
+	if err != nil {
+		return models.Location{}, false
+	}
+	buckets := [3][]models.Location{}
+	seen := make(map[string]struct{})
+	for _, visit := range visits {
+		if _, exists := seen[visit.PanoID]; exists {
 			continue
 		}
-
-		// 创建位置记录
+		seen[visit.PanoID] = struct{}{}
 		location := models.Location{
-			PanoID:           panoId,
-			Latitude:         validLat,
-			Longitude:        validLng,
-			Country:          locationInfo["country"],
-			City:             locationInfo["city"],
-			FormattedAddress: locationInfo["formatted_address"],
-			CreatedAt:        time.Now(),
-			IsMock:           false,
+			PanoID:            visit.PanoID,
+			Latitude:          visit.Latitude,
+			Longitude:         visit.Longitude,
+			Country:           visit.Country,
+			CountryCode:       visit.CountryCode,
+			City:              visit.City,
+			FormattedAddress:  visit.FormattedAddress,
+			SelectionStrategy: "verified_reservoir",
+			CreatedAt:         time.Now(),
 		}
-
-		// 保存位置记录
-		if err := ls.repo.SaveLocation(location); err != nil {
-			logger.Error("save_location_failed", "Failed to save location record", err, map[string]interface{}{
-				"pano_id":      panoId,
-				"session_id":   sessionID,
-				"country_code": countryCode,
-			})
-			return models.Location{}, fmt.Errorf("保存位置记录失败: %w", err)
+		penalty := randomLocationPenalty(location, recent)
+		if penalty >= 0 && penalty < len(buckets) {
+			buckets[penalty] = append(buckets[penalty], location)
 		}
-
-		logger.Info("location_generated", "Successfully generated random location", map[string]interface{}{
-			"original_coords": fmt.Sprintf("(%.6f,%.6f)", lat, lng),
-			"final_coords":    fmt.Sprintf("(%.6f,%.6f)", location.Latitude, location.Longitude),
-			"pano_id":         location.PanoID,
-			"country":         location.Country,
-			"country_code":    countryCode,
-			"address":         location.FormattedAddress,
-			"session_id":      sessionID,
-			"language":        language,
-		})
-		return location, nil
 	}
-
-	if lastErr != nil {
-		return models.Location{}, fmt.Errorf("无法在国家 %s 内生成可用位置: %w", countryCode, lastErr)
+	for _, bucket := range buckets {
+		if len(bucket) > 0 {
+			return bucket[randv2.IntN(len(bucket))], true
+		}
 	}
-	return models.Location{}, fmt.Errorf("无法在国家 %s 内生成可用位置", countryCode)
+	return models.Location{}, false
+}
+
+func (ls *LocationService) saveRandomLocation(location models.Location, sessionID, language string) (models.Location, error) {
+	if err := ls.repo.SaveLocation(location); err != nil {
+		return models.Location{}, fmt.Errorf("保存位置记录失败: %w", err)
+	}
+	utils.LocationLogger().Info("location_generated", "Successfully generated bounded random location", map[string]interface{}{
+		"original_coords":     fmt.Sprintf("(%.6f,%.6f)", location.OriginLatitude, location.OriginLongitude),
+		"final_coords":        fmt.Sprintf("(%.6f,%.6f)", location.Latitude, location.Longitude),
+		"snap_distance_km":    location.SnapDistanceKm,
+		"search_radius_m":     location.SearchRadiusM,
+		"strategy":            location.SelectionStrategy,
+		"target_country_code": location.TargetCountryCode,
+		"actual_country_code": location.CountryCode,
+		"attempt":             location.SelectionAttempt,
+		"pano_id":             location.PanoID,
+		"session_id":          sessionID,
+		"language":            language,
+	})
+	return location, nil
 }
 
 // SetExplorationPreference 设置用户的探索偏好
@@ -337,6 +500,7 @@ func (ls *LocationService) LookupLocationWithContext(ctx context.Context, lat, l
 	location.Latitude = validLat
 	location.Longitude = validLng
 	location.Country = locationInfo["country"]
+	location.CountryCode = strings.ToUpper(strings.TrimSpace(locationInfo["country_code"]))
 	location.City = locationInfo["city"]
 	location.FormattedAddress = locationInfo["formatted_address"]
 
@@ -375,6 +539,7 @@ func (ls *LocationService) LookupNearestLocationWithContext(ctx context.Context,
 	location.Latitude = validLat
 	location.Longitude = validLng
 	location.Country = locationInfo["country"]
+	location.CountryCode = strings.ToUpper(strings.TrimSpace(locationInfo["country_code"]))
 	location.City = locationInfo["city"]
 	location.FormattedAddress = locationInfo["formatted_address"]
 
@@ -429,6 +594,7 @@ func (ls *LocationService) SearchLocationWithContext(ctx context.Context, query,
 	location.Latitude = validLat
 	location.Longitude = validLng
 	location.Country = locationInfo["country"]
+	location.CountryCode = strings.ToUpper(strings.TrimSpace(locationInfo["country_code"]))
 	location.City = locationInfo["city"]
 	location.FormattedAddress = locationInfo["formatted_address"]
 
@@ -457,8 +623,8 @@ func (ls *LocationService) GetVisitHistory(sessionID string, limit, offset int) 
 }
 
 // GetGlobalVisitHistory 获取所有用户共享的访问历史
-func (ls *LocationService) GetGlobalVisitHistory(limit, offset int) ([]models.VisitRecord, int64, int64, error) {
-	return ls.repo.GetGlobalVisitHistory(limit, offset)
+func (ls *LocationService) GetGlobalVisitHistory(limit, offset int, sources ...string) ([]models.VisitRecord, int64, int64, error) {
+	return ls.repo.GetGlobalVisitHistory(limit, offset, sources...)
 }
 
 // DeleteExplorationPreference 删除用户的探索偏好

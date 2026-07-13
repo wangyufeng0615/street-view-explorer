@@ -13,7 +13,7 @@ import (
 
 type noStreetViewMapProvider struct{}
 
-func (noStreetViewMapProvider) HasStreetView(context.Context, float64, float64, bool) (bool, float64, float64, string) {
+func (noStreetViewMapProvider) FindRandomStreetView(context.Context, float64, float64, int) (bool, float64, float64, string) {
 	return false, 0, 0, ""
 }
 func (noStreetViewMapProvider) FindNearbyStreetView(context.Context, float64, float64) (bool, float64, float64, string) {

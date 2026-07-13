@@ -8,7 +8,7 @@ vi.mock("../i18n", () => ({
   default: { language: "zh", resolvedLanguage: "zh" },
 }));
 
-import { streamLocationDescription } from "./api";
+import { getVisitHistory, streamLocationDescription } from "./api";
 
 function streamingResponse(chunks) {
   const encoded = chunks.map((chunk) => new TextEncoder().encode(chunk));
@@ -79,5 +79,27 @@ describe("description SSE client", () => {
     expect(result.success).toBe(false);
     expect(result.error).toContain("未执行要求的资料搜索");
     expect(onDelta).not.toHaveBeenCalled();
+  });
+});
+
+describe("visit history client", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("requests only random visits for Atlas footprints", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      json: async () => ({
+        success: true,
+        data: { visits: [], total_visits: 0, unique_places: 0 },
+      }),
+    });
+
+    const result = await getVisitHistory(5000, 0, "random");
+
+    expect(result.success).toBe(true);
+    expect(fetchMock.mock.calls[0][0]).toContain(
+      "/api/v1/visits?limit=5000&offset=0&source=random",
+    );
   });
 });

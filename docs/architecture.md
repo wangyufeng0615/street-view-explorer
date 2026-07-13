@@ -21,7 +21,7 @@ Go backend (Gin)
   +-- OpenAI Realtime: Atlas Voice live speech sessions
 ```
 
-The frontend uses a persistent anonymous `X-Session-ID`. The backend validates that header and creates one when missing. Preference state and online duel membership depend on that session identity. Visit writes keep the session for bookkeeping, but the Atlas footprint map reads a shared site-wide history.
+The frontend uses a persistent anonymous `X-Session-ID`. The backend validates that header and creates one when missing. Preference state and online duel membership depend on that session identity. Visit writes keep the session for bookkeeping. The Atlas footprint map reads the shared site-wide history filtered to `source=random`, so shared links, manual lookups, and map picks do not masquerade as Atlas travel.
 
 ## Frontend
 
@@ -68,6 +68,8 @@ Key middleware:
 - session management through `X-Session-ID`;
 - SQLite-backed rate limiting when enabled, including tighter limits for random locations, geo AI guesses, satellite image proxy calls, and Atlas Voice Realtime session entrypoints.
 
+Random Earth exploration uses one strategy lane per request: 60% broad coverage (sub-linear population weighting), 30% country-fair, and 10% small-country/frontier. Twelve coordinates from that lane are resolved concurrently. Each Street View metadata lookup is capped at 25km, and the reverse-geocoded ISO country must match the sampled target country. The first session-novel result wins; exact panorama matches and locations within 10km of the latest 100 random visits receive progressively stronger penalties, with a short grace window before a repeated-area fallback is accepted. A previously verified global random panorama can cap unconstrained random-Earth latency at 1.5 seconds, but country-constrained and interest-constrained requests never use an out-of-scope reservoir fallback. Random visit rows retain the origin coordinate, final coordinate, snap distance, strategy, country codes, radius, and winning candidate number for distribution audits.
+
 Text and voice Atlas share `GET /api/v1/locations/:panoId/streetview-frame`. The frontend reports the actual panorama ID, heading, pitch, and zoom-derived field of view. Text descriptions attach that frame to the OpenRouter request; Atlas Voice inserts it into the Realtime conversation as a silent `input_image` item. Reverse geocoding and frame capture run in parallel, and `MapsService` keeps bounded TTL caches for both location metadata and exact panorama/view frames. Automatic rotation does not continuously fetch frames: the latest view is refreshed when the user speaks or a scene-changing tool completes, with same-scene in-flight requests deduplicated. A failed scene change deletes the previous image context so Atlas cannot describe a stale location.
 
 Text descriptions accept `stream=1` and return `status`, `delta`, `done`, or `error` SSE events. OpenRouter uses the `openrouter:web_search` server tool instead of the deprecated web plugin. Atlas is instructed to make one focused research call with a bounded result/context budget, the server-tool loop is capped at one call, and the backend rejects the result unless OpenRouter usage reports at least one web-search request. The UI language is repeated as a system-level output contract; the first streamed paragraph is gated so research narration and a response in the location's local language never leak into a Chinese session. Successful descriptions are cached for 30 minutes by location, language, detail mode, panorama, and exact camera view. The final `done` event replaces streamed draft text with the sanitized body and citation list.
@@ -97,7 +99,7 @@ Tables:
 - `locations` - cached or generated Street View location records.
 - `exploration_preferences` - custom user interests keyed by session.
 - `rate_limits` - backend rate-limit counters.
-- `visit_history` - visit records with session bookkeeping; the footprint map reads this as a shared global history.
+- `visit_history` - visit records with session bookkeeping plus random-selection diagnostics; the footprint map reads the shared global history filtered to random exploration.
 - `agent_journeys` - Odyssey journeys keyed by token.
 - `agent_journey_stops` - Odyssey stop records and journal content.
 

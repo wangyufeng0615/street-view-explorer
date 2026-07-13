@@ -5,7 +5,9 @@ import (
 	"log"
 	"math"
 	"math/rand"
+	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/my-streetview-project/backend/internal/models"
@@ -13,8 +15,42 @@ import (
 	"github.com/paulmach/orb/geojson"
 )
 
-// 初始化随机数生成器
-var rng = rand.New(rand.NewSource(time.Now().UnixNano()))
+type lockedRand struct {
+	mu sync.Mutex
+	r  *rand.Rand
+}
+
+func (r *lockedRand) Intn(n int) int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.r.Intn(n)
+}
+
+func (r *lockedRand) Float64() float64 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.r.Float64()
+}
+
+// math/rand.Rand itself is not safe for concurrent use. Random location
+// requests are concurrent in production, so all access goes through this
+// small locked wrapper.
+var rng = &lockedRand{r: rand.New(rand.NewSource(time.Now().UnixNano()))}
+
+const (
+	RandomStrategyBroad    = "broad_coverage"
+	RandomStrategyFair     = "country_fair"
+	RandomStrategyFrontier = "small_country_frontier"
+	RandomStrategyInterest = "interest_region"
+	RandomStrategyCountry  = "country_constrained"
+)
+
+type RandomCoordinateCandidate struct {
+	Latitude          float64
+	Longitude         float64
+	TargetCountryCode string
+	Strategy          string
+}
 
 // Region 表示一个坐标边界区域
 type Region struct {
@@ -30,6 +66,7 @@ type Region struct {
 	CountryName string
 	CountryCode string
 	CountryISO2 string
+	Population  float64
 	// 预计算的面积，避免运行时重复计算
 	Area float64
 }
@@ -147,6 +184,7 @@ func extractLandRegionsFromGeoJSON(fc *geojson.FeatureCollection, isMinorIsland 
 		countryName := ""
 		countryCode := ""
 		countryISO2 := ""
+		population := 0.0
 		if feature.Properties != nil {
 			if name, exists := feature.Properties["NAME"]; exists {
 				if nameStr, ok := name.(string); ok {
@@ -162,18 +200,40 @@ func extractLandRegionsFromGeoJSON(fc *geojson.FeatureCollection, isMinorIsland 
 					countryCode = codeStr
 				}
 			}
-			if code, exists := feature.Properties["ISO_A2"]; exists {
-				if codeStr, ok := code.(string); ok && codeStr != "-99" {
-					countryISO2 = strings.ToUpper(codeStr)
+			// Natural Earth normally exposes ISO_A2, but disputed records can
+			// contain non-standard values (Taiwan is "CN-TW"). ISO_A2_EH is
+			// its economic-hierarchy fallback and carries the usable "TW" code.
+			// Keep only real alpha-2 values because this code is later compared
+			// with Google's reverse-geocoded country_code.
+			for _, property := range []string{"ISO_A2", "ISO_A2_EH"} {
+				value, exists := feature.Properties[property]
+				if !exists {
+					continue
+				}
+				codeStr, ok := value.(string)
+				if !ok {
+					continue
+				}
+				if normalized, valid := NormalizeISOAlpha2CountryCode(codeStr); valid {
+					countryISO2 = normalized
+					break
+				}
+			}
+			if value, exists := feature.Properties["POP_EST"]; exists {
+				switch typed := value.(type) {
+				case float64:
+					population = typed
+				case int:
+					population = float64(typed)
 				}
 			}
 		}
 
 		switch geom := feature.Geometry.(type) {
 		case orb.Polygon:
-			regions = append(regions, extractRegionsFromPolygon(geom, isMinorIsland, countryName, countryCode, countryISO2)...)
+			regions = append(regions, extractRegionsFromPolygon(geom, isMinorIsland, countryName, countryCode, countryISO2, population)...)
 		case orb.MultiPolygon:
-			regions = append(regions, extractRegionsFromMultiPolygon(geom, isMinorIsland, countryName, countryCode, countryISO2)...)
+			regions = append(regions, extractRegionsFromMultiPolygon(geom, isMinorIsland, countryName, countryCode, countryISO2, population)...)
 		}
 	}
 
@@ -189,7 +249,7 @@ func extractLandRegionsFromGeoJSON(fc *geojson.FeatureCollection, isMinorIsland 
 }
 
 // extractRegionsFromPolygon 从多边形提取区域边界
-func extractRegionsFromPolygon(polygon orb.Polygon, isMinorIsland bool, countryName, countryCode, countryISO2 string) []Region {
+func extractRegionsFromPolygon(polygon orb.Polygon, isMinorIsland bool, countryName, countryCode, countryISO2 string, population float64) []Region {
 	if len(polygon) == 0 || len(polygon[0]) == 0 {
 		return nil
 	}
@@ -210,6 +270,7 @@ func extractRegionsFromPolygon(polygon orb.Polygon, isMinorIsland bool, countryN
 		CountryName:   countryName,
 		CountryCode:   countryCode,
 		CountryISO2:   countryISO2,
+		Population:    population,
 		// Area 将在 InitializeGeoData 中计算
 	}
 
@@ -218,7 +279,7 @@ func extractRegionsFromPolygon(polygon orb.Polygon, isMinorIsland bool, countryN
 
 // extractRegionsFromMultiPolygon 从多多边形提取区域边界
 // 将每个多边形作为独立区域，避免大国家的岛屿导致坐标密度不均
-func extractRegionsFromMultiPolygon(multiPolygon orb.MultiPolygon, isMinorIsland bool, countryName, countryCode, countryISO2 string) []Region {
+func extractRegionsFromMultiPolygon(multiPolygon orb.MultiPolygon, isMinorIsland bool, countryName, countryCode, countryISO2 string, population float64) []Region {
 	if len(multiPolygon) == 0 {
 		return nil
 	}
@@ -247,6 +308,7 @@ func extractRegionsFromMultiPolygon(multiPolygon orb.MultiPolygon, isMinorIsland
 			CountryName:   countryName,
 			CountryCode:   countryCode,
 			CountryISO2:   countryISO2,
+			Population:    population,
 			// Area 将在 InitializeGeoData 中计算
 		}
 
@@ -310,6 +372,11 @@ func calculateRegionArea(region *Region) float64 {
 	totalArea := 0.0
 	for _, polygon := range region.Polygons {
 		area := calculatePolygonArea(polygon)
+		bounds := getBoundsFromPolygon(polygon)
+		latitudeScale := math.Cos(((bounds.North + bounds.South) / 2) * math.Pi / 180)
+		// Longitude degrees cover less physical area toward the poles. This
+		// correction avoids overweighting high-latitude islands and regions.
+		area *= math.Max(0.05, latitudeScale)
 		totalArea += area
 	}
 
@@ -380,6 +447,158 @@ func GenerateRandomCoordinate(regions []models.Region) (latitude, longitude floa
 	region := selectRandomRegion(selectedRegions)
 
 	return generateCoordinateInRegion(region)
+}
+
+// ChooseRandomStrategy fixes the exploration lane for one user request. All
+// speculative candidates in that request use the same lane, so faster network
+// responses cannot silently bias the long-run 60/30/10 distribution.
+func ChooseRandomStrategy() string {
+	value := rng.Float64()
+	switch {
+	case value < 0.60:
+		return RandomStrategyBroad
+	case value < 0.90:
+		return RandomStrategyFair
+	default:
+		return RandomStrategyFrontier
+	}
+}
+
+// GenerateRandomCoordinateCandidate returns both the sampled coordinate and
+// the intended country. The caller must verify that the resolved panorama is
+// still inside TargetCountryCode before accepting it.
+func GenerateRandomCoordinateCandidate(userRegions []models.Region, countryCode, strategy string) (RandomCoordinateCandidate, error) {
+	if countryCode != "" {
+		regions, err := countryRegionsByISOAlpha2(countryCode)
+		if err != nil {
+			return RandomCoordinateCandidate{}, err
+		}
+		region := selectRegionWithinCountry(regions)
+		lat, lng := generateCoordinateInRegion(region)
+		return RandomCoordinateCandidate{
+			Latitude:          lat,
+			Longitude:         lng,
+			TargetCountryCode: strings.ToUpper(countryCode),
+			Strategy:          strategy,
+		}, nil
+	}
+
+	if len(userRegions) > 0 {
+		region := selectRandomRegion(selectRegionSource(userRegions))
+		lat, lng := generateCoordinateInRegion(region)
+		return RandomCoordinateCandidate{
+			Latitude:  lat,
+			Longitude: lng,
+			Strategy:  RandomStrategyInterest,
+		}, nil
+	}
+
+	landRegions, err := getLandMassRegions()
+	if err != nil {
+		return RandomCoordinateCandidate{}, err
+	}
+	countryRegions := groupRegionsByISO2(landRegions)
+	if len(countryRegions) == 0 {
+		return RandomCoordinateCandidate{}, fmt.Errorf("没有可用于随机探索的国家区域")
+	}
+	if strategy == "" {
+		strategy = ChooseRandomStrategy()
+	}
+	selectedCode := selectCountryForStrategy(countryRegions, strategy)
+	regions := countryRegions[selectedCode]
+	region := selectRegionWithinCountry(regions)
+	lat, lng := generateCoordinateInRegion(region)
+	return RandomCoordinateCandidate{
+		Latitude:          lat,
+		Longitude:         lng,
+		TargetCountryCode: selectedCode,
+		Strategy:          strategy,
+	}, nil
+}
+
+func groupRegionsByISO2(regions []Region) map[string][]Region {
+	grouped := make(map[string][]Region)
+	for _, region := range regions {
+		code, valid := NormalizeISOAlpha2CountryCode(region.CountryISO2)
+		// The physical minor-islands overlay has no country ownership metadata
+		// and duplicates islands already represented by administrative data.
+		// Excluding unknown ISO2 regions prevents them becoming an artificial
+		// pseudo-country in the random distribution.
+		if !valid || region.IsMinorIsland {
+			continue
+		}
+		grouped[code] = append(grouped[code], region)
+	}
+	return grouped
+}
+
+func selectCountryForStrategy(countries map[string][]Region, strategy string) string {
+	codes := make([]string, 0, len(countries))
+	for code := range countries {
+		codes = append(codes, code)
+	}
+	sort.Strings(codes)
+	if len(codes) == 1 {
+		return codes[0]
+	}
+
+	switch strategy {
+	case RandomStrategyFair:
+		return codes[rng.Intn(len(codes))]
+	case RandomStrategyFrontier:
+		return selectSmallCountry(codes, countries)
+	default:
+		weights := make([]float64, len(codes))
+		for i, code := range codes {
+			population := 0.0
+			if len(countries[code]) > 0 {
+				population = countries[code][0].Population
+			}
+			// Population is a deliberately sub-linear proxy for the amount of
+			// roads, towns, and likely Street View coverage. The fair lane keeps
+			// every supported ISO country in circulation.
+			weights[i] = math.Sqrt(math.Max(1, population))
+		}
+		return selectWeightedCode(codes, weights)
+	}
+}
+
+func selectSmallCountry(codes []string, countries map[string][]Region) string {
+	type countryArea struct {
+		code string
+		area float64
+	}
+	areas := make([]countryArea, 0, len(codes))
+	for _, code := range codes {
+		total := 0.0
+		for _, region := range countries[code] {
+			total += math.Max(0, getRegionArea(region))
+		}
+		areas = append(areas, countryArea{code: code, area: total})
+	}
+	sort.Slice(areas, func(i, j int) bool { return areas[i].area < areas[j].area })
+	// The lower half is broad enough to include small mainland countries and
+	// island nations without concentrating solely on microstates.
+	limit := (len(areas) + 1) / 2
+	return areas[rng.Intn(limit)].code
+}
+
+func selectWeightedCode(codes []string, weights []float64) string {
+	total := 0.0
+	for _, weight := range weights {
+		total += math.Max(0, weight)
+	}
+	if total <= 0 {
+		return codes[rng.Intn(len(codes))]
+	}
+	value := rng.Float64() * total
+	for i, weight := range weights {
+		value -= math.Max(0, weight)
+		if value <= 0 {
+			return codes[i]
+		}
+	}
+	return codes[len(codes)-1]
 }
 
 // GenerateRandomCoordinateInCountry generates a coordinate inside one ISO 3166-1 alpha-2 country.

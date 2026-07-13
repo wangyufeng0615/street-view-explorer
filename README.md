@@ -10,9 +10,9 @@ An interactive map application for exploring random Google Street View locations
 
 ## Features
 
-- Random global exploration with area-weighted location selection.
+- Coverage-aware global exploration with broad/fair/frontier country lanes, bounded Street View snapping, and session-level repeat avoidance.
 - Streamed Atlas letters and detailed follow-ups through OpenRouter, grounded in the Street View frame the user is currently facing and verified against server-side web search.
-- Visit history, shared site-wide footprint map, and regional or custom exploration preferences.
+- Visit history, a shared site-wide Atlas random-exploration footprint map, and regional or custom exploration preferences.
 - Bilingual UI in English and Chinese.
 - Atlas Voice on the home route, with the latest Street View frame as Realtime visual context, interruptible spoken turns, concrete place search, nearby wandering, and optional Doubao TTS output.
 - Odyssey agent journey flow where an external AI can create journeys, save stops, and publish illustrated letters.
@@ -186,7 +186,7 @@ All standard JSON endpoints return a `{ "success": boolean, "data": ..., "error"
 - `GET /api/v1/locations/:panoId/description`
 - `GET /api/v1/locations/:panoId/detailed-description`
 - `GET /api/v1/locations/:panoId/streetview-frame` - returns the current heading/pitch/FOV frame used by text and voice Atlas.
-- `GET /api/v1/visits` - shared site-wide Atlas footprint history.
+- `GET /api/v1/visits` - shared site-wide visit history; accepts `source=random|shared|lookup|map_pick`. Atlas footprints request `source=random`.
 - `POST /api/v1/preferences/exploration`
 - `POST /api/v1/preferences/exploration/remove`
 

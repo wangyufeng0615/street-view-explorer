@@ -545,10 +545,12 @@ export async function deleteExplorationPreference(language = null) {
 }
 
 // 获取全站共享访问历史
-export async function getVisitHistory(limit = 1000, offset = 0) {
+export async function getVisitHistory(limit = 1000, offset = 0, source = null) {
   try {
+    const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+    if (source) params.set("source", source);
     const resp = await fetchWithTimeout(
-      `${API_V1}/visits?limit=${limit}&offset=${offset}`,
+      `${API_V1}/visits?${params.toString()}`,
       {
         method: "GET",
         headers: {

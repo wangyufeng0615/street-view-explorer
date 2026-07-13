@@ -8,7 +8,7 @@ import (
 
 type canceledMapProvider struct{}
 
-func (canceledMapProvider) HasStreetView(ctx context.Context, _, _ float64, _ bool) (bool, float64, float64, string) {
+func (canceledMapProvider) FindRandomStreetView(ctx context.Context, _, _ float64, _ int) (bool, float64, float64, string) {
 	<-ctx.Done()
 	return false, 0, 0, ""
 }

@@ -172,6 +172,69 @@ func TestGenerateRandomCoordinate(t *testing.T) {
 	}
 }
 
+func TestRandomStrategyMix(t *testing.T) {
+	const samples = 20000
+	counts := map[string]int{}
+	for i := 0; i < samples; i++ {
+		counts[ChooseRandomStrategy()]++
+	}
+	assertShare := func(strategy string, low, high float64) {
+		t.Helper()
+		share := float64(counts[strategy]) / samples
+		if share < low || share > high {
+			t.Fatalf("%s share = %.3f, want %.2f..%.2f", strategy, share, low, high)
+		}
+	}
+	assertShare(RandomStrategyBroad, 0.57, 0.63)
+	assertShare(RandomStrategyFair, 0.27, 0.33)
+	assertShare(RandomStrategyFrontier, 0.08, 0.12)
+}
+
+func TestRandomCoordinateCandidateCarriesTargetCountry(t *testing.T) {
+	requireGeoTestData(t)
+	for i := 0; i < 100; i++ {
+		candidate, err := GenerateRandomCoordinateCandidate(nil, "", RandomStrategyFair)
+		if err != nil {
+			t.Fatalf("GenerateRandomCoordinateCandidate() error = %v", err)
+		}
+		if candidate.TargetCountryCode == "" {
+			t.Fatal("candidate missing target ISO2 country")
+		}
+		regions, err := countryRegionsByISOAlpha2(candidate.TargetCountryCode)
+		if err != nil {
+			t.Fatalf("target country %q not resolvable: %v", candidate.TargetCountryCode, err)
+		}
+		if !coordinateInAnyPolygon(candidate.Latitude, candidate.Longitude, regions) {
+			t.Fatalf("candidate (%.6f, %.6f) outside target %s", candidate.Latitude, candidate.Longitude, candidate.TargetCountryCode)
+		}
+	}
+}
+
+func TestGlobalCandidateCountriesExcludeUnownedMinorIslandOverlay(t *testing.T) {
+	requireGeoTestData(t)
+	regions, err := getLandMassRegions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	grouped := groupRegionsByISO2(regions)
+	if len(grouped) < 200 {
+		t.Fatalf("country groups = %d, expected broad ISO2 coverage", len(grouped))
+	}
+	for code, countryRegions := range grouped {
+		if normalized, valid := NormalizeISOAlpha2CountryCode(code); !valid || normalized != code {
+			t.Fatalf("invalid pseudo-country included: %q", code)
+		}
+		for _, region := range countryRegions {
+			if region.IsMinorIsland {
+				t.Fatalf("minor-island overlay leaked into country %s", code)
+			}
+		}
+	}
+	if len(grouped["TW"]) == 0 {
+		t.Fatal("expected Taiwan to use ISO_A2_EH fallback TW")
+	}
+}
+
 func TestGenerateRandomCoordinateInCountry(t *testing.T) {
 	requireGeoTestData(t)
 

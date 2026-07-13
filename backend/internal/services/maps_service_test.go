@@ -170,7 +170,40 @@ func TestFindNearestStreetViewExpandsBeyondNearbyRadius(t *testing.T) {
 	}
 }
 
-func TestHasStreetViewDoesNotReturnSyntheticFallback(t *testing.T) {
+func TestFindRandomStreetViewUsesOneBoundedRadius(t *testing.T) {
+	requests := 0
+	service := &MapsService{
+		apiKey: "test-key",
+		httpClient: &http.Client{
+			Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				requests++
+				if got := req.URL.Query().Get("radius"); got != "25000" {
+					t.Fatalf("radius = %q, want 25000", got)
+				}
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body: io.NopCloser(strings.NewReader(
+						`{"status":"OK","location":{"lat":1.1,"lng":2.2},"pano_id":"bounded"}`,
+					)),
+					Header: make(http.Header),
+				}, nil
+			}),
+		},
+	}
+
+	ok, _, _, panoID := service.FindRandomStreetView(context.Background(), 1, 2, 25000)
+	if !ok || panoID != "bounded" {
+		t.Fatalf("FindRandomStreetView() = (%t, %q), want bounded success", ok, panoID)
+	}
+	if requests != 1 {
+		t.Fatalf("metadata requests = %d, want exactly 1", requests)
+	}
+	if ok, _, _, _ := service.FindRandomStreetView(context.Background(), 1, 2, 5000000); ok {
+		t.Fatal("accepted unsafe 5000km random search radius")
+	}
+}
+
+func TestFindRandomStreetViewFailsClosedAfterBoundedMiss(t *testing.T) {
 	requests := 0
 	service := &MapsService{
 		apiKey: "test-key",
@@ -186,11 +219,11 @@ func TestHasStreetViewDoesNotReturnSyntheticFallback(t *testing.T) {
 		},
 	}
 
-	ok, lat, lng, panoID := service.HasStreetView(context.Background(), 1, 2, false)
+	ok, lat, lng, panoID := service.FindRandomStreetView(context.Background(), 1, 2, 25000)
 	if ok || lat != 0 || lng != 0 || panoID != "" {
-		t.Fatalf("HasStreetView() = (%t, %v, %v, %q), want a closed failure", ok, lat, lng, panoID)
+		t.Fatalf("FindRandomStreetView() = (%t, %v, %v, %q), want a closed miss", ok, lat, lng, panoID)
 	}
-	if requests != 6 {
-		t.Fatalf("requests = %d, want 6 real metadata attempts", requests)
+	if requests != 1 {
+		t.Fatalf("metadata requests = %d, want one bounded attempt", requests)
 	}
 }
