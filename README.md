@@ -89,7 +89,7 @@ go run cmd/server/main.go --openai-proxy http://127.0.0.1:10086 --maps-proxy htt
 ```bash
 make deploy       # docker compose build + up -d
 make deploy-remote # ssh to REMOTE_HOST=kr, pull REMOTE_BRANCH (default main), deploy, and verify
-make clean        # docker compose down -v and remove containers
+make clean        # destructive: stop Compose and remove the SQLite data volume
 ```
 
 For branch releases, push first and deploy the same branch so the local and VPS trees stay aligned:
@@ -100,6 +100,13 @@ make deploy-remote REMOTE_BRANCH="$(git branch --show-current)"
 ```
 
 Docker Compose exposes Nginx on `127.0.0.1:3000`; the backend is only exposed to the internal Compose network.
+
+Deployment and data boundaries:
+
+- `make deploy` changes the local Docker Compose runtime; `make deploy-remote` changes the configured remote host. Neither is a read-only verification command.
+- `make clean` runs `docker compose down -v`, deleting the Compose-managed SQLite volume. Back up data first when it matters.
+- `VITE_GOOGLE_MAPS_API_KEY` is delivered to the browser by design. Restrict it by allowed web origins and enabled APIs; never put server-only AI or Realtime credentials in `VITE_*` variables.
+- Atlas footprints are derived from shared site-wide random-visit history. Session IDs are anonymous identifiers, but SQLite, logs, and public letters can still contain usage or user-authored content and should be handled accordingly.
 
 ## Configuration
 

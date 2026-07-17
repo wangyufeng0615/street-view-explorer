@@ -50,6 +50,9 @@ const (
 	geoBattleMinRoundDistanceKM = 75.0
 )
 
+// GeoBattleService owns process-local duel rooms and matchmaking state.
+// Restarting the backend intentionally drops this state; callers must not
+// treat a room snapshot as durable storage.
 type GeoBattleService struct {
 	locationService *LocationService
 	mu              sync.Mutex

@@ -33,7 +33,7 @@ dev:
 dev-open:
 	@open -na "Google Chrome" --args --proxy-server="$(LOCAL_PROXY_URL)" --proxy-bypass-list="127.0.0.1;localhost;::1" "http://$(LOCAL_FRONTEND_HOST):$(LOCAL_FRONTEND_PORT)/"
 
-# 部署命令
+# 部署命令：会构建镜像并修改本机 Docker Compose 运行状态。
 deploy:
 	@echo "正在构建和部署服务..."
 	docker compose build --progress=plain
@@ -52,7 +52,7 @@ deploy-remote:
 	HEALTH_TIMEOUT="$(HEALTH_TIMEOUT)" \
 	scripts/remote_deploy.sh
 
-# 清理命令
+# 破坏性清理：-v 会一并删除承载 SQLite 数据的 Compose volume。
 clean:
 	docker compose down -v
 	docker compose rm -f
