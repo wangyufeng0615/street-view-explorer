@@ -135,10 +135,6 @@
   margin-top: 5px;
 }
 
-.atlas-voice-line.user {
-  color: var(--atlas-ink-soft, #84715a);
-}
-
 .atlas-voice-line.assistant {
   color: var(--atlas-accent-deep, #8c3f1f);
   font-style: italic;

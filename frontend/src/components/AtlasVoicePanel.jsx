@@ -505,7 +505,6 @@ export default function AtlasVoicePanel() {
 
   const [status, setStatus] = useState("idle");
   const [error, setError] = useState("");
-  const [lastUserText, setLastUserText] = useState("");
   const [lastAssistantText, setLastAssistantText] = useState("");
   const [voiceConfig, setVoiceConfig] = useState(() =>
     normalizeVoiceConfig(DEFAULT_VOICE_CONFIG),
@@ -1747,7 +1746,6 @@ export default function AtlasVoicePanel() {
           } else {
             truncateAssistantPlayback();
           }
-          setLastUserText("");
           setStatus("listening");
           break;
         case "input_audio_buffer.speech_stopped":
@@ -1783,11 +1781,7 @@ export default function AtlasVoicePanel() {
           );
           break;
         case "conversation.item.input_audio_transcription.completed":
-          setLastUserText(event.transcript || "");
           rememberLine("User", event.transcript || "");
-          break;
-        case "conversation.item.input_audio_transcription.delta":
-          setLastUserText((current) => `${current || ""}${event.delta || ""}`);
           break;
         case "response.output_item.done": {
           clearResponseWatchdog();
@@ -1995,7 +1989,7 @@ export default function AtlasVoicePanel() {
 
   const isActive = status !== "idle";
   const statusLabel = copy[status] || copy.idle;
-  const hasVoiceLog = Boolean(lastUserText || lastAssistantText || error);
+  const hasVoiceLog = Boolean(lastAssistantText || error);
 
   return (
     <div
@@ -2022,9 +2016,6 @@ export default function AtlasVoicePanel() {
 
       {hasVoiceLog && (
         <div className="atlas-voice-log" aria-live="polite">
-          {lastUserText && (
-            <div className="atlas-voice-line user">{lastUserText}</div>
-          )}
           {lastAssistantText && (
             <div className="atlas-voice-line assistant">
               {lastAssistantText}

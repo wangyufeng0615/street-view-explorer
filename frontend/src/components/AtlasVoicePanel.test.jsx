@@ -153,6 +153,7 @@ describe("AtlasVoicePanel", () => {
 
   beforeEach(() => {
     MockWebSocket.instances = [];
+    window.sessionStorage.clear();
     window.WebSocket = MockWebSocket;
     global.WebSocket = MockWebSocket;
     window.AudioContext = MockAudioContext;
@@ -214,6 +215,29 @@ describe("AtlasVoicePanel", () => {
     await startPanel();
 
     expect(getUserMedia).toHaveBeenCalledWith(MIC_AUDIO_CONSTRAINTS);
+  });
+
+  it("stores user transcripts for memory without rendering them", async () => {
+    const socket = await startPanel();
+    const sessionUpdate = socket.sent.find(
+      (event) => event.type === "session.update",
+    );
+
+    expect(sessionUpdate?.session?.audio?.input?.transcription?.model).toBe(
+      "gpt-4o-mini-transcribe",
+    );
+
+    await act(async () => {
+      socket.emitRealtime({
+        type: "conversation.item.input_audio_transcription.completed",
+        transcript: "带我去东京看看",
+      });
+    });
+
+    expect(window.sessionStorage.getItem("atlasVoiceMemory")).toContain(
+      "User: 带我去东京看看",
+    );
+    expect(screen.queryByText("带我去东京看看")).not.toBeInTheDocument();
   });
 
   it("adds the current Street View frame to Realtime without triggering speech", async () => {
