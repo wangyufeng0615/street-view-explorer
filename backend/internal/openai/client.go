@@ -626,7 +626,7 @@ func isChineseLanguage(language string) bool {
 
 func descriptionLanguageInstruction(language string) string {
 	if isChineseLanguage(language) {
-		return "Output only Simplified Chinese. The location's country and local language never change this rule. Every visible word, including the opening bracket line and proper-name rendering, must be Chinese."
+		return "只输出简体中文。地点所属国家和当地语言都不能改变这条规则；开头方括号旁白、专名转写和所有正文都必须使用简体中文。"
 	}
 	return "Output only English. The location's country and local language never change this rule. Every visible word, including the opening bracket line, must be English."
 }
@@ -710,7 +710,7 @@ func validateDescriptionLanguage(text, language string, partial bool) error {
 		if partial {
 			minimumHan = 4
 		}
-		if kana >= 2 || han < minimumHan {
+		if han < minimumHan || (kana >= 4 && kana > han) {
 			return fmt.Errorf("AI 返回的描述语言不符合简体中文要求")
 		}
 		return nil
@@ -742,12 +742,6 @@ func (g *descriptionStreamGate) Write(delta string) error {
 		return nil
 	}
 	if g.released {
-		if isChineseLanguage(g.language) {
-			_, kana, _ := countDescriptionScripts(delta)
-			if kana > 0 {
-				return fmt.Errorf("AI 返回的描述语言不符合简体中文要求")
-			}
-		}
 		return g.downstream(delta)
 	}
 
@@ -759,7 +753,10 @@ func (g *descriptionStreamGate) Write(delta string) error {
 
 	visible := stripResearchNarration(pending, g.language)
 	if err := validateDescriptionLanguage(visible, g.language, true); err != nil {
-		return err
+		// A stream chunk is not a complete language sample. Keep buffering so an
+		// English tool preamble or a short proper name cannot abort an otherwise
+		// valid response. The complete response is validated before Finish.
+		return nil
 	}
 	g.released = true
 	return g.downstream(visible)
@@ -768,6 +765,9 @@ func (g *descriptionStreamGate) Write(delta string) error {
 func (g *descriptionStreamGate) Finish(finalText string) error {
 	if g.downstream == nil || g.released || finalText == "" {
 		return nil
+	}
+	if err := validateDescriptionLanguage(finalText, g.language, false); err != nil {
+		return err
 	}
 	g.released = true
 	return g.downstream(finalText)
@@ -859,15 +859,11 @@ func (c *client) StreamLocationDescription(parent context.Context, latitude, lon
 	}
 	geoDetails.WriteString("\nVisual Context: no image is provided. Base the description only on location metadata and web research; do not claim to see current scene details.\n")
 
-	prompt := fmt.Sprintf(
-		"%s\n\n"+
-			"Silently call the web search tool exactly once with one precise query about this location. After that single search, synthesize the answer and do not search again. Do not announce or describe the research step; the first user-facing output must be Atlas's bracketed arrival note.\n"+
-			"Focus on the most specific geographic information available (street, establishment, or neighborhood level). "+
-			"Use broader context as supporting info. Remember: plain text only, no markdown. The app renders citations separately, so keep links and source mentions out of the prose and end on a clean sentence.\n\n"+
-			"%s",
-		geoDetails.String(),
-		outputFormat,
-	)
+	researchInstructions := "Silently call the web search tool exactly once with one precise query about this location. After that single search, synthesize the answer and do not search again. Do not announce or describe the research step; the first user-facing output must be Atlas's bracketed arrival note.\nFocus on the most specific geographic information available (street, establishment, or neighborhood level). Use broader context as supporting info. Remember: plain text only, no markdown. The app renders citations separately, so keep links and source mentions out of the prose and end on a clean sentence."
+	if isChineseLanguage(language) {
+		researchInstructions = "静默调用联网搜索工具一次，只用一个精确查询核实这个地点；完成这一次搜索后立即综合答案，不要再次搜索。不得向用户描述搜索过程，第一段可见文字必须直接是 Atlas 的方括号抵达旁白。\n优先使用街道、机构或社区层面的最具体地理信息，更广范围的资料只用于解释背景。只输出纯文本，不使用 Markdown；产品会单独显示引用，因此正文不要出现链接、来源说明或引用标记，并以完整自然的句子结束。"
+	}
+	prompt := fmt.Sprintf("%s\n\n%s\n\n%s", geoDetails.String(), researchInstructions, outputFormat)
 
 	parallelToolCalls := false
 	visibleDeltaLogged := false

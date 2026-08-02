@@ -8,18 +8,18 @@ import (
 func TestTextSystemPromptRequiresSubstantiveLetter(t *testing.T) {
 	prompt := TextSystemPrompt("zh-CN")
 	for _, required := range []string{
-		"正文写 4-6 个有内容的段落",
+		"写 4-6 个有内容的正文段落",
 		"450-650 个中文字",
-		"通常以 5 个正文段落为默认",
-		"historical mini-story",
-		"detail a curious friend would remember",
-		"Always start with one bracket line",
+		"通常以 5 段为默认",
+		"历史小故事",
+		"好奇的朋友会记住的细节",
+		"必须以一行独立的方括号旁白开头",
 		"不计入正文段落",
-		"exact locality together with its history and local life",
-		"Same-name places are common",
-		"never silently blend conflicting records",
+		"同时核对具体地点",
+		"避免把同名地点的资料混进来",
+		"绝不悄悄拼接",
 		"不会假装亲眼看见用户当前的街景画面",
-		"must not claim current visual evidence",
+		"不能声称看到了当前街景",
 	} {
 		if !strings.Contains(prompt, required) {
 			t.Fatalf("TextSystemPrompt() missing richness instruction %q", required)
@@ -30,6 +30,11 @@ func TestTextSystemPromptRequiresSubstantiveLetter(t *testing.T) {
 	}
 	if strings.Contains(prompt, "BAD:") || strings.Contains(prompt, "不是靠旅游") {
 		t.Fatal("TextSystemPrompt() should not prime the model with forbidden contrastive examples")
+	}
+	for _, forbidden := range []string{"RHYTHM — THIS IS A CHAT", "CRITICAL FORMATTING RULES", "WEB RESEARCH:"} {
+		if strings.Contains(prompt, forbidden) {
+			t.Fatalf("Chinese TextSystemPrompt still contains English instruction block %q", forbidden)
+		}
 	}
 	for _, forbidden := range []string{"边看边聊", "visible terrain", "what's at this exact spot", "Atlas at the scene"} {
 		if strings.Contains(prompt, forbidden) {

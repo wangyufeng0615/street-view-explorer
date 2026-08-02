@@ -176,10 +176,10 @@ func TestGenerateLocationDescriptionUsesTextOnlyContextWithoutPlusCodeMetadata(t
 	if !strings.Contains(body, `"tool_choice":"auto"`) {
 		t.Fatalf("request did not allow synthesis after the required search step: %s", body)
 	}
-	if !strings.Contains(body, "Silently call the web search tool exactly once") {
+	if !strings.Contains(body, "静默调用联网搜索工具一次") {
 		t.Fatalf("request did not explicitly require one research step: %s", body)
 	}
-	if !strings.Contains(body, "输出语言固定为简体中文") || !strings.Contains(body, "地点位于日本或其他国家，也绝不能改用当地语言、日文或英文") {
+	if !strings.Contains(body, "输出语言固定为简体中文") || !strings.Contains(body, "地点所属国家和当地语言都不能改变这条规则") {
 		t.Fatalf("request did not enforce the UI language at system level: %s", body)
 	}
 	if !strings.Contains(body, "搜索和工具调用必须静默完成") {
@@ -220,10 +220,44 @@ func TestDescriptionStreamGateDropsResearchNarration(t *testing.T) {
 }
 
 func TestDescriptionStreamGateRejectsJapaneseForChineseUI(t *testing.T) {
-	gate := newDescriptionStreamGate("zh", func(string) error { return nil })
-	err := gate.Write("[この塀の向こうに古い歴史が眠っている]\n\nここは愛知県知立市の住宅街です。")
+	var deltas []string
+	gate := newDescriptionStreamGate("zh", func(delta string) error {
+		deltas = append(deltas, delta)
+		return nil
+	})
+	text := "[この塀の向こうに古い歴史が眠っている]\n\nここは愛知県知立市の住宅街です。"
+	if err := gate.Write(text); err != nil {
+		t.Fatalf("partial gate.Write() must keep buffering, got %v", err)
+	}
+	if len(deltas) != 0 {
+		t.Fatalf("wrong-language partial response leaked downstream: %q", deltas)
+	}
+	err := gate.Finish(text)
 	if err == nil || !strings.Contains(err.Error(), "简体中文") {
-		t.Fatalf("gate.Write() error = %v", err)
+		t.Fatalf("gate.Finish() error = %v", err)
+	}
+}
+
+func TestDescriptionStreamGateWaitsPastEnglishPreambleForChineseBody(t *testing.T) {
+	var deltas []string
+	gate := newDescriptionStreamGate("zh-CN", func(delta string) error {
+		deltas = append(deltas, delta)
+		return nil
+	})
+
+	preamble := strings.Repeat("preparing context quietly ", 10)
+	if err := gate.Write(preamble); err != nil {
+		t.Fatalf("gate.Write(preamble) error = %v", err)
+	}
+	if len(deltas) != 0 {
+		t.Fatalf("English preamble leaked downstream: %q", deltas)
+	}
+	if err := gate.Write("[Atlas 在地图上找到这条山路]\n\n这里是哥斯达黎加南部一片有明确历史脉络的山地社区。当地生活与咖啡种植、道路交通和周边城镇长期相连。"); err != nil {
+		t.Fatalf("gate.Write(Chinese body) error = %v", err)
+	}
+	got := strings.Join(deltas, "")
+	if strings.Contains(got, "preparing context") || !strings.HasPrefix(got, "[Atlas 在地图上") {
+		t.Fatalf("visible response = %q", got)
 	}
 }
 
@@ -231,6 +265,13 @@ func TestValidateDescriptionLanguageAcceptsChineseWithJapanesePlaceNameInChinese
 	text := "[电线沿着安静的住宅街伸向远处]\n\n这里是日本爱知县知立市牛田町，独栋住宅和低矮围墙构成了典型的近郊街景。"
 	if err := validateDescriptionLanguage(text, "zh-CN", false); err != nil {
 		t.Fatalf("validateDescriptionLanguage() error = %v", err)
+	}
+}
+
+func TestValidateDescriptionLanguageAcceptsPredominantlyChineseWithLocalKana(t *testing.T) {
+	text := "[Atlas 在地图上圈住这座车站]\n\n这里是长野县的しなの铁道沿线，正文仍以简体中文介绍当地交通与聚落历史。"
+	if err := validateDescriptionLanguage(text, "zh-CN", false); err != nil {
+		t.Fatalf("validateDescriptionLanguage() rejected predominantly Chinese text: %v", err)
 	}
 }
 
