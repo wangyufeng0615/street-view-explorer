@@ -261,6 +261,24 @@ func TestDescriptionStreamGateWaitsPastEnglishPreambleForChineseBody(t *testing.
 	}
 }
 
+func TestDescriptionStreamGateDoesNotReleaseChineseOpeningFollowedByEnglishBody(t *testing.T) {
+	var deltas []string
+	gate := newDescriptionStreamGate("zh-CN", func(delta string) error {
+		deltas = append(deltas, delta)
+		return nil
+	})
+	text := "[Atlas 在地图上抵达这里]\n\n" + strings.Repeat("This body continues in English despite the Chinese opening. ", 5)
+	if err := gate.Write(text); err != nil {
+		t.Fatalf("gate.Write() error = %v", err)
+	}
+	if len(deltas) != 0 {
+		t.Fatalf("mixed-language response leaked downstream: %q", deltas)
+	}
+	if err := gate.Finish(text); err == nil || !strings.Contains(err.Error(), "简体中文") {
+		t.Fatalf("gate.Finish() error = %v", err)
+	}
+}
+
 func TestValidateDescriptionLanguageAcceptsChineseWithJapanesePlaceNameInChinese(t *testing.T) {
 	text := "[电线沿着安静的住宅街伸向远处]\n\n这里是日本爱知县知立市牛田町，独栋住宅和低矮围墙构成了典型的近郊街景。"
 	if err := validateDescriptionLanguage(text, "zh-CN", false); err != nil {
@@ -407,10 +425,10 @@ func TestGuessLocationFromImageUsesSeparateVisionModel(t *testing.T) {
 	}
 }
 
-func TestGenerateLocationDescriptionRejectsResponseWithoutSearchUsage(t *testing.T) {
+func TestGenerateLocationDescriptionAcceptsResponseWhenSearchUsageMetadataIsMissing(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
-		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"Unresearched answer\"}}]}\n\n"))
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"[Atlas has arrived]\\n\\nThis is a sufficiently long English description about the location and its regional context.\"}}]}\n\n"))
 		_, _ = w.Write([]byte("data: {\"choices\":[],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":2}}\n\n"))
 		_, _ = w.Write([]byte("data: [DONE]\n\n"))
 	}))
@@ -422,9 +440,26 @@ func TestGenerateLocationDescriptionRejectsResponseWithoutSearchUsage(t *testing
 		httpClient: server.Client(),
 		endpoint:   server.URL,
 	}
-	_, _, err := c.GenerateLocationDescription(1, 2, map[string]string{}, "en")
-	if err == nil || !strings.Contains(err.Error(), "未执行要求的资料搜索") {
-		t.Fatalf("GenerateLocationDescription() error = %v", err)
+	var visibleDeltas []string
+	desc, _, err := c.StreamLocationDescription(
+		context.Background(),
+		1,
+		2,
+		map[string]string{},
+		"en",
+		func(delta string) error {
+			visibleDeltas = append(visibleDeltas, delta)
+			return nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("StreamLocationDescription() error after visible delta = %v", err)
+	}
+	if !strings.Contains(desc, "sufficiently long English description") {
+		t.Fatalf("StreamLocationDescription() description = %q", desc)
+	}
+	if got := strings.Join(visibleDeltas, ""); got != desc {
+		t.Fatalf("visible stream = %q, final description = %q", got, desc)
 	}
 }
 

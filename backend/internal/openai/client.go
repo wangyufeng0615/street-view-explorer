@@ -710,7 +710,7 @@ func validateDescriptionLanguage(text, language string, partial bool) error {
 		if partial {
 			minimumHan = 4
 		}
-		if han < minimumHan || (kana >= 4 && kana > han) {
+		if han < minimumHan || (kana >= 4 && kana > han) || (latin >= 20 && latin > han) {
 			return fmt.Errorf("AI 返回的描述语言不符合简体中文要求")
 		}
 		return nil
@@ -747,7 +747,8 @@ func (g *descriptionStreamGate) Write(delta string) error {
 
 	g.pending.WriteString(delta)
 	pending := g.pending.String()
-	if !strings.Contains(pending, "\n\n") && len([]rune(pending)) < 220 {
+	pendingRunes := len([]rune(pending))
+	if pendingRunes < 80 || (!strings.Contains(pending, "\n\n") && pendingRunes < 220) {
 		return nil
 	}
 
@@ -935,9 +936,9 @@ func (c *client) StreamLocationDescription(parent context.Context, latitude, lon
 		log.Printf("[AI_ERROR] action=empty_response function=GenerateLocationDescription duration=%v error=no_choices_returned", time.Since(startTime))
 		return "", nil, fmt.Errorf("AI未返回任何结果")
 	}
-	if chatResp.Usage.webSearchRequests() < 1 {
-		log.Printf("[AI_ERROR] action=web_search_missing function=GenerateLocationDescription duration=%v", time.Since(startTime))
-		return "", nil, fmt.Errorf("AI 未执行要求的资料搜索")
+	webSearchRequests := chatResp.Usage.webSearchRequests()
+	if webSearchRequests < 1 {
+		log.Printf("[AI_WARN] action=web_search_usage_unreported function=GenerateLocationDescription duration=%v", time.Since(startTime))
 	}
 
 	desc := stripResearchNarration(
@@ -945,14 +946,17 @@ func (c *client) StreamLocationDescription(parent context.Context, latitude, lon
 		language,
 	)
 	if err := validateDescriptionLanguage(desc, language, false); err != nil {
-		log.Printf("[AI_ERROR] action=language_mismatch function=GenerateLocationDescription duration=%v", time.Since(startTime))
-		return "", nil, err
+		if !streamGate.released {
+			log.Printf("[AI_ERROR] action=language_mismatch function=GenerateLocationDescription duration=%v", time.Since(startTime))
+			return "", nil, err
+		}
+		log.Printf("[AI_WARN] action=late_language_mismatch_ignored function=GenerateLocationDescription duration=%v", time.Since(startTime))
 	}
 	if err := streamGate.Finish(desc); err != nil {
 		return "", nil, err
 	}
 	citations := extractCitations(chatResp)
-	log.Printf("[AI] action=request_completed function=GenerateLocationDescription duration=%v response_length=%d citations_count=%d web_search_requests=%d", time.Since(startTime), len(desc), len(citations), chatResp.Usage.webSearchRequests())
+	log.Printf("[AI] action=request_completed function=GenerateLocationDescription duration=%v response_length=%d citations_count=%d web_search_requests=%d", time.Since(startTime), len(desc), len(citations), webSearchRequests)
 
 	return desc, citations, nil
 }
@@ -1073,9 +1077,9 @@ func (c *client) StreamDetailedLocationDescription(parent context.Context, latit
 			time.Since(startTime))
 		return "", nil, fmt.Errorf("AI未返回任何结果")
 	}
-	if chatResp.Usage.webSearchRequests() < 1 {
-		log.Printf("[AI_ERROR] action=web_search_missing function=GenerateDetailedLocationDescription duration=%v", time.Since(startTime))
-		return "", nil, fmt.Errorf("AI 未执行要求的资料搜索")
+	webSearchRequests := chatResp.Usage.webSearchRequests()
+	if webSearchRequests < 1 {
+		log.Printf("[AI_WARN] action=web_search_usage_unreported function=GenerateDetailedLocationDescription duration=%v", time.Since(startTime))
 	}
 
 	result := stripResearchNarration(
@@ -1083,15 +1087,18 @@ func (c *client) StreamDetailedLocationDescription(parent context.Context, latit
 		language,
 	)
 	if err := validateDescriptionLanguage(result, language, false); err != nil {
-		log.Printf("[AI_ERROR] action=language_mismatch function=GenerateDetailedLocationDescription duration=%v", time.Since(startTime))
-		return "", nil, err
+		if !streamGate.released {
+			log.Printf("[AI_ERROR] action=language_mismatch function=GenerateDetailedLocationDescription duration=%v", time.Since(startTime))
+			return "", nil, err
+		}
+		log.Printf("[AI_WARN] action=late_language_mismatch_ignored function=GenerateDetailedLocationDescription duration=%v", time.Since(startTime))
 	}
 	if err := streamGate.Finish(result); err != nil {
 		return "", nil, err
 	}
 	citations := extractCitations(chatResp)
 
-	log.Printf("[AI] action=request_completed function=GenerateDetailedLocationDescription duration=%v response_length=%d citations_count=%d web_search_requests=%d", time.Since(startTime), len(result), len(citations), chatResp.Usage.webSearchRequests())
+	log.Printf("[AI] action=request_completed function=GenerateDetailedLocationDescription duration=%v response_length=%d citations_count=%d web_search_requests=%d", time.Since(startTime), len(result), len(citations), webSearchRequests)
 
 	return result, citations, nil
 }
