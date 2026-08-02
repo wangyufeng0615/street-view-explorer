@@ -364,10 +364,10 @@ func TestGenerateDetailedLocationDescriptionUsesTextOnlyContext(t *testing.T) {
 	if strings.Contains(body, `"provider"`) {
 		t.Fatalf("detailed request overrode OpenRouter Auto Exacto provider routing: %s", body)
 	}
-	if !strings.Contains(body, `"max_tokens":1100`) {
+	if !strings.Contains(body, `"max_tokens":850`) {
 		t.Fatalf("request did not cap detailed description output tokens: %s", body)
 	}
-	if !strings.Contains(body, "写 4-5 个有内容的正文段落") || !strings.Contains(body, "绝不能超过 800 个中文字") {
+	if !strings.Contains(body, "写 4 个有内容的正文段落") || !strings.Contains(body, "约 400-550 个中文字") || !strings.Contains(body, "绝不能超过 650 个中文字") {
 		t.Fatalf("request did not include the bounded detailed length contract: %s", body)
 	}
 	if strings.Contains(body, "write 6-8 substantive body paragraphs") {

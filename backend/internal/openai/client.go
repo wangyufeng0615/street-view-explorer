@@ -991,16 +991,16 @@ func (c *client) StreamDetailedLocationDescription(parent context.Context, latit
 
 	// Text-only description: ground all claims in location metadata and research.
 	sceneInstruction := "No image is provided. Base the description only on location metadata and web research; do not claim to see specific current-scene details."
-	detailedLengthInstruction := "This is the explicitly requested deeper version: write 4-5 substantive body paragraphs totaling about 300-450 English words, and never exceed 550 words. Keep each paragraph to 2-3 sentences. The opening bracket line and at most one later bracket aside do not count as body paragraphs."
+	detailedLengthInstruction := "This is the explicitly requested deeper version: write 4 substantive body paragraphs totaling about 230-330 English words, and never exceed 400 words. Keep each paragraph to 2-3 sentences. The opening bracket line and at most one later bracket aside do not count as body paragraphs."
 	if isChineseLanguage(language) {
-		detailedLengthInstruction = "这是用户明确要求的深入版本：写 4-5 个有内容的正文段落，总计约 500-700 个中文字，绝不能超过 800 个中文字。每段 2-3 句；开头的方括号旁白和正文中至多一条额外旁白不计入段落数。"
+		detailedLengthInstruction = "这是用户明确要求的深入版本：写 4 个有内容的正文段落，总计约 400-550 个中文字，绝不能超过 650 个中文字。每段 2-3 句；开头的方括号旁白和正文中至多一条额外旁白不计入段落数。"
 	}
 	detailedPrompt := fmt.Sprintf(
 		"Your friend wants you to dig deeper into this location. Take your time and think carefully.\n"+
 			"Coordinates: %.6f, %.6f\n"+
 			"Location Info: %s\n"+
 			"Visual Context: %s\n\n"+
-			"Choose only the 3-4 most revealing angles below and cover them with real substance; do not turn the response into a checklist:\n"+
+			"Choose only the 3 most revealing angles below and cover them with real substance; do not turn the response into a checklist:\n"+
 			"- History: what happened here, how did this place evolve, key turning points\n"+
 			"- Built environment: architecture styles, urban planning, infrastructure quality\n"+
 			"- People and culture: who lives here, local customs, demographics, daily life\n"+
@@ -1034,7 +1034,7 @@ func (c *client) StreamDetailedLocationDescription(parent context.Context, latit
 	streamGate := newDescriptionStreamGate(language, visibleOnDelta)
 	reqBody := visionChatRequest{
 		Model:     c.modelName,
-		MaxTokens: 1100,
+		MaxTokens: 850,
 		Reasoning: &reasoningConfig{Enabled: false},
 		Messages: []visionMessage{
 			{Role: messages[0].Role, Content: messages[0].Content},
