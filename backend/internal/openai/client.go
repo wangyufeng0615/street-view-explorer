@@ -733,6 +733,110 @@ type descriptionStreamGate struct {
 	released   bool
 }
 
+const (
+	standardDescriptionMaxRunes = 450
+	detailedDescriptionMaxRunes = 650
+)
+
+func isDescriptionSentenceEnd(r rune) bool {
+	switch r {
+	case '。', '！', '？', '.', '!', '?':
+		return true
+	default:
+		return false
+	}
+}
+
+func descriptionPrefixAtSentenceEnd(text string, maxRunes int) string {
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" || maxRunes <= 0 {
+		return ""
+	}
+
+	runes := []rune(trimmed)
+	if len(runes) > maxRunes {
+		runes = runes[:maxRunes]
+	}
+	lastEnd := 0
+	for index, r := range runes {
+		if isDescriptionSentenceEnd(r) {
+			lastEnd = index + 1
+		}
+	}
+	if lastEnd == 0 {
+		return ""
+	}
+	for lastEnd < len(runes) {
+		switch runes[lastEnd] {
+		case '”', '’', '"', '\'', '）', ')', '】', ']', '」', '』', '\n', '\r', ' ', '\t':
+			lastEnd++
+		default:
+			return strings.TrimSpace(string(runes[:lastEnd]))
+		}
+	}
+	return strings.TrimSpace(string(runes[:lastEnd]))
+}
+
+func limitDescriptionLength(text string, maxRunes int) string {
+	trimmed := strings.TrimSpace(text)
+	if len([]rune(trimmed)) <= maxRunes {
+		return trimmed
+	}
+	if bounded := descriptionPrefixAtSentenceEnd(trimmed, maxRunes); bounded != "" {
+		return bounded
+	}
+
+	// Model prose should contain sentence punctuation. Keep a defensive fallback
+	// so malformed responses still respect the product's hard upper bound.
+	runes := []rune(trimmed)
+	if maxRunes == 1 {
+		return "。"
+	}
+	return strings.TrimSpace(string(runes[:maxRunes-1])) + "。"
+}
+
+type descriptionStreamLimiter struct {
+	downstream func(string) error
+	maxRunes   int
+	pending    strings.Builder
+	emitted    string
+}
+
+func newDescriptionStreamLimiter(maxRunes int, downstream func(string) error) *descriptionStreamLimiter {
+	return &descriptionStreamLimiter{downstream: downstream, maxRunes: maxRunes}
+}
+
+func (l *descriptionStreamLimiter) Write(delta string) error {
+	if l.downstream == nil || delta == "" {
+		return nil
+	}
+	l.pending.WriteString(delta)
+	safePrefix := descriptionPrefixAtSentenceEnd(l.pending.String(), l.maxRunes)
+	if safePrefix == "" || safePrefix == l.emitted || !strings.HasPrefix(safePrefix, l.emitted) {
+		return nil
+	}
+	if err := l.downstream(safePrefix[len(l.emitted):]); err != nil {
+		return err
+	}
+	l.emitted = safePrefix
+	return nil
+}
+
+func (l *descriptionStreamLimiter) Finish(finalText string) error {
+	if l.downstream == nil {
+		return nil
+	}
+	bounded := limitDescriptionLength(finalText, l.maxRunes)
+	if bounded == "" || bounded == l.emitted || !strings.HasPrefix(bounded, l.emitted) {
+		return nil
+	}
+	if err := l.downstream(bounded[len(l.emitted):]); err != nil {
+		return err
+	}
+	l.emitted = bounded
+	return nil
+}
+
 func newDescriptionStreamGate(language string, downstream func(string) error) *descriptionStreamGate {
 	return &descriptionStreamGate{language: language, downstream: downstream}
 }
@@ -878,7 +982,8 @@ func (c *client) StreamLocationDescription(parent context.Context, latitude, lon
 			return onDelta(delta)
 		}
 	}
-	streamGate := newDescriptionStreamGate(language, visibleOnDelta)
+	streamLimiter := newDescriptionStreamLimiter(standardDescriptionMaxRunes, visibleOnDelta)
+	streamGate := newDescriptionStreamGate(language, streamLimiter.Write)
 	reqBody := visionChatRequest{
 		Model:     c.modelName,
 		MaxTokens: 640,
@@ -946,6 +1051,7 @@ func (c *client) StreamLocationDescription(parent context.Context, latitude, lon
 		stripInlineCitations(chatResp.Choices[0].Message.Content, chatResp.Choices[0].Message.Annotations),
 		language,
 	)
+	desc = limitDescriptionLength(desc, standardDescriptionMaxRunes)
 	if err := validateDescriptionLanguage(desc, language, false); err != nil {
 		if !streamGate.released {
 			log.Printf("[AI_ERROR] action=language_mismatch function=GenerateLocationDescription duration=%v", time.Since(startTime))
@@ -954,6 +1060,9 @@ func (c *client) StreamLocationDescription(parent context.Context, latitude, lon
 		log.Printf("[AI_WARN] action=late_language_mismatch_ignored function=GenerateLocationDescription duration=%v", time.Since(startTime))
 	}
 	if err := streamGate.Finish(desc); err != nil {
+		return "", nil, err
+	}
+	if err := streamLimiter.Finish(desc); err != nil {
 		return "", nil, err
 	}
 	citations := extractCitations(chatResp)
@@ -1031,7 +1140,8 @@ func (c *client) StreamDetailedLocationDescription(parent context.Context, latit
 			return onDelta(delta)
 		}
 	}
-	streamGate := newDescriptionStreamGate(language, visibleOnDelta)
+	streamLimiter := newDescriptionStreamLimiter(detailedDescriptionMaxRunes, visibleOnDelta)
+	streamGate := newDescriptionStreamGate(language, streamLimiter.Write)
 	reqBody := visionChatRequest{
 		Model:     c.modelName,
 		MaxTokens: 850,
@@ -1092,6 +1202,7 @@ func (c *client) StreamDetailedLocationDescription(parent context.Context, latit
 		stripInlineCitations(chatResp.Choices[0].Message.Content, chatResp.Choices[0].Message.Annotations),
 		language,
 	)
+	result = limitDescriptionLength(result, detailedDescriptionMaxRunes)
 	if err := validateDescriptionLanguage(result, language, false); err != nil {
 		if !streamGate.released {
 			log.Printf("[AI_ERROR] action=language_mismatch function=GenerateDetailedLocationDescription duration=%v", time.Since(startTime))
@@ -1100,6 +1211,9 @@ func (c *client) StreamDetailedLocationDescription(parent context.Context, latit
 		log.Printf("[AI_WARN] action=late_language_mismatch_ignored function=GenerateDetailedLocationDescription duration=%v", time.Since(startTime))
 	}
 	if err := streamGate.Finish(result); err != nil {
+		return "", nil, err
+	}
+	if err := streamLimiter.Finish(result); err != nil {
 		return "", nil, err
 	}
 	citations := extractCitations(chatResp)

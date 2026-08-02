@@ -225,6 +225,45 @@ func TestDescriptionStreamGateDropsResearchNarration(t *testing.T) {
 	}
 }
 
+func TestLimitDescriptionLengthStopsAtCompleteSentence(t *testing.T) {
+	text := "[Atlas 抵达这里]\n\n第一句介绍地点。第二句补充历史，而且这一句明显更长。第三句不应出现。"
+	got := limitDescriptionLength(text, 34)
+	if got != "[Atlas 抵达这里]\n\n第一句介绍地点。" {
+		t.Fatalf("limitDescriptionLength() = %q", got)
+	}
+	if len([]rune(got)) > 34 {
+		t.Fatalf("bounded description has %d runes", len([]rune(got)))
+	}
+}
+
+func TestDescriptionStreamLimiterMatchesBoundedFinalText(t *testing.T) {
+	var deltas []string
+	limiter := newDescriptionStreamLimiter(38, func(delta string) error {
+		deltas = append(deltas, delta)
+		return nil
+	})
+	full := "[Atlas 抵达这里]\n\n第一句介绍地点。第二句补充历史。第三句很长而且不应该越过产品规定的上限。"
+	for _, delta := range []string{
+		"[Atlas 抵达这里]\n\n第一句介绍",
+		"地点。第二句补充历史。第三句很长",
+		"而且不应该越过产品规定的上限。",
+	} {
+		if err := limiter.Write(delta); err != nil {
+			t.Fatalf("limiter.Write() error = %v", err)
+		}
+	}
+	if err := limiter.Finish(full); err != nil {
+		t.Fatalf("limiter.Finish() error = %v", err)
+	}
+	want := limitDescriptionLength(full, 38)
+	if got := strings.Join(deltas, ""); got != want {
+		t.Fatalf("streamed description = %q, want %q", got, want)
+	}
+	if !strings.HasSuffix(want, "。") {
+		t.Fatalf("bounded description did not end at a sentence: %q", want)
+	}
+}
+
 func TestDescriptionStreamGateRejectsJapaneseForChineseUI(t *testing.T) {
 	var deltas []string
 	gate := newDescriptionStreamGate("zh", func(delta string) error {
