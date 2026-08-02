@@ -18,6 +18,8 @@ func TestTextSystemPromptRequiresSubstantiveLetter(t *testing.T) {
 		"exact locality together with its history and local life",
 		"Same-name places are common",
 		"never silently blend conflicting records",
+		"不会假装亲眼看见用户当前的街景画面",
+		"must not claim current visual evidence",
 	} {
 		if !strings.Contains(prompt, required) {
 			t.Fatalf("TextSystemPrompt() missing richness instruction %q", required)
@@ -28,6 +30,11 @@ func TestTextSystemPromptRequiresSubstantiveLetter(t *testing.T) {
 	}
 	if strings.Contains(prompt, "BAD:") || strings.Contains(prompt, "不是靠旅游") {
 		t.Fatal("TextSystemPrompt() should not prime the model with forbidden contrastive examples")
+	}
+	for _, forbidden := range []string{"边看边聊", "visible terrain", "what's at this exact spot", "Atlas at the scene"} {
+		if strings.Contains(prompt, forbidden) {
+			t.Fatalf("TextSystemPrompt() still contains visual-only instruction %q", forbidden)
+		}
 	}
 }
 

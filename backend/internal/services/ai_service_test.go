@@ -27,6 +27,24 @@ func (noCacheTestConfig) MapsProxyURL() string                   { return "" }
 func (noCacheTestConfig) SkipProxyCheck() bool                   { return false }
 func (noCacheTestConfig) SetSkipProxyCheck(bool)                 {}
 
+type textOnlyDescriptionConfig struct{ noCacheTestConfig }
+
+func (textOnlyDescriptionConfig) EnableGoogleAPI() bool { return true }
+
+type textOnlyDescriptionMaps struct {
+	MapProvider
+	frameCalls int
+}
+
+func (m *textOnlyDescriptionMaps) GetLocationInfo(context.Context, float64, float64, string) (map[string]string, error) {
+	return map[string]string{"formatted_address": "Test Street, Test City"}, nil
+}
+
+func (m *textOnlyDescriptionMaps) GetStreetViewFrame(context.Context, string, StreetViewView) (*StreetViewFrame, error) {
+	m.frameCalls++
+	return nil, fmt.Errorf("description path must not request a Street View frame")
+}
+
 type changingLetterClient struct {
 	calls int
 }
@@ -42,19 +60,19 @@ func (c *changingLetterClient) next(onDelta func(string) error) (string, []opena
 	return letter, []openai.Citation{{URL: fmt.Sprintf("https://example.com/%d", c.calls)}}, nil
 }
 
-func (c *changingLetterClient) GenerateLocationDescription(float64, float64, map[string]string, *openai.SceneImage, string) (string, []openai.Citation, error) {
+func (c *changingLetterClient) GenerateLocationDescription(float64, float64, map[string]string, string) (string, []openai.Citation, error) {
 	return c.next(nil)
 }
 
-func (c *changingLetterClient) GenerateDetailedLocationDescription(float64, float64, map[string]string, *openai.SceneImage, string) (string, []openai.Citation, error) {
+func (c *changingLetterClient) GenerateDetailedLocationDescription(float64, float64, map[string]string, string) (string, []openai.Citation, error) {
 	return c.next(nil)
 }
 
-func (c *changingLetterClient) StreamLocationDescription(_ context.Context, _ float64, _ float64, _ map[string]string, _ *openai.SceneImage, _ string, onDelta func(string) error) (string, []openai.Citation, error) {
+func (c *changingLetterClient) StreamLocationDescription(_ context.Context, _ float64, _ float64, _ map[string]string, _ string, onDelta func(string) error) (string, []openai.Citation, error) {
 	return c.next(onDelta)
 }
 
-func (c *changingLetterClient) StreamDetailedLocationDescription(_ context.Context, _ float64, _ float64, _ map[string]string, _ *openai.SceneImage, _ string, onDelta func(string) error) (string, []openai.Citation, error) {
+func (c *changingLetterClient) StreamDetailedLocationDescription(_ context.Context, _ float64, _ float64, _ map[string]string, _ string, onDelta func(string) error) (string, []openai.Citation, error) {
 	return c.next(onDelta)
 }
 
@@ -85,5 +103,23 @@ func TestDescriptionRequestsAlwaysGenerateANewLetter(t *testing.T) {
 	}
 	if first == second || firstCitations[0].URL == secondCitations[0].URL {
 		t.Fatalf("same location reused an earlier letter: first=%q second=%q", first, second)
+	}
+}
+
+func TestDescriptionDoesNotFetchStreetViewFrame(t *testing.T) {
+	maps := &textOnlyDescriptionMaps{}
+	client := &changingLetterClient{}
+	service := NewAIService(textOnlyDescriptionConfig{}, nil, maps, client)
+
+	_, _, err := service.GetDescriptionForLocation(
+		models.Location{PanoID: "pano", Latitude: 1, Longitude: 2},
+		"en",
+		StreetViewView{PanoID: "actual-pano", Heading: 90, FOV: 80},
+	)
+	if err != nil {
+		t.Fatalf("GetDescriptionForLocation() error = %v", err)
+	}
+	if maps.frameCalls != 0 {
+		t.Fatalf("Street View frame fetches = %d, want 0", maps.frameCalls)
 	}
 }

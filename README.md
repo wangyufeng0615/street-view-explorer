@@ -133,9 +133,10 @@ Backend variables live in `backend/.env`.
 | `DOUBAO_TTS_FORMAT`, `DOUBAO_TTS_SAMPLE_RATE` | No | Doubao TTS stream format and sample rate. Atlas currently expects `pcm` and defaults to `24000`. |
 | `DOUBAO_TTS_SPEECH_RATE`, `DOUBAO_TTS_LOUDNESS_RATE`, `DOUBAO_TTS_EMOTION`, `DOUBAO_TTS_EMOTION_SCALE` | No | Optional Doubao speech tuning. |
 | `DOUBAO_TTS_PROXY_URL` | No | Doubao-specific outbound proxy. Falls back to `AI_PROXY_URL` or `PROXY_URL`. |
-| `OPENROUTER_MODEL`, `AI_MODEL` | No | Optional OpenRouter model override. `OPENROUTER_MODEL` takes precedence. |
+| `OPENROUTER_MODEL`, `AI_MODEL` | No | Text-only OpenRouter model for Atlas descriptions and interest-region generation, default `deepseek/deepseek-v4-flash`. `OPENROUTER_MODEL` takes precedence. |
+| `OPENROUTER_VISION_MODEL` | No | Vision-capable OpenRouter model used by Geo Guess satellite-image analysis, default `anthropic/claude-haiku-4.5`. |
 | `CN_AI_MODEL` | No | Optional fallback model used only when no AI/shared proxy is configured. |
-| `OPENROUTER_PROVIDER_SORT` | No | OpenRouter provider preference: `latency` (default), `throughput`, `price`, or `off`. |
+| `OPENROUTER_PROVIDER_SORT` | No | Geo Guess vision-provider preference: `latency` (default), `throughput`, `price`, or `off`. Description requests leave sorting unset for Auto Exacto tool routing. |
 | `GOOGLE_API_KEY` | Yes | Backend Google Maps, Street View, and Static Maps access. |
 | `GOOGLE_MAPS_MAP_ID` | No | Optional map ID, mainly useful to mirror frontend config. |
 | `SENTRY_DSN` | No | Backend Sentry DSN. |
@@ -192,7 +193,7 @@ All standard JSON endpoints return a `{ "success": boolean, "data": ..., "error"
 - `GET /api/v1/locations/search` - resolves a concrete place/landmark query through Google Places/Geocoding, then loads nearby Street View.
 - `GET /api/v1/locations/:panoId/description`
 - `GET /api/v1/locations/:panoId/detailed-description`
-- `GET /api/v1/locations/:panoId/streetview-frame` - returns the current heading/pitch/FOV frame used by text and voice Atlas.
+- `GET /api/v1/locations/:panoId/streetview-frame` - returns the current heading/pitch/FOV frame used by Atlas Voice. Text descriptions no longer fetch or upload a Street View frame.
 - `GET /api/v1/visits` - shared site-wide visit history; accepts `source=random|shared|lookup|map_pick`. Atlas footprints request `source=random`.
 - `POST /api/v1/preferences/exploration`
 - `POST /api/v1/preferences/exploration/remove`

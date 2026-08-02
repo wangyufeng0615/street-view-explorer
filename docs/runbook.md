@@ -251,8 +251,8 @@ Use `--skip-proxy-check` only when the proxy health check itself is unreliable b
 
 - Verify `AI_API_KEY`.
 - In proxy-restricted networks, set `AI_PROXY_URL` or shared `PROXY_URL`. A direct OpenRouter response like `This model is not available in your region` means the key and model can be valid while the current egress region is blocked.
-- If you need a model override, set `OPENROUTER_MODEL` or `AI_MODEL`. `CN_AI_MODEL` is used only when no AI/shared proxy is configured.
-- Atlas requests prefer OpenRouter providers sorted by latency. Set `OPENROUTER_PROVIDER_SORT=throughput`, `price`, or `off` to change that policy.
+- Text descriptions default to `deepseek/deepseek-v4-flash` and do not upload Street View images. Override them with `OPENROUTER_MODEL` or `AI_MODEL`. Geo Guess uses `OPENROUTER_VISION_MODEL` (default `anthropic/claude-haiku-4.5`). `CN_AI_MODEL` is used only when no AI/shared proxy is configured.
+- Geo Guess prefers vision providers sorted by latency. Description requests leave provider sorting unset so OpenRouter Auto Exacto can prioritize web-tool reliability. Set `OPENROUTER_PROVIDER_SORT=throughput`, `price`, or `off` to change the Geo Guess policy.
 - AI endpoints can take longer than normal JSON calls; the streaming frontend timeout is 30 seconds for the first Atlas letter and 35 seconds for the detailed follow-up. The backend retries transient OpenRouter statuses (`408`, `429`, and `5xx`) before streaming begins. OpenRouter usage logs should show at least one web-search request for either description path.
 
 ### Online duel room disappears

@@ -2,7 +2,6 @@ package services
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
 	"strings"
 	"time"
@@ -55,21 +54,11 @@ func (ai *AIService) StreamDetailedDescriptionForLocation(ctx context.Context, l
 	return ai.generateDescription(ctx, loc, language, view, true, onDelta)
 }
 
-type locationInfoResult struct {
-	info map[string]string
-	err  error
-}
-
-type sceneImageResult struct {
-	scene *openai.SceneImage
-	err   error
-}
-
-func (ai *AIService) generateDescription(ctx context.Context, loc models.Location, language string, view StreetViewView, detailed bool, onDelta func(string) error) (string, []openai.Citation, error) {
+func (ai *AIService) generateDescription(ctx context.Context, loc models.Location, language string, _ StreetViewView, detailed bool, onDelta func(string) error) (string, []openai.Citation, error) {
 	startTime := time.Now()
 	logger := utils.AILogger()
 
-	locationInfo, scene, err := ai.prepareDescriptionContext(ctx, loc, language, view)
+	locationInfo, err := ai.prepareDescriptionContext(ctx, loc, language)
 	if err != nil {
 		logger.Error("description_context_failed", "Failed to prepare AI description context", err, map[string]interface{}{
 			"pano_id":  loc.PanoID,
@@ -78,7 +67,7 @@ func (ai *AIService) generateDescription(ctx context.Context, loc models.Locatio
 		})
 		return "", nil, err
 	}
-	logger.Info("description_context_ready", "Prepared Atlas location and scene context", map[string]interface{}{
+	logger.Info("description_context_ready", "Prepared Atlas text-only location context", map[string]interface{}{
 		"pano_id":  loc.PanoID,
 		"language": language,
 		"detailed": detailed,
@@ -89,9 +78,9 @@ func (ai *AIService) generateDescription(ctx context.Context, loc models.Locatio
 	var citations []openai.Citation
 	if ai.config.EnableOpenAI() {
 		if detailed {
-			desc, citations, err = ai.openAI.StreamDetailedLocationDescription(ctx, loc.Latitude, loc.Longitude, locationInfo, scene, language, onDelta)
+			desc, citations, err = ai.openAI.StreamDetailedLocationDescription(ctx, loc.Latitude, loc.Longitude, locationInfo, language, onDelta)
 		} else {
-			desc, citations, err = ai.openAI.StreamLocationDescription(ctx, loc.Latitude, loc.Longitude, locationInfo, scene, language, onDelta)
+			desc, citations, err = ai.openAI.StreamLocationDescription(ctx, loc.Latitude, loc.Longitude, locationInfo, language, onDelta)
 		}
 		if err != nil {
 			logger.Error("ai_generation_failed", "Failed to generate AI description", err, map[string]interface{}{
@@ -128,67 +117,20 @@ func (ai *AIService) generateDescription(ctx context.Context, loc models.Locatio
 	return desc, citations, nil
 }
 
-func (ai *AIService) prepareDescriptionContext(ctx context.Context, loc models.Location, language string, view StreetViewView) (map[string]string, *openai.SceneImage, error) {
+func (ai *AIService) prepareDescriptionContext(ctx context.Context, loc models.Location, language string) (map[string]string, error) {
 	if !ai.config.EnableGoogleAPI() {
-		return getDefaultLocationInfo(loc), nil, nil
+		return getDefaultLocationInfo(loc), nil
 	}
 
-	locationCh := make(chan locationInfoResult, 1)
-	sceneCh := make(chan sceneImageResult, 1)
-
-	go func() {
-		info, err := ai.maps.GetLocationInfo(ctx, loc.Latitude, loc.Longitude, language)
-		locationCh <- locationInfoResult{info: info, err: err}
-	}()
-
-	if ai.config.EnableOpenAI() {
-		scenePanoID := strings.TrimSpace(view.PanoID)
-		if scenePanoID == "" {
-			scenePanoID = loc.PanoID
-		}
-		go func() {
-			scene, err := ai.getSceneImageWithContext(ctx, scenePanoID, view)
-			sceneCh <- sceneImageResult{scene: scene, err: err}
-		}()
-	} else {
-		sceneCh <- sceneImageResult{}
+	info, err := ai.maps.GetLocationInfo(ctx, loc.Latitude, loc.Longitude, language)
+	if err != nil {
+		return nil, utils.SafeError(utils.ErrorTypeExternal, "获取位置信息失败", err)
 	}
-
-	locationResult := <-locationCh
-	sceneResult := <-sceneCh
-	if locationResult.err != nil {
-		return nil, nil, utils.SafeError(utils.ErrorTypeExternal, "获取位置信息失败", locationResult.err)
-	}
-	if sceneResult.err != nil {
-		return nil, nil, utils.SafeError(utils.ErrorTypeExternal, "获取街景画面失败", sceneResult.err)
-	}
-	return locationResult.info, sceneResult.scene, nil
+	return info, nil
 }
 
 func (ai *AIService) GetStreetViewFrame(ctx context.Context, panoID string, view StreetViewView) (*StreetViewFrame, error) {
 	return ai.maps.GetStreetViewFrame(ctx, panoID, view)
-}
-
-func (ai *AIService) getSceneImageWithContext(parent context.Context, panoID string, view StreetViewView) (*openai.SceneImage, error) {
-	if !ai.config.EnableGoogleAPI() {
-		return nil, nil
-	}
-
-	ctx, cancel := context.WithTimeout(parent, 15*time.Second)
-	defer cancel()
-
-	frame, err := ai.maps.GetStreetViewFrame(ctx, panoID, view)
-	if err != nil {
-		return nil, err
-	}
-
-	return &openai.SceneImage{
-		Base64:      base64.StdEncoding.EncodeToString(frame.Data),
-		ContentType: frame.ContentType,
-		Heading:     frame.View.Heading,
-		Pitch:       frame.View.Pitch,
-		FOV:         frame.View.FOV,
-	}, nil
 }
 
 // 生成默认的位置信息

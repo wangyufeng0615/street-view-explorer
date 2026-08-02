@@ -82,38 +82,39 @@ func TestStripInlineCitations(t *testing.T) {
 	}
 }
 
-func TestGeographerSystemPromptKeepsCitationsOutOfBody(t *testing.T) {
+func TestTextSystemPromptKeepsCitationsOutOfBody(t *testing.T) {
+	prompt := atlas.TextSystemPrompt()
 	requiredPhrases := []string{
 		"The product renders citations separately",
 		"Finish on a complete sentence about the place itself",
 		"Treat links, raw URLs, source lists, and parenthetical reference blocks as off-screen metadata",
-		"A current Google Street View frame is attached when available",
-		"Never mention that an image or frame is attached",
+		"No current Street View image is attached",
+		"Never claim to see a building, sign, person, road condition, weather condition, or landscape",
 		"Plus Codes and raw coordinates are internal navigation metadata",
 		"Never discuss geocoders, APIs, databases, search failures",
 	}
 
 	for _, phrase := range requiredPhrases {
-		if !strings.Contains(geographerSystemPrompt, phrase) {
-			t.Fatalf("geographerSystemPrompt missing phrase %q", phrase)
+		if !strings.Contains(prompt, phrase) {
+			t.Fatalf("TextSystemPrompt missing phrase %q", phrase)
 		}
 	}
-	if strings.Contains(geographerSystemPrompt, "OUTPUT LANGUAGE IS FIXED") {
-		t.Fatal("shared geographer prompt must not override task-specific language instructions")
+	if strings.Contains(prompt, "OUTPUT LANGUAGE IS FIXED") {
+		t.Fatal("default text prompt must not override task-specific language instructions")
 	}
 	if !strings.Contains(atlas.TextSystemPrompt("en"), "OUTPUT LANGUAGE IS FIXED TO ENGLISH") {
 		t.Fatal("English Atlas text prompt did not enforce the UI language")
 	}
 }
 
-func TestGenerateLocationDescriptionSendsSceneImageWithoutPlusCodeMetadata(t *testing.T) {
+func TestGenerateLocationDescriptionUsesTextOnlyContextWithoutPlusCodeMetadata(t *testing.T) {
 	var requestBody map[string]interface{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
 			t.Fatalf("decode request: %v", err)
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
-		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"[远处的屋顶在山坡上排开]\\n\\n这里是迈季代勒舍姆附近的街区，山地聚落沿着道路展开。\"}}]}\n\n"))
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"[Atlas 刚在地图上圈住这里]\\n\\n这里是迈季代勒舍姆附近的街区，山地聚落沿着道路展开。\"}}]}\n\n"))
 		_, _ = w.Write([]byte("data: {\"choices\":[],\"usage\":{\"server_tool_use\":{\"web_search_requests\":1}}}\n\n"))
 		_, _ = w.Write([]byte("data: [DONE]\n\n"))
 	}))
@@ -134,13 +135,6 @@ func TestGenerateLocationDescriptionSendsSceneImageWithoutPlusCodeMetadata(t *te
 			"locality":          "Majdal Shams",
 			"plus_code_global":  "8G5Q7QGF+9X",
 		},
-		&SceneImage{
-			Base64:      "c2NlbmU=",
-			ContentType: "image/jpeg",
-			Heading:     90,
-			Pitch:       0,
-			FOV:         90,
-		},
 		"zh",
 	)
 	if err != nil {
@@ -152,8 +146,14 @@ func TestGenerateLocationDescriptionSendsSceneImageWithoutPlusCodeMetadata(t *te
 		t.Fatalf("marshal captured request: %v", err)
 	}
 	body := string(encoded)
-	if !strings.Contains(body, "data:image/jpeg;base64,c2NlbmU=") {
-		t.Fatalf("request did not include scene image: %s", body)
+	if strings.Contains(body, "data:image/") || strings.Contains(body, "c2NlbmU=") || strings.Contains(body, `"image_url"`) {
+		t.Fatalf("request included scene image in text-only description: %s", body)
+	}
+	if !strings.Contains(body, "no image is provided") {
+		t.Fatalf("request did not make the text-only grounding contract explicit: %s", body)
+	}
+	if !strings.Contains(body, `"reasoning":{"enabled":false}`) {
+		t.Fatalf("request did not disable paid reasoning tokens for the description path: %s", body)
 	}
 	if strings.Contains(body, "8G5Q7QGF+9X") {
 		t.Fatalf("request leaked Plus Code into model context: %s", body)
@@ -167,8 +167,8 @@ func TestGenerateLocationDescriptionSendsSceneImageWithoutPlusCodeMetadata(t *te
 	if !strings.Contains(body, `"engine":"auto"`) {
 		t.Fatalf("request did not use OpenRouter's model-aware search routing: %s", body)
 	}
-	if !strings.Contains(body, `"provider"`) || !strings.Contains(body, `"sort":"latency"`) {
-		t.Fatalf("request did not prefer a low-latency provider: %s", body)
+	if strings.Contains(body, `"provider"`) {
+		t.Fatalf("description request overrode OpenRouter Auto Exacto provider routing: %s", body)
 	}
 	if strings.Contains(body, `"require_parameters"`) {
 		t.Fatalf("request used a hard parameter filter that can exclude every server-tool endpoint: %s", body)
@@ -261,6 +261,111 @@ func TestReadChatCompletionStreamForwardsDeltasAndUsage(t *testing.T) {
 	}
 }
 
+func TestGenerateDetailedLocationDescriptionUsesTextOnlyContext(t *testing.T) {
+	var requestBody map[string]interface{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"[Atlas 抵达了这里]\\n\\n这是一封只根据地点资料写成的详细来信。\"}}]}\n\n"))
+		_, _ = w.Write([]byte("data: {\"choices\":[],\"usage\":{\"server_tool_use\":{\"web_search_requests\":1}}}\n\n"))
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer server.Close()
+
+	c := &client{apiKey: "test-key", modelName: "test-model", httpClient: server.Client(), endpoint: server.URL}
+	_, _, err := c.GenerateDetailedLocationDescription(
+		1,
+		2,
+		map[string]string{"formatted_address": "Test Street"},
+		"zh",
+	)
+	if err != nil {
+		t.Fatalf("GenerateDetailedLocationDescription() error = %v", err)
+	}
+
+	encoded, err := json.Marshal(requestBody)
+	if err != nil {
+		t.Fatalf("marshal captured request: %v", err)
+	}
+	body := string(encoded)
+	if strings.Contains(body, "data:image/") || strings.Contains(body, "c2NlbmU=") || strings.Contains(body, `"image_url"`) {
+		t.Fatalf("detailed request included scene image: %s", body)
+	}
+	if !strings.Contains(body, "No image is provided") {
+		t.Fatalf("detailed request did not declare text-only grounding: %s", body)
+	}
+	if strings.Contains(body, `"provider"`) {
+		t.Fatalf("detailed request overrode OpenRouter Auto Exacto provider routing: %s", body)
+	}
+}
+
+func TestGenerateRegionsForInterestUsesJSONOnlySystemPrompt(t *testing.T) {
+	var requestBody map[string]interface{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"regions\":[{\"coordinates\":{\"north\":49,\"south\":48,\"east\":17,\"west\":16},\"region_info\":\"Central European castles\"}]}"}}]}`))
+	}))
+	defer server.Close()
+
+	c := &client{apiKey: "test-key", modelName: "deepseek/deepseek-v4-flash", httpClient: server.Client(), endpoint: server.URL}
+	regions, err := c.GenerateRegionsForInterest("castles")
+	if err != nil {
+		t.Fatalf("GenerateRegionsForInterest() error = %v", err)
+	}
+	if len(regions) != 1 {
+		t.Fatalf("regions = %d, want 1", len(regions))
+	}
+
+	messages, ok := requestBody["messages"].([]interface{})
+	if !ok || len(messages) < 1 {
+		t.Fatalf("request messages = %#v", requestBody["messages"])
+	}
+	system, ok := messages[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("system message = %#v", messages[0])
+	}
+	content, _ := system["content"].(string)
+	if !strings.Contains(content, "Return exactly one JSON object") {
+		t.Fatalf("region system prompt was not JSON-only: %q", content)
+	}
+	for _, forbidden := range []string{"Atlas", "arrival letter", "Always start with one bracket line"} {
+		if strings.Contains(content, forbidden) {
+			t.Fatalf("region system prompt contained %q: %q", forbidden, content)
+		}
+	}
+}
+
+func TestGuessLocationFromImageUsesSeparateVisionModel(t *testing.T) {
+	var requestBody map[string]interface{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"lat\":1,\"lng\":2,\"reasoning\":\"terrain\"}"}}]}`))
+	}))
+	defer server.Close()
+
+	c := &client{
+		apiKey:          "test-key",
+		modelName:       "deepseek/deepseek-v4-flash",
+		visionModelName: "vision-test-model",
+		httpClient:      server.Client(),
+		endpoint:        server.URL,
+	}
+	if _, _, _, err := c.GuessLocationFromImage(context.Background(), "aW1hZ2U=", 10, "en"); err != nil {
+		t.Fatalf("GuessLocationFromImage() error = %v", err)
+	}
+	if got := requestBody["model"]; got != "vision-test-model" {
+		t.Fatalf("request model = %v, want vision-test-model", got)
+	}
+}
+
 func TestGenerateLocationDescriptionRejectsResponseWithoutSearchUsage(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -276,7 +381,7 @@ func TestGenerateLocationDescriptionRejectsResponseWithoutSearchUsage(t *testing
 		httpClient: server.Client(),
 		endpoint:   server.URL,
 	}
-	_, _, err := c.GenerateLocationDescription(1, 2, map[string]string{}, nil, "en")
+	_, _, err := c.GenerateLocationDescription(1, 2, map[string]string{}, "en")
 	if err == nil || !strings.Contains(err.Error(), "未执行要求的资料搜索") {
 		t.Fatalf("GenerateLocationDescription() error = %v", err)
 	}
@@ -405,13 +510,25 @@ func TestSelectModelUsesCNModelOnlyWithoutProxy(t *testing.T) {
 	}
 }
 
-func TestSelectModelUsesClaudeHaiku45ByDefault(t *testing.T) {
+func TestSelectModelUsesDeepSeekV4FlashByDefault(t *testing.T) {
 	t.Setenv("OPENROUTER_MODEL", "")
 	t.Setenv("AI_MODEL", "")
 	t.Setenv("CN_AI_MODEL", "")
 
-	if got := selectModel("http://127.0.0.1:10086"); got != "anthropic/claude-haiku-4.5" {
-		t.Fatalf("selectModel with proxy = %q, want anthropic/claude-haiku-4.5", got)
+	if got := selectModel("http://127.0.0.1:10086"); got != "deepseek/deepseek-v4-flash" {
+		t.Fatalf("selectModel with proxy = %q, want deepseek/deepseek-v4-flash", got)
+	}
+}
+
+func TestSelectVisionModelUsesClaudeHaiku45ByDefaultAndAllowsOverride(t *testing.T) {
+	t.Setenv("OPENROUTER_VISION_MODEL", "")
+	if got := selectVisionModel(); got != "anthropic/claude-haiku-4.5" {
+		t.Fatalf("selectVisionModel = %q, want anthropic/claude-haiku-4.5", got)
+	}
+
+	t.Setenv("OPENROUTER_VISION_MODEL", "google/gemini-2.5-flash")
+	if got := selectVisionModel(); got != "google/gemini-2.5-flash" {
+		t.Fatalf("selectVisionModel override = %q, want google/gemini-2.5-flash", got)
 	}
 }
 

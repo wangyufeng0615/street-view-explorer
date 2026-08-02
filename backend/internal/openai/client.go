@@ -22,7 +22,8 @@ import (
 
 const (
 	defaultAPIEndpoint     = "https://openrouter.ai/api/v1/chat/completions"
-	defaultModel           = "anthropic/claude-haiku-4.5"
+	defaultModel           = "deepseek/deepseek-v4-flash"
+	defaultVisionModel     = "anthropic/claude-haiku-4.5"
 	defaultProviderSort    = "latency"
 	maxRetries             = 2
 	retryBaseDelay         = 500 * time.Millisecond
@@ -36,22 +37,23 @@ const (
 		"If the center reticle falls on water, farmland, forest, desert, a road segment, or an unremarkable patch beside a landmark, estimate the coordinate under the reticle center. Use surrounding visual clues only to infer where the marked center point is located."
 )
 
-var geographerSystemPrompt = atlas.TextSystemPrompt()
+const regionSystemPrompt = "You are a geography planning service. Convert the user's place or exploration theme into valid geographic bounding boxes. Return exactly one JSON object matching the requested schema. Do not write prose outside JSON, do not use markdown or code fences, and do not adopt a persona or letter format."
 
 type Client interface {
-	GenerateLocationDescription(latitude, longitude float64, locationInfo map[string]string, scene *SceneImage, language string) (string, []Citation, error)
-	GenerateDetailedLocationDescription(latitude, longitude float64, locationInfo map[string]string, scene *SceneImage, language string) (string, []Citation, error)
-	StreamLocationDescription(ctx context.Context, latitude, longitude float64, locationInfo map[string]string, scene *SceneImage, language string, onDelta func(string) error) (string, []Citation, error)
-	StreamDetailedLocationDescription(ctx context.Context, latitude, longitude float64, locationInfo map[string]string, scene *SceneImage, language string, onDelta func(string) error) (string, []Citation, error)
+	GenerateLocationDescription(latitude, longitude float64, locationInfo map[string]string, language string) (string, []Citation, error)
+	GenerateDetailedLocationDescription(latitude, longitude float64, locationInfo map[string]string, language string) (string, []Citation, error)
+	StreamLocationDescription(ctx context.Context, latitude, longitude float64, locationInfo map[string]string, language string, onDelta func(string) error) (string, []Citation, error)
+	StreamDetailedLocationDescription(ctx context.Context, latitude, longitude float64, locationInfo map[string]string, language string, onDelta func(string) error) (string, []Citation, error)
 	GenerateRegionsForInterest(interest string) ([]models.Region, error)
 	GuessLocationFromImage(ctx context.Context, imageBase64 string, zoom int, language string) (lat float64, lng float64, reasoning string, err error)
 }
 
 type client struct {
-	apiKey     string
-	modelName  string
-	httpClient *http.Client
-	endpoint   string
+	apiKey          string
+	modelName       string
+	visionModelName string
+	httpClient      *http.Client
+	endpoint        string
 }
 
 type webSearchTool struct {
@@ -70,9 +72,14 @@ type providerPreferences struct {
 	Sort string `json:"sort,omitempty"`
 }
 
+type reasoningConfig struct {
+	Enabled bool `json:"enabled"`
+}
+
 type chatRequest struct {
-	Model    string        `json:"model"`
-	Messages []chatMessage `json:"messages"`
+	Model     string           `json:"model"`
+	Messages  []chatMessage    `json:"messages"`
+	Reasoning *reasoningConfig `json:"reasoning,omitempty"`
 }
 
 type completionUsage struct {
@@ -102,14 +109,6 @@ type ChatMessage struct {
 type Citation struct {
 	URL   string `json:"url"`
 	Title string `json:"title"`
-}
-
-type SceneImage struct {
-	Base64      string
-	ContentType string
-	Heading     int
-	Pitch       int
-	FOV         int
 }
 
 // 为了向后兼容保留小写版本
@@ -318,10 +317,11 @@ func NewClient(apiKey string, modelName ...string) Client {
 	}
 
 	return &client{
-		apiKey:     apiKey,
-		modelName:  selectedModel,
-		httpClient: httpClient,
-		endpoint:   endpoint,
+		apiKey:          apiKey,
+		modelName:       selectedModel,
+		visionModelName: selectVisionModel(),
+		httpClient:      httpClient,
+		endpoint:        endpoint,
 	}
 }
 
@@ -338,6 +338,20 @@ func selectModel(proxyURLStr string) string {
 		}
 	}
 	return defaultModel
+}
+
+func selectVisionModel() string {
+	if configured := strings.TrimSpace(os.Getenv("OPENROUTER_VISION_MODEL")); configured != "" {
+		return configured
+	}
+	return defaultVisionModel
+}
+
+func (c *client) visionModel() string {
+	if strings.TrimSpace(c.visionModelName) != "" {
+		return c.visionModelName
+	}
+	return defaultVisionModel
 }
 
 func selectProviderPreferences() *providerPreferences {
@@ -759,11 +773,11 @@ func (g *descriptionStreamGate) Finish(finalText string) error {
 	return g.downstream(finalText)
 }
 
-func (c *client) GenerateLocationDescription(latitude, longitude float64, locationInfo map[string]string, scene *SceneImage, language string) (string, []Citation, error) {
-	return c.StreamLocationDescription(context.Background(), latitude, longitude, locationInfo, scene, language, nil)
+func (c *client) GenerateLocationDescription(latitude, longitude float64, locationInfo map[string]string, language string) (string, []Citation, error) {
+	return c.StreamLocationDescription(context.Background(), latitude, longitude, locationInfo, language, nil)
 }
 
-func (c *client) StreamLocationDescription(parent context.Context, latitude, longitude float64, locationInfo map[string]string, scene *SceneImage, language string, onDelta func(string) error) (string, []Citation, error) {
+func (c *client) StreamLocationDescription(parent context.Context, latitude, longitude float64, locationInfo map[string]string, language string, onDelta func(string) error) (string, []Citation, error) {
 	startTime := time.Now()
 	descTimeout := 25 * time.Second
 
@@ -843,34 +857,17 @@ func (c *client) StreamLocationDescription(parent context.Context, latitude, lon
 	if val, exists := locationInfo["natural_feature"]; exists && val != "" {
 		geoDetails.WriteString(fmt.Sprintf("- Natural Feature: %s\n", val))
 	}
-	if scene != nil && scene.Base64 != "" {
-		geoDetails.WriteString(fmt.Sprintf(
-			"\nStreet View Frame: provided (heading=%d, pitch=%d, fov=%d). Treat it as the authoritative source for what is visibly present in the current view.\n",
-			scene.Heading,
-			scene.Pitch,
-			scene.FOV,
-		))
-	} else {
-		geoDetails.WriteString("\nStreet View Frame: unavailable. Do not claim to see scene details.\n")
-	}
+	geoDetails.WriteString("\nVisual Context: no image is provided. Base the description only on location metadata and web research; do not claim to see current scene details.\n")
 
 	prompt := fmt.Sprintf(
 		"%s\n\n"+
-			"Silently call the web search tool exactly once with one precise query about this location. After that single search, synthesize the answer and do not search again. Do not announce or describe the research step; the first visible output must be Atlas's bracketed scene note.\n"+
+			"Silently call the web search tool exactly once with one precise query about this location. After that single search, synthesize the answer and do not search again. Do not announce or describe the research step; the first user-facing output must be Atlas's bracketed arrival note.\n"+
 			"Focus on the most specific geographic information available (street, establishment, or neighborhood level). "+
 			"Use broader context as supporting info. Remember: plain text only, no markdown. The app renders citations separately, so keep links and source mentions out of the prose and end on a clean sentence.\n\n"+
 			"%s",
 		geoDetails.String(),
 		outputFormat,
 	)
-
-	var userContent interface{} = prompt
-	if scene != nil && scene.Base64 != "" {
-		userContent = []visionContentPart{
-			{Type: "image_url", ImageURL: &visionImageURL{URL: sceneDataURI(scene), Detail: "high"}},
-			{Type: "text", Text: prompt},
-		}
-	}
 
 	parallelToolCalls := false
 	visibleDeltaLogged := false
@@ -886,8 +883,8 @@ func (c *client) StreamLocationDescription(parent context.Context, latitude, lon
 	}
 	streamGate := newDescriptionStreamGate(language, visibleOnDelta)
 	reqBody := visionChatRequest{
-		Model:    c.modelName,
-		Provider: selectProviderPreferences(),
+		Model:     c.modelName,
+		Reasoning: &reasoningConfig{Enabled: false},
 		Messages: []visionMessage{
 			{
 				Role:    "system",
@@ -895,7 +892,7 @@ func (c *client) StreamLocationDescription(parent context.Context, latitude, lon
 			},
 			{
 				Role:    "user",
-				Content: userContent,
+				Content: prompt,
 			},
 		},
 		Tools: []webSearchTool{{
@@ -964,11 +961,11 @@ func (c *client) StreamLocationDescription(parent context.Context, latitude, lon
 	return desc, citations, nil
 }
 
-func (c *client) GenerateDetailedLocationDescription(latitude, longitude float64, locationInfo map[string]string, scene *SceneImage, language string) (string, []Citation, error) {
-	return c.StreamDetailedLocationDescription(context.Background(), latitude, longitude, locationInfo, scene, language, nil)
+func (c *client) GenerateDetailedLocationDescription(latitude, longitude float64, locationInfo map[string]string, language string) (string, []Citation, error) {
+	return c.StreamDetailedLocationDescription(context.Background(), latitude, longitude, locationInfo, language, nil)
 }
 
-func (c *client) StreamDetailedLocationDescription(parent context.Context, latitude, longitude float64, locationInfo map[string]string, scene *SceneImage, language string, onDelta func(string) error) (string, []Citation, error) {
+func (c *client) StreamDetailedLocationDescription(parent context.Context, latitude, longitude float64, locationInfo map[string]string, language string, onDelta func(string) error) (string, []Citation, error) {
 	startTime := time.Now()
 	detailedTimeout := 35 * time.Second
 
@@ -991,16 +988,8 @@ func (c *client) StreamDetailedLocationDescription(parent context.Context, latit
 
 	outputFormat := descriptionLanguageInstruction(language)
 
-	// 构建详细分析请求
-	sceneInstruction := "No Street View frame is available. Do not claim to see specific visual details."
-	if scene != nil && scene.Base64 != "" {
-		sceneInstruction = fmt.Sprintf(
-			"A current Street View frame is attached at heading %d, pitch %d, fov %d. Use it as the authoritative source for visible details and keep off-screen claims separate.",
-			scene.Heading,
-			scene.Pitch,
-			scene.FOV,
-		)
-	}
+	// Text-only description: ground all claims in location metadata and research.
+	sceneInstruction := "No image is provided. Base the description only on location metadata and web research; do not claim to see specific current-scene details."
 	detailedPrompt := fmt.Sprintf(
 		"Your friend wants you to dig deeper into this location. Take your time and think carefully.\n"+
 			"Coordinates: %.6f, %.6f\n"+
@@ -1013,7 +1002,7 @@ func (c *client) StreamDetailedLocationDescription(parent context.Context, latit
 			"- Economy: what drives the local economy, major industries, employment\n"+
 			"- Geography and environment: terrain, climate, natural features\n"+
 			"- How this place connects to and matters within its broader region\n\n"+
-			"Silently call the web search tool exactly once with one precise query about this location. After that single search, synthesize the answer and do not search again. Do not announce or describe the research step; the first visible output must be Atlas's bracketed scene note. Cross-reference the returned sources for historical dates, demographic data, economic figures, and recent local developments. Go deeper than surface-level knowledge.\n\n"+
+			"Silently call the web search tool exactly once with one precise query about this location. After that single search, synthesize the answer and do not search again. Do not announce or describe the research step; the first user-facing output must be Atlas's bracketed arrival note. Cross-reference the returned sources for historical dates, demographic data, economic figures, and recent local developments. Go deeper than surface-level knowledge.\n\n"+
 			"Write as Atlas — warm, playful, talking to a friend. Every sentence should carry actual information. This is the explicitly requested deeper version: write 6-8 substantive body paragraphs, 2-4 sentences each. The opening bracket line and at most one later bracket aside do not count as body paragraphs.\n"+
 			"CRITICAL: pure plain text only, absolutely no markdown formatting (no asterisks, no bold, no headers, no bullet points).\n"+
 			"The app renders citations separately, so keep links, URL fragments, source lists, and trailing reference blocks out of the response body. End on a clean sentence about the place.\n"+
@@ -1021,14 +1010,6 @@ func (c *client) StreamDetailedLocationDescription(parent context.Context, latit
 			"%s",
 		latitude, longitude, locationText, sceneInstruction, outputFormat)
 
-	// 构建消息
-	var userContent interface{} = detailedPrompt
-	if scene != nil && scene.Base64 != "" {
-		userContent = []visionContentPart{
-			{Type: "image_url", ImageURL: &visionImageURL{URL: sceneDataURI(scene), Detail: "high"}},
-			{Type: "text", Text: detailedPrompt},
-		}
-	}
 	messages := []ChatMessage{
 		{Role: "system", Content: atlas.TextSystemPrompt(language)},
 	}
@@ -1047,11 +1028,11 @@ func (c *client) StreamDetailedLocationDescription(parent context.Context, latit
 	}
 	streamGate := newDescriptionStreamGate(language, visibleOnDelta)
 	reqBody := visionChatRequest{
-		Model:    c.modelName,
-		Provider: selectProviderPreferences(),
+		Model:     c.modelName,
+		Reasoning: &reasoningConfig{Enabled: false},
 		Messages: []visionMessage{
 			{Role: messages[0].Role, Content: messages[0].Content},
-			{Role: "user", Content: userContent},
+			{Role: "user", Content: detailedPrompt},
 		},
 		Tools: []webSearchTool{{
 			Type: "openrouter:web_search",
@@ -1184,11 +1165,12 @@ func (c *client) tryGenerateRegions(interest string) ([]models.Region, error) {
 	)
 
 	reqBody := chatRequest{
-		Model: c.modelName,
+		Model:     c.modelName,
+		Reasoning: &reasoningConfig{Enabled: false},
 		Messages: []chatMessage{
 			{
 				Role:    "system",
-				Content: geographerSystemPrompt, // 复用随机探索的system prompt
+				Content: regionSystemPrompt,
 			},
 			{
 				Role:    "user",
@@ -1312,19 +1294,12 @@ type visionChatRequest struct {
 	Model             string               `json:"model"`
 	Messages          []visionMessage      `json:"messages"`
 	Provider          *providerPreferences `json:"provider,omitempty"`
+	Reasoning         *reasoningConfig     `json:"reasoning,omitempty"`
 	Tools             []webSearchTool      `json:"tools,omitempty"`
 	ToolChoice        string               `json:"tool_choice,omitempty"`
 	ParallelToolCalls *bool                `json:"parallel_tool_calls,omitempty"`
 	Stream            bool                 `json:"stream,omitempty"`
 	MaxToolCalls      int                  `json:"max_tool_calls,omitempty"`
-}
-
-func sceneDataURI(scene *SceneImage) string {
-	contentType := strings.ToLower(strings.TrimSpace(scene.ContentType))
-	if contentType != "image/png" && contentType != "image/jpeg" {
-		contentType = "image/jpeg"
-	}
-	return "data:" + contentType + ";base64," + scene.Base64
 }
 
 func geoGuessUserPrompt(zoom int, language string) string {
@@ -1356,7 +1331,7 @@ func (c *client) GuessLocationFromImage(parentCtx context.Context, imageBase64 s
 	dataURI := "data:image/png;base64," + imageBase64
 
 	reqBody := visionChatRequest{
-		Model:    c.modelName,
+		Model:    c.visionModel(),
 		Provider: selectProviderPreferences(),
 		Messages: []visionMessage{
 			{

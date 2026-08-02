@@ -25,7 +25,7 @@ type MapProvider interface {
 	// SearchPlace resolves a spoken place or landmark query to a concrete map candidate.
 	SearchPlace(ctx context.Context, query string, language string) (*PlaceCandidate, error)
 
-	// GetStreetViewFrame fetches one concrete Street View frame for multimodal Atlas context.
+	// GetStreetViewFrame fetches one concrete Street View frame for Atlas Voice context.
 	GetStreetViewFrame(ctx context.Context, panoID string, view StreetViewView) (*StreetViewFrame, error)
 }
 
