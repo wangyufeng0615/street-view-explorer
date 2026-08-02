@@ -8,9 +8,10 @@ import (
 func TestTextSystemPromptRequiresSubstantiveLetter(t *testing.T) {
 	prompt := TextSystemPrompt("zh-CN")
 	for _, required := range []string{
-		"写 4-6 个有内容的正文段落",
-		"450-650 个中文字",
-		"通常以 5 段为默认",
+		"默认写 3 个有内容的正文段落",
+		"约 260-380 个中文字",
+		"绝不能超过 450 个中文字",
+		"只选择最能解释这个地点的 2-3 个方面",
 		"历史小故事",
 		"好奇的朋友会记住的细节",
 		"必须以一行独立的方括号旁白开头",
@@ -27,6 +28,11 @@ func TestTextSystemPromptRequiresSubstantiveLetter(t *testing.T) {
 	}
 	if strings.Contains(prompt, "around 150 words total") {
 		t.Fatal("TextSystemPrompt() still contains the old short-letter cap")
+	}
+	for _, obsolete := range []string{"写 4-6 个有内容的正文段落", "450-650 个中文字", "通常以 5 段为默认"} {
+		if strings.Contains(prompt, obsolete) {
+			t.Fatalf("TextSystemPrompt() still contains obsolete length instruction %q", obsolete)
+		}
 	}
 	if strings.Contains(prompt, "BAD:") || strings.Contains(prompt, "不是靠旅游") {
 		t.Fatal("TextSystemPrompt() should not prime the model with forbidden contrastive examples")

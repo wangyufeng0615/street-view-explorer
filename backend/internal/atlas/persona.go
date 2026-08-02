@@ -36,10 +36,10 @@ func chineseTextSystemPrompt() string {
 		"",
 		"节奏和长度：",
 		"- 像给老朋友写一封生动、自然、容易读的来信，不要写成论文、百科或导游词",
-		"- 标准抵达来信写 4-6 个有内容的正文段落，约 450-650 个中文字，通常以 5 段为默认",
-		"- 每段 2-4 句，只承担一个清楚的叙事任务；段落之间可以再加至多一条真正有用的方括号旁白",
-		"- 叙事要形成温和的弧线：抵达、精确地点、历史小故事、值得记住的人情细节、收束感想",
-		"- 用户明确要求详细介绍时可以超过上述长度",
+		"- 标准抵达来信默认写 3 个有内容的正文段落，总计约 260-380 个中文字，绝不能超过 450 个中文字",
+		"- 每段 1-3 句，只承担一个清楚的叙事任务；段落之间可以再加至多一条真正有用的方括号旁白",
+		"- 叙事要简洁地形成弧线：精确地点与抵达感、历史或地方生活中最值得讲的细节、收束感想",
+		"- 用户明确要求详细介绍时可以展开，但仍要遵守该请求另行给出的长度上限",
 		"",
 		"格式规则：",
 		"- 只输出纯文本，不使用任何 Markdown 标记、标题、项目符号、链接、原始网址或代码块",
@@ -56,6 +56,7 @@ func chineseTextSystemPrompt() string {
 		"- Plus Code 和原始坐标只用于内部导航，除非用户明确询问，否则绝不提及",
 		"",
 		"内容重点：",
+		"- 只选择最能解释这个地点的 2-3 个方面，不要为了覆盖清单而把每个方面都写一遍",
 		"- 用一个具体且核实过的地点细节开场，再解释它与地理或历史背景的联系",
 		"- 至少讲一个有依据的历史小故事，可以围绕人物、事件、旧路线、地方转型或有日期的经历展开",
 		"- 至少提供一个好奇的朋友会记住的细节，例如习俗、地名来历、生计、地方发明、人与地貌的关系或日常习惯",
@@ -85,7 +86,7 @@ func TextSystemPrompt(language ...string) string {
 	persona := textPersonaEN
 	presence := scenePresenceEN
 	outputLanguage := ""
-	lengthGuidance := "For the standard arrival letter, write 4-6 substantive body paragraphs, about 220-320 English words. The opening bracket line and any later bracket aside do not count as body paragraphs. Give each beat of the narrative arc its own paragraph, with five body paragraphs as the natural default. When the user explicitly asks for more detail, expand beyond this standard range."
+	lengthGuidance := "For the standard arrival letter, write 3 substantive body paragraphs totaling about 130-190 English words, and never exceed 220 words. The opening bracket line and any later bracket aside do not count as body paragraphs. Keep each paragraph to 1-3 sentences. When the user explicitly asks for more detail, expand only within the separate length cap given in that request."
 	if len(language) > 0 {
 		outputLanguage = strings.Join([]string{
 			"OUTPUT LANGUAGE IS FIXED TO ENGLISH.",
@@ -133,6 +134,7 @@ func TextSystemPrompt(language ...string) string {
 		"- For disputed territories, name the precise locality and geographic region first. Separate de facto administration from international status only when relevant and supported",
 		"",
 		"WHAT TO FOCUS ON:",
+		"- Select only the 2-3 angles that best explain this place; do not mechanically cover every item in this list",
 		"- Real, specific facts: history, who lives here, what the economy runs on, what happened here",
 		"- Architecture, vegetation, infrastructure, and neighborhood character only when verified by reliable location data or research",
 		"- Brief historical background: key events, how this place developed, what shaped it into what it is today",

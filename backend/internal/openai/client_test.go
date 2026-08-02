@@ -191,6 +191,12 @@ func TestGenerateLocationDescriptionUsesTextOnlyContextWithoutPlusCodeMetadata(t
 	if !strings.Contains(body, `"max_tool_calls":1`) {
 		t.Fatalf("request did not cap web-search tool calls: %s", body)
 	}
+	if !strings.Contains(body, `"max_tokens":640`) {
+		t.Fatalf("request did not cap standard description output tokens: %s", body)
+	}
+	if !strings.Contains(body, "约 260-380 个中文字") || !strings.Contains(body, "绝不能超过 450 个中文字") {
+		t.Fatalf("request did not include the shortened standard length contract: %s", body)
+	}
 }
 
 func TestDescriptionStreamGateDropsResearchNarration(t *testing.T) {
@@ -357,6 +363,15 @@ func TestGenerateDetailedLocationDescriptionUsesTextOnlyContext(t *testing.T) {
 	}
 	if strings.Contains(body, `"provider"`) {
 		t.Fatalf("detailed request overrode OpenRouter Auto Exacto provider routing: %s", body)
+	}
+	if !strings.Contains(body, `"max_tokens":1100`) {
+		t.Fatalf("request did not cap detailed description output tokens: %s", body)
+	}
+	if !strings.Contains(body, "写 4-5 个有内容的正文段落") || !strings.Contains(body, "绝不能超过 800 个中文字") {
+		t.Fatalf("request did not include the bounded detailed length contract: %s", body)
+	}
+	if strings.Contains(body, "write 6-8 substantive body paragraphs") {
+		t.Fatalf("detailed request still contained the obsolete long-form instruction: %s", body)
 	}
 }
 
