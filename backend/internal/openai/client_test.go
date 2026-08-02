@@ -264,6 +264,67 @@ func TestDescriptionStreamLimiterMatchesBoundedFinalText(t *testing.T) {
 	}
 }
 
+func TestDescriptionClientsReturnExactlyTheBoundedVisibleStream(t *testing.T) {
+	longDescription := "[Atlas 在地图上抵达这里]\n\n" + strings.Repeat("这是一句包含地点历史与生活信息的完整测试句子。", 40)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		payload, err := json.Marshal(map[string]interface{}{
+			"choices": []map[string]interface{}{{"delta": map[string]string{"content": longDescription}}},
+		})
+		if err != nil {
+			t.Fatalf("marshal stream payload: %v", err)
+		}
+		_, _ = w.Write([]byte("data: " + string(payload) + "\n\n"))
+		_, _ = w.Write([]byte("data: {\"choices\":[],\"usage\":{\"server_tool_use\":{\"web_search_requests\":1}}}\n\n"))
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer server.Close()
+
+	c := &client{apiKey: "test-key", modelName: "test-model", httpClient: server.Client(), endpoint: server.URL}
+	tests := []struct {
+		name     string
+		maxRunes int
+		generate func(func(string) error) (string, []Citation, error)
+	}{
+		{
+			name:     "standard",
+			maxRunes: standardDescriptionMaxRunes,
+			generate: func(onDelta func(string) error) (string, []Citation, error) {
+				return c.StreamLocationDescription(context.Background(), 1, 2, map[string]string{}, "zh", onDelta)
+			},
+		},
+		{
+			name:     "detailed",
+			maxRunes: detailedDescriptionMaxRunes,
+			generate: func(onDelta func(string) error) (string, []Citation, error) {
+				return c.StreamDetailedLocationDescription(context.Background(), 1, 2, map[string]string{}, "zh", onDelta)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var visible []string
+			desc, _, err := tt.generate(func(delta string) error {
+				visible = append(visible, delta)
+				return nil
+			})
+			if err != nil {
+				t.Fatalf("generate() error = %v", err)
+			}
+			if got := len([]rune(desc)); got > tt.maxRunes {
+				t.Fatalf("description has %d runes, max %d", got, tt.maxRunes)
+			}
+			if !strings.HasSuffix(desc, "。") {
+				t.Fatalf("description does not end at a full sentence: %q", desc)
+			}
+			if got := strings.Join(visible, ""); got != desc {
+				t.Fatalf("visible stream and final response differ:\nstream=%q\nfinal=%q", got, desc)
+			}
+		})
+	}
+}
+
 func TestDescriptionStreamGateRejectsJapaneseForChineseUI(t *testing.T) {
 	var deltas []string
 	gate := newDescriptionStreamGate("zh", func(delta string) error {
