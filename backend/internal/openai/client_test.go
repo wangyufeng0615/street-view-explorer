@@ -194,7 +194,7 @@ func TestGenerateLocationDescriptionUsesTextOnlyContextWithoutPlusCodeMetadata(t
 	if !strings.Contains(body, `"max_tokens":640`) {
 		t.Fatalf("request did not cap standard description output tokens: %s", body)
 	}
-	if !strings.Contains(body, "约 260-380 个中文字") || !strings.Contains(body, "绝不能超过 450 个中文字") {
+	if !strings.Contains(body, "正好 3 个正文段落") || !strings.Contains(body, "第一段正好 2 句") || !strings.Contains(body, "第三段写 1-2 句") {
 		t.Fatalf("request did not include the shortened standard length contract: %s", body)
 	}
 }
@@ -288,14 +288,14 @@ func TestDescriptionClientsReturnExactlyTheBoundedVisibleStream(t *testing.T) {
 	}{
 		{
 			name:     "standard",
-			maxRunes: standardDescriptionMaxRunes,
+			maxRunes: standardDescriptionEmergencyMaxRunes,
 			generate: func(onDelta func(string) error) (string, []Citation, error) {
 				return c.StreamLocationDescription(context.Background(), 1, 2, map[string]string{}, "zh", onDelta)
 			},
 		},
 		{
 			name:     "detailed",
-			maxRunes: detailedDescriptionMaxRunes,
+			maxRunes: detailedDescriptionEmergencyMaxRunes,
 			generate: func(onDelta func(string) error) (string, []Citation, error) {
 				return c.StreamDetailedLocationDescription(context.Background(), 1, 2, map[string]string{}, "zh", onDelta)
 			},
@@ -467,8 +467,11 @@ func TestGenerateDetailedLocationDescriptionUsesTextOnlyContext(t *testing.T) {
 	if !strings.Contains(body, `"max_tokens":850`) {
 		t.Fatalf("request did not cap detailed description output tokens: %s", body)
 	}
-	if !strings.Contains(body, "写 4 个有内容的正文段落") || !strings.Contains(body, "约 400-550 个中文字") || !strings.Contains(body, "绝不能超过 650 个中文字") {
+	if !strings.Contains(body, "严格写 4 个正文段落") || !strings.Contains(body, "每段正好 2 句") || !strings.Contains(body, "400-550 个中文字") {
 		t.Fatalf("request did not include the bounded detailed length contract: %s", body)
+	}
+	if !strings.Contains(body, "放不进这个结构的资料全部舍弃") || !strings.Contains(body, "不要增加问候语、署名或额外方括号旁白") {
+		t.Fatalf("detailed request did not prioritize the prompt structure over research coverage: %s", body)
 	}
 	if strings.Contains(body, "write 6-8 substantive body paragraphs") {
 		t.Fatalf("detailed request still contained the obsolete long-form instruction: %s", body)

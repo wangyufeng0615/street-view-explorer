@@ -734,8 +734,10 @@ type descriptionStreamGate struct {
 }
 
 const (
-	standardDescriptionMaxRunes = 450
-	detailedDescriptionMaxRunes = 650
+	// These are emergency fail-safes for malformed or runaway model output.
+	// Normal response length is controlled by the prompt's paragraph skeleton.
+	standardDescriptionEmergencyMaxRunes = 700
+	detailedDescriptionEmergencyMaxRunes = 1100
 )
 
 func isDescriptionSentenceEnd(r rune) bool {
@@ -982,7 +984,7 @@ func (c *client) StreamLocationDescription(parent context.Context, latitude, lon
 			return onDelta(delta)
 		}
 	}
-	streamLimiter := newDescriptionStreamLimiter(standardDescriptionMaxRunes, visibleOnDelta)
+	streamLimiter := newDescriptionStreamLimiter(standardDescriptionEmergencyMaxRunes, visibleOnDelta)
 	streamGate := newDescriptionStreamGate(language, streamLimiter.Write)
 	reqBody := visionChatRequest{
 		Model:     c.modelName,
@@ -1051,7 +1053,7 @@ func (c *client) StreamLocationDescription(parent context.Context, latitude, lon
 		stripInlineCitations(chatResp.Choices[0].Message.Content, chatResp.Choices[0].Message.Annotations),
 		language,
 	)
-	desc = limitDescriptionLength(desc, standardDescriptionMaxRunes)
+	desc = limitDescriptionLength(desc, standardDescriptionEmergencyMaxRunes)
 	if err := validateDescriptionLanguage(desc, language, false); err != nil {
 		if !streamGate.released {
 			log.Printf("[AI_ERROR] action=language_mismatch function=GenerateLocationDescription duration=%v", time.Since(startTime))
@@ -1100,23 +1102,16 @@ func (c *client) StreamDetailedLocationDescription(parent context.Context, latit
 
 	// Text-only description: ground all claims in location metadata and research.
 	sceneInstruction := "No image is provided. Base the description only on location metadata and web research; do not claim to see specific current-scene details."
-	detailedLengthInstruction := "This is the explicitly requested deeper version: write 4 substantive body paragraphs totaling about 230-330 English words, and never exceed 400 words. Keep each paragraph to 2-3 sentences. The opening bracket line and at most one later bracket aside do not count as body paragraphs."
+	detailedLengthInstruction := "Use this exact deeper structure after the opening bracket line: exactly 4 body paragraphs, exactly 2 sentences in each paragraph, then stop. Do not add a salutation, sign-off, or another bracket aside. Paragraph 1 identifies the precise place and its defining geographic fact. Paragraph 2 tells one verified historical story. Paragraph 3 explains one present-day livelihood or local-life pattern. Paragraph 4 explains why the selected facts matter and closes naturally. Aim for 230-330 English words; omit research that does not fit this structure."
 	if isChineseLanguage(language) {
-		detailedLengthInstruction = "这是用户明确要求的深入版本：写 4 个有内容的正文段落，总计约 400-550 个中文字，绝不能超过 650 个中文字。每段 2-3 句；开头的方括号旁白和正文中至多一条额外旁白不计入段落数。"
+		detailedLengthInstruction = "这是用户明确要求的深入版本。开头方括号旁白之后，严格写 4 个正文段落，每段正好 2 句，第四段写完立即停止；不要增加问候语、署名或额外方括号旁白。第一段确认精确地点和最重要的地理事实；第二段只讲一个有依据的历史故事；第三段只讲一种当代生计或地方生活方式；第四段解释这些事实为何值得记住并自然收束。正文通常控制在 400-550 个中文字，放不进这个结构的资料全部舍弃。"
 	}
 	detailedPrompt := fmt.Sprintf(
-		"Your friend wants you to dig deeper into this location. Take your time and think carefully.\n"+
+		"Your friend wants a selective deeper account of this location.\n"+
 			"Coordinates: %.6f, %.6f\n"+
 			"Location Info: %s\n"+
 			"Visual Context: %s\n\n"+
-			"Choose only the 3 most revealing angles below and cover them with real substance; do not turn the response into a checklist:\n"+
-			"- History: what happened here, how did this place evolve, key turning points\n"+
-			"- Built environment: architecture styles, urban planning, infrastructure quality\n"+
-			"- People and culture: who lives here, local customs, demographics, daily life\n"+
-			"- Economy: what drives the local economy, major industries, employment\n"+
-			"- Geography and environment: terrain, climate, natural features\n"+
-			"- How this place connects to and matters within its broader region\n\n"+
-			"Silently call the web search tool exactly once with one precise query about this location. After that single search, synthesize the answer and do not search again. Do not announce or describe the research step; the first user-facing output must be Atlas's bracketed arrival note. Cross-reference the returned sources for historical dates, demographic data, economic figures, and recent local developments. Go deeper than surface-level knowledge.\n\n"+
+			"Silently call the web search tool exactly once with one precise query about this location. After that single search, synthesize the answer and do not search again. Do not announce or describe the research step; the first user-facing output must be Atlas's bracketed arrival note. Verify only the claims selected for the four-paragraph structure; discard other research instead of adding it to the answer.\n\n"+
 			"Write as Atlas — warm, playful, talking to a friend. Every sentence should carry actual information. %s\n"+
 			"CRITICAL: pure plain text only, absolutely no markdown formatting (no asterisks, no bold, no headers, no bullet points).\n"+
 			"The app renders citations separately, so keep links, URL fragments, source lists, and trailing reference blocks out of the response body. End on a clean sentence about the place.\n"+
@@ -1140,7 +1135,7 @@ func (c *client) StreamDetailedLocationDescription(parent context.Context, latit
 			return onDelta(delta)
 		}
 	}
-	streamLimiter := newDescriptionStreamLimiter(detailedDescriptionMaxRunes, visibleOnDelta)
+	streamLimiter := newDescriptionStreamLimiter(detailedDescriptionEmergencyMaxRunes, visibleOnDelta)
 	streamGate := newDescriptionStreamGate(language, streamLimiter.Write)
 	reqBody := visionChatRequest{
 		Model:     c.modelName,
@@ -1202,7 +1197,7 @@ func (c *client) StreamDetailedLocationDescription(parent context.Context, latit
 		stripInlineCitations(chatResp.Choices[0].Message.Content, chatResp.Choices[0].Message.Annotations),
 		language,
 	)
-	result = limitDescriptionLength(result, detailedDescriptionMaxRunes)
+	result = limitDescriptionLength(result, detailedDescriptionEmergencyMaxRunes)
 	if err := validateDescriptionLanguage(result, language, false); err != nil {
 		if !streamGate.released {
 			log.Printf("[AI_ERROR] action=language_mismatch function=GenerateDetailedLocationDescription duration=%v", time.Since(startTime))

@@ -8,12 +8,15 @@ import (
 func TestTextSystemPromptRequiresSubstantiveLetter(t *testing.T) {
 	prompt := TextSystemPrompt("zh-CN")
 	for _, required := range []string{
-		"默认写 3 个有内容的正文段落",
-		"约 260-380 个中文字",
-		"绝不能超过 450 个中文字",
-		"只选择最能解释这个地点的 2-3 个方面",
-		"历史小故事",
-		"好奇的朋友会记住的细节",
+		"正好 3 个正文段落",
+		"第一段正好 2 句",
+		"第二段正好 2 句",
+		"第三段写 1-2 句",
+		"260-380 个中文字",
+		"不要增加问候语、署名或额外方括号旁白",
+		"只选择最能解释这个地点的 2 个信息点",
+		"历史小故事与地方生活细节中二选一",
+		"第三段只能把前两段中的一个信息点连接到当代生计、日常习惯或近年变化",
 		"必须以一行独立的方括号旁白开头",
 		"不计入正文段落",
 		"同时核对具体地点",
@@ -29,7 +32,7 @@ func TestTextSystemPromptRequiresSubstantiveLetter(t *testing.T) {
 	if strings.Contains(prompt, "around 150 words total") {
 		t.Fatal("TextSystemPrompt() still contains the old short-letter cap")
 	}
-	for _, obsolete := range []string{"写 4-6 个有内容的正文段落", "450-650 个中文字", "通常以 5 段为默认"} {
+	for _, obsolete := range []string{"写 4-6 个有内容的正文段落", "450-650 个中文字", "通常以 5 段为默认", "绝不能超过 450 个中文字"} {
 		if strings.Contains(prompt, obsolete) {
 			t.Fatalf("TextSystemPrompt() still contains obsolete length instruction %q", obsolete)
 		}
