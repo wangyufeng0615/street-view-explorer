@@ -1102,9 +1102,9 @@ func (c *client) StreamDetailedLocationDescription(parent context.Context, latit
 
 	// Text-only description: ground all claims in location metadata and research.
 	sceneInstruction := "No image is provided. Base the description only on location metadata and web research; do not claim to see specific current-scene details."
-	detailedLengthInstruction := "Use this exact deeper structure after the opening bracket line: exactly 4 body paragraphs, exactly 2 sentences in each paragraph, then stop. Do not add a salutation, sign-off, or another bracket aside. Paragraph 1 identifies the precise place and its defining geographic fact. Paragraph 2 tells one verified historical story. Paragraph 3 explains one present-day livelihood or local-life pattern. Paragraph 4 explains why the selected facts matter and closes naturally. Aim for 230-330 English words; omit research that does not fit this structure."
+	detailedLengthInstruction := "Use this exact deeper structure after the opening bracket line: exactly 4 body paragraphs, exactly 2 sentences in each paragraph, then stop. Do not add a salutation, sign-off, or another bracket aside. Paragraph 1 identifies the precise place and its defining geographic fact. Paragraph 2 tells one verified historical story. Paragraph 3 explains one present-day livelihood or local-life pattern. Paragraph 4 explains why the selected facts matter and closes naturally. Across these 8 sentences, include one honest first-person reaction and one brief aside to your friend, vary sentence length, and avoid report-like transitions. Aim for 230-330 English words; omit research that does not fit this structure."
 	if isChineseLanguage(language) {
-		detailedLengthInstruction = "这是用户明确要求的深入版本。开头方括号旁白之后，严格写 4 个正文段落，每段正好 2 句，第四段写完立即停止；不要增加问候语、署名或额外方括号旁白。第一段确认精确地点和最重要的地理事实；第二段只讲一个有依据的历史故事；第三段只讲一种当代生计或地方生活方式；第四段解释这些事实为何值得记住并自然收束。正文通常控制在 400-550 个中文字，放不进这个结构的资料全部舍弃。"
+		detailedLengthInstruction = "这是用户明确要求的深入版本。开头方括号旁白之后，严格写 4 个正文段落，每段正好 2 句，第四段写完立即停止；不要增加问候语、署名或额外方括号旁白。第一段确认精确地点和最重要的地理事实；第二段只讲一个有依据的历史故事；第三段只讲一种当代生计或地方生活方式；第四段解释这些事实为何值得记住并自然收束。在这 8 句里自然放入一次第一人称反应和一次对老朋友的轻声插话，并让句子有长有短；不要使用报告式过渡词。正文通常控制在 400-550 个中文字，放不进这个结构的资料全部舍弃。"
 	}
 	detailedPrompt := fmt.Sprintf(
 		"Your friend wants a selective deeper account of this location.\n"+

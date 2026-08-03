@@ -209,6 +209,36 @@
     animation: atlasThinkingText 2.2s ease-in-out infinite;
 }
 
+.atlas-thinking-trail {
+    display: grid;
+    gap: 6px;
+    width: min(72%, 250px);
+}
+
+.atlas-thinking-trail span {
+    display: block;
+    height: 2px;
+    border-radius: 999px;
+    background: linear-gradient(
+        90deg,
+        rgba(168, 80, 42, 0.12),
+        rgba(168, 80, 42, 0.36),
+        rgba(168, 80, 42, 0.12)
+    );
+    background-size: 180% 100%;
+    animation: atlasThinkingTrail 2.2s ease-in-out infinite;
+}
+
+.atlas-thinking-trail span:nth-child(2) {
+    width: 82%;
+    animation-delay: 0.14s;
+}
+
+.atlas-thinking-trail span:nth-child(3) {
+    width: 58%;
+    animation-delay: 0.28s;
+}
+
 .atlas-thinking-indicator--detailed {
     min-height: 48px;
     margin-top: 10px;
@@ -230,6 +260,11 @@
 @keyframes atlasThinkingText {
     0%, 100% { opacity: 0.58; }
     50% { opacity: 0.92; }
+}
+
+@keyframes atlasThinkingTrail {
+    0%, 100% { opacity: 0.42; background-position: 100% 0; }
+    50% { opacity: 0.9; background-position: 0 0; }
 }
 
 .ai-error {
@@ -519,6 +554,10 @@
 
     .atlas-thinking-title {
         font-size: 12.5px;
+    }
+
+    .atlas-thinking-trail {
+        width: min(74%, 210px);
     }
 
     .atlas-thinking-indicator--detailed {

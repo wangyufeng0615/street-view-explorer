@@ -197,6 +197,9 @@ func TestGenerateLocationDescriptionUsesTextOnlyContextWithoutPlusCodeMetadata(t
 	if !strings.Contains(body, "正好 3 个正文段落") || !strings.Contains(body, "第一段正好 2 句") || !strings.Contains(body, "第三段写 1-2 句") {
 		t.Fatalf("request did not include the shortened standard length contract: %s", body)
 	}
+	if !strings.Contains(body, "一次第一人称反应") || !strings.Contains(body, "一次对老朋友的轻声插话") || !strings.Contains(body, "至少安排一句简短自然的话") {
+		t.Fatalf("request did not include the human voice contract: %s", body)
+	}
 }
 
 func TestDescriptionStreamGateDropsResearchNarration(t *testing.T) {
@@ -469,6 +472,9 @@ func TestGenerateDetailedLocationDescriptionUsesTextOnlyContext(t *testing.T) {
 	}
 	if !strings.Contains(body, "严格写 4 个正文段落") || !strings.Contains(body, "每段正好 2 句") || !strings.Contains(body, "400-550 个中文字") {
 		t.Fatalf("request did not include the bounded detailed length contract: %s", body)
+	}
+	if !strings.Contains(body, "一次第一人称反应") || !strings.Contains(body, "一次对老朋友的轻声插话") || !strings.Contains(body, "不要使用报告式过渡词") {
+		t.Fatalf("detailed request did not include the human voice contract: %s", body)
 	}
 	if !strings.Contains(body, "放不进这个结构的资料全部舍弃") || !strings.Contains(body, "不要增加问候语、署名或额外方括号旁白") {
 		t.Fatalf("detailed request did not prioritize the prompt structure over research coverage: %s", body)

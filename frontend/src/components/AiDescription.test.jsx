@@ -9,9 +9,9 @@ vi.mock("../services/api", () => ({
 }));
 
 const translations = {
-  "ai.thinkingTitle": "Atlas 正在观察…",
+  "ai.thinkingTitle": "Atlas 正翻着地图…",
   "ai.waitingForAnalysis": "Atlas 旅行中…",
-  "ai.loadingDetailedDescription": "Atlas 正在深入了解…",
+  "ai.loadingDetailedDescription": "我再往深处找找…",
   "ai.tellMeMore": "Atlas，再多讲讲",
 };
 
@@ -48,11 +48,12 @@ describe("AiDescription thinking states", () => {
 
     const status = screen.getByRole("status");
     expect(status).toHaveAttribute("aria-busy", "true");
-    expect(status).toHaveAccessibleName("Atlas 正在观察…");
-    expect(screen.getByText("Atlas 正在观察…")).toBeInTheDocument();
+    expect(status).toHaveAccessibleName("Atlas 正翻着地图…");
+    expect(screen.getAllByText("Atlas 正翻着地图…")).toHaveLength(1);
+    expect(status).not.toHaveTextContent("Atlas 正翻着地图…");
   });
 
-  it("uses the same thinking language for a pending deep description", async () => {
+  it("uses first-person language for a pending deep description", async () => {
     streamLocationDetailedDescription.mockImplementation(
       () => new Promise(() => {}),
     );
@@ -70,9 +71,9 @@ describe("AiDescription thinking states", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Atlas，再多讲讲" }));
 
-    expect(await screen.findByText("Atlas 正在深入了解…")).toBeInTheDocument();
+    expect(await screen.findByText("我再往深处找找…")).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveAccessibleName(
-      "Atlas 正在深入了解…",
+      "我再往深处找找…",
     );
   });
 
@@ -90,7 +91,7 @@ describe("AiDescription thinking states", () => {
     );
 
     expect(screen.getByText("Atlas 已经开始写这封来信。")).toBeInTheDocument();
-    expect(screen.queryByText("Atlas 正在观察…")).not.toBeInTheDocument();
+    expect(screen.queryByText("Atlas 正翻着地图…")).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Atlas，再多讲讲" }),
     ).not.toBeInTheDocument();
@@ -116,13 +117,13 @@ describe("AiDescription thinking states", () => {
     const { rerender } = render(<AiDescription {...props} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Atlas，再多讲讲" }));
-    expect(await screen.findByText("Atlas 正在深入了解…")).toBeInTheDocument();
+    expect(await screen.findByText("我再往深处找找…")).toBeInTheDocument();
 
     languageState.current = "en";
     rerender(<AiDescription {...props} description="A mountain road." />);
 
     await waitFor(() => expect(receivedSignal.aborted).toBe(true));
-    expect(screen.queryByText("Atlas 正在深入了解…")).not.toBeInTheDocument();
+    expect(screen.queryByText("我再往深处找找…")).not.toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Atlas，再多讲讲" }),
     ).toBeInTheDocument();

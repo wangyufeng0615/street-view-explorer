@@ -84,6 +84,7 @@ const ThinkingIndicator = memo(function ThinkingIndicator({
   title,
   variant = "primary",
   elementRef = null,
+  showTitle = true,
 }) {
   return (
     <div
@@ -99,7 +100,15 @@ const ThinkingIndicator = memo(function ThinkingIndicator({
           <CompassGlyph />
         </div>
       </div>
-      <div className="atlas-thinking-title">{title}</div>
+      {showTitle ? (
+        <div className="atlas-thinking-title">{title}</div>
+      ) : (
+        <div className="atlas-thinking-trail" aria-hidden="true">
+          <span />
+          <span />
+          <span />
+        </div>
+      )}
     </div>
   );
 });
@@ -183,6 +192,11 @@ const AiDescription = memo(
     const isChinese = activeLanguage.startsWith("zh");
     const sectionTitle = isChinese ? "Atlas 说…" : "Atlas says...";
     const citationsLabel = isChinese ? "出处" : "Sources";
+    const primaryStatusTitle =
+      retries > 0 ? t("ai.retrying", { retries }) : t("ai.thinkingTitle");
+    const visibleSectionTitle = shouldShowLoading
+      ? primaryStatusTitle
+      : sectionTitle;
 
     const handleTellMeMore = useCallback(async () => {
       if (!panoId || isLoadingDetailed || hasRequestedDetailed) return;
@@ -303,7 +317,7 @@ const AiDescription = memo(
         const reduceMotion = window.matchMedia?.(
           "(prefers-reduced-motion: reduce)",
         ).matches;
-        detailedLoadingRef.current?.scrollIntoView({
+        detailedLoadingRef.current?.scrollIntoView?.({
           behavior: reduceMotion ? "auto" : "smooth",
           block: "nearest",
         });
@@ -317,7 +331,7 @@ const AiDescription = memo(
         <div className="ai-description-header">
           <div className="ai-description-title">
             <CompassGlyph className="ai-description-glyph" />
-            <span>{sectionTitle}</span>
+            <span>{visibleSectionTitle}</span>
           </div>
           {voiceControl && (
             <div className="ai-description-voice">{voiceControl}</div>
@@ -330,11 +344,8 @@ const AiDescription = memo(
         >
           {shouldShowLoading ? (
             <ThinkingIndicator
-              title={
-                retries > 0
-                  ? t("ai.retrying", { retries })
-                  : t("ai.thinkingTitle")
-              }
+              title={primaryStatusTitle}
+              showTitle={false}
             />
           ) : error ? (
             <div className="ai-error">
