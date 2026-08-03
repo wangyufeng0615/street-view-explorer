@@ -179,9 +179,8 @@ const AiDescription = memo(
     const detailedAbortRef = useRef(null);
 
     const shouldShowLoading = !description && (isLoading || (panoId && !error));
-    const isChinese = (i18n.resolvedLanguage || i18n.language || "").startsWith(
-      "zh",
-    );
+    const activeLanguage = i18n.resolvedLanguage || i18n.language || "en";
+    const isChinese = activeLanguage.startsWith("zh");
     const sectionTitle = isChinese ? "Atlas 说…" : "Atlas says...";
     const citationsLabel = isChinese ? "出处" : "Sources";
 
@@ -205,11 +204,14 @@ const AiDescription = memo(
       try {
         const result = await streamLocationDetailedDescription(
           panoId,
-          i18n.language,
+          activeLanguage,
           controller.signal,
           view || { heading, pitch: 0, fov: 90 },
-          (delta) =>
-            setDetailedDescription((current) => `${current || ""}${delta}`),
+          (delta) => {
+            if (!controller.signal.aborted) {
+              setDetailedDescription((current) => `${current || ""}${delta}`);
+            }
+          },
         );
         if (controller.signal.aborted) return;
         const nextDescription = result.data?.description?.trim();
@@ -231,7 +233,7 @@ const AiDescription = memo(
       description,
       hasRequestedDetailed,
       heading,
-      i18n.language,
+      activeLanguage,
       isLoadingDetailed,
       panoId,
       view,
@@ -252,11 +254,14 @@ const AiDescription = memo(
       try {
         const result = await streamLocationDetailedDescription(
           panoId,
-          i18n.language,
+          activeLanguage,
           controller.signal,
           view || { heading, pitch: 0, fov: 90 },
-          (delta) =>
-            setDetailedDescription((current) => `${current || ""}${delta}`),
+          (delta) => {
+            if (!controller.signal.aborted) {
+              setDetailedDescription((current) => `${current || ""}${delta}`);
+            }
+          },
         );
         if (controller.signal.aborted) return;
         const nextDescription = result.data?.description?.trim();
@@ -275,7 +280,7 @@ const AiDescription = memo(
           setIsLoadingDetailed(false);
         }
       }
-    }, [heading, i18n.language, isLoadingDetailed, panoId, t, view]);
+    }, [activeLanguage, heading, isLoadingDetailed, panoId, t, view]);
 
     useEffect(() => {
       detailedAbortRef.current?.abort();
@@ -289,7 +294,7 @@ const AiDescription = memo(
       return () => {
         detailedAbortRef.current?.abort();
       };
-    }, [panoId]);
+    }, [activeLanguage, panoId]);
 
     useEffect(() => {
       if (!isLoadingDetailed || !detailedLoadingRef.current) return undefined;

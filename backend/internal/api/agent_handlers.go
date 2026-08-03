@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -41,6 +42,7 @@ func NewAgentHandlers(repo repositories.Repository, limiter repositories.RateLim
 const maxAgentTokenLength = 128
 
 var agentTokenRegex = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
+var publicLetterImageRegex = regexp.MustCompile(`!\[([^\]]*)\]\(([^)]+)\)`)
 
 // extractToken reads the bearer token from Authorization header or ?token= query.
 func extractToken(c *gin.Context) string {
@@ -71,6 +73,40 @@ func generateID() string {
 	b := make([]byte, 16)
 	rand.Read(b)
 	return hex.EncodeToString(b)
+}
+
+func journeyStopForPano(stops []models.AgentJourneyStop, panoID string) (models.AgentJourneyStop, bool) {
+	for _, stop := range stops {
+		if stop.PanoID == panoID {
+			return stop, true
+		}
+	}
+	return models.AgentJourneyStop{}, false
+}
+
+// publicLetter removes bearer-equivalent traveler IDs and converts legacy
+// authenticated image URLs to stable stop references before publication.
+func publicLetter(letter, travelerToken string, stops []models.AgentJourneyStop) string {
+	safe := publicLetterImageRegex.ReplaceAllStringFunc(letter, func(markdown string) string {
+		parts := publicLetterImageRegex.FindStringSubmatch(markdown)
+		if len(parts) != 3 {
+			return markdown
+		}
+
+		parsed, err := url.Parse(strings.TrimSpace(parts[2]))
+		if err != nil || parsed.Path != "/api/v1/agent/streetview" {
+			return markdown
+		}
+		stop, ok := journeyStopForPano(stops, parsed.Query().Get("pano_id"))
+		if !ok {
+			return ""
+		}
+		return fmt.Sprintf("![%s](stop_%d)", parts[1], stop.StopNumber)
+	})
+	if len(travelerToken) >= 7 {
+		safe = strings.ReplaceAll(safe, travelerToken, "[traveler-id]")
+	}
+	return safe
 }
 
 // ==================== Handlers ====================
@@ -104,7 +140,11 @@ func (ah *AgentHandlers) CreateJourney(c *gin.Context) {
 
 	// Rate limit: 10 journeys/hour per token
 	if ah.limiter != nil {
-		allowed, _, _ := ah.limiter.CheckAndIncrement("agent_create:"+req.Token, 10, time.Hour)
+		allowed, _, err := ah.limiter.CheckAndIncrement("agent_create:"+req.Token, 10, time.Hour)
+		if err != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"success": false, "error": "Rate limit service unavailable"})
+			return
+		}
 		if !allowed {
 			c.JSON(http.StatusTooManyRequests, gin.H{"success": false, "error": "Too many journeys created, try again later"})
 			return
@@ -289,13 +329,21 @@ func (ah *AgentHandlers) AgentExplore(c *gin.Context) {
 
 	if ah.limiter != nil {
 		// Per-token: 60 explores/hour
-		allowed, _, _ := ah.limiter.CheckAndIncrement("agent_explore:"+token, 60, time.Hour)
+		allowed, _, err := ah.limiter.CheckAndIncrement("agent_explore:"+token, 60, time.Hour)
+		if err != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"success": false, "error": "Rate limit service unavailable"})
+			return
+		}
 		if !allowed {
 			c.JSON(http.StatusTooManyRequests, gin.H{"success": false, "error": "Rate limit exceeded, try again later"})
 			return
 		}
 		// Per-IP global: 200 explores/hour (prevents token rotation abuse)
-		allowed, _, _ = ah.limiter.CheckAndIncrement("agent_explore_ip:"+clientIP(c), 200, time.Hour)
+		allowed, _, err = ah.limiter.CheckAndIncrement("agent_explore_ip:"+clientIP(c), 200, time.Hour)
+		if err != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"success": false, "error": "Rate limit service unavailable"})
+			return
+		}
 		if !allowed {
 			c.JSON(http.StatusTooManyRequests, gin.H{"success": false, "error": "Rate limit exceeded"})
 			return
@@ -380,8 +428,16 @@ func (ah *AgentHandlers) SaveJourneyStop(c *gin.Context) {
 	}
 
 	// Limit field sizes
-	if len(req.JournalEntry) > 10000 || len(req.AIDescription) > 10000 || len(req.NextReasoning) > 5000 {
+	if len(req.JournalEntry) > 10000 || len(req.AIDescription) > 10000 || len(req.NextReasoning) > 5000 || len(req.LocationInfo) > 10000 {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "Field content too long"})
+		return
+	}
+	if req.PanoID != "" && (len(req.PanoID) > 100 || !panoIDRegex.MatchString(req.PanoID)) {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "Invalid pano_id"})
+		return
+	}
+	if req.PhotoHeading < 0 || req.PhotoHeading > 360 {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "Invalid photo_heading"})
 		return
 	}
 
@@ -473,7 +529,7 @@ func (ah *AgentHandlers) SaveJourneyLetter(c *gin.Context) {
 		return
 	}
 
-	if len(req.Letter) > 10*1024*1024 { // 10MB
+	if len(req.Letter) > 1024*1024 { // Align with the global request-body ceiling.
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "Letter content too long"})
 		return
 	}
@@ -505,7 +561,11 @@ func (ah *AgentHandlers) GetPublicLetter(c *gin.Context) {
 	}
 
 	// Only return letter + photo info for each stop (no journal/reasoning)
-	stops, _ := ah.repo.GetJourneyStops(id)
+	stops, err := ah.repo.GetJourneyStops(id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": PublicErrorMessage(err)})
+		return
+	}
 	type publicStop struct {
 		StopNumber   int    `json:"stop_number"`
 		PanoID       string `json:"pano_id"`
@@ -530,7 +590,7 @@ func (ah *AgentHandlers) GetPublicLetter(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data": gin.H{
-			"letter":     journey.Letter,
+			"letter":     publicLetter(journey.Letter, journey.Token, stops),
 			"start_lat":  journey.StartLat,
 			"start_lng":  journey.StartLng,
 			"created_at": journey.CreatedAt,
@@ -562,6 +622,15 @@ func (ah *AgentHandlers) StreetViewImage(c *gin.Context) {
 		journey, err := ah.repo.GetJourney(journeyID)
 		if err != nil || journey == nil || journey.Letter == "" {
 			c.JSON(http.StatusForbidden, gin.H{"success": false, "error": "Invalid journey_id or letter not published"})
+			return
+		}
+		stops, err := ah.repo.GetJourneyStops(journeyID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "Failed to validate journey image"})
+			return
+		}
+		if _, ok := journeyStopForPano(stops, c.Query("pano_id")); !ok {
+			c.JSON(http.StatusForbidden, gin.H{"success": false, "error": "Image does not belong to this journey"})
 			return
 		}
 	}
@@ -598,14 +667,22 @@ func (ah *AgentHandlers) StreetViewImage(c *gin.Context) {
 	if ah.limiter != nil {
 		// Per-token rate limit (only when using token auth)
 		if token != "" {
-			allowed, _, _ := ah.limiter.CheckAndIncrement("agent_sv_img:"+token, 120, time.Hour)
+			allowed, _, err := ah.limiter.CheckAndIncrement("agent_sv_img:"+token, 120, time.Hour)
+			if err != nil {
+				c.JSON(http.StatusServiceUnavailable, gin.H{"success": false, "error": "Rate limit service unavailable"})
+				return
+			}
 			if !allowed {
 				c.JSON(http.StatusTooManyRequests, gin.H{"success": false, "error": "Rate limit exceeded"})
 				return
 			}
 		}
 		// Per-IP global: 300 images/hour (always applied)
-		allowed, _, _ := ah.limiter.CheckAndIncrement("agent_sv_img_ip:"+clientIP(c), 300, time.Hour)
+		allowed, _, err := ah.limiter.CheckAndIncrement("agent_sv_img_ip:"+clientIP(c), 300, time.Hour)
+		if err != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"success": false, "error": "Rate limit service unavailable"})
+			return
+		}
 		if !allowed {
 			c.JSON(http.StatusTooManyRequests, gin.H{"success": false, "error": "Rate limit exceeded"})
 			return

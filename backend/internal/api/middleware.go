@@ -20,6 +20,26 @@ var (
 	sessionIDRegex = regexp.MustCompile(`^[a-zA-Z0-9-_]{32,64}$`)
 )
 
+func isCostSensitiveEndpoint(endpoint string) bool {
+	switch endpoint {
+	case "/api/v1/locations/random",
+		"/api/v1/locations/search",
+		"/api/v1/locations/:panoId/description",
+		"/api/v1/locations/:panoId/detailed-description",
+		"/api/v1/locations/:panoId/streetview-frame",
+		"/api/v1/geo/ai-guess",
+		"/api/v1/geo/satellite",
+		"/api/v1/geo/online/rooms/:roomId/image",
+		"/api/v1/realtime/client-secret",
+		"/api/v1/realtime/calls",
+		"/api/v1/realtime/ws",
+		"/api/v1/realtime/doubao-tts":
+		return true
+	default:
+		return false
+	}
+}
+
 // RateLimitMiddleware 实现基于限流器的请求限流
 func RateLimitMiddleware(rateLimiter repositories.RateLimiter) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -46,6 +66,12 @@ func RateLimitMiddleware(rateLimiter repositories.RateLimiter) gin.HandlerFunc {
 		case "/api/v1/locations/:panoId/streetview-frame":
 			maxRequests = 60 // Atlas 视觉上下文；防止自动旋转意外刷图
 			window = 60 * time.Second
+		case "/api/v1/locations/:panoId/description":
+			maxRequests = 12
+			window = 60 * time.Second
+		case "/api/v1/locations/:panoId/detailed-description":
+			maxRequests = 6
+			window = 60 * time.Second
 		case "/api/v1/realtime/client-secret",
 			"/api/v1/realtime/calls",
 			"/api/v1/realtime/ws",
@@ -68,6 +94,14 @@ func RateLimitMiddleware(rateLimiter repositories.RateLimiter) gin.HandlerFunc {
 		key := "ratelimit:" + clientIP + ":" + endpoint
 		allowed, _, err := rateLimiter.CheckAndIncrement(key, maxRequests, window)
 		if err != nil {
+			if isCostSensitiveEndpoint(endpoint) {
+				c.JSON(http.StatusServiceUnavailable, gin.H{
+					"success": false,
+					"error":   "成本保护暂时不可用，请稍后再试",
+				})
+				c.Abort()
+				return
+			}
 			c.Next() // 限流器错误时不阻止请求
 			return
 		}
@@ -119,7 +153,11 @@ func UserRateLimitMiddleware(rateLimiter repositories.RateLimiter) gin.HandlerFu
 		userKey := "user_ratelimit:preference:" + sessionID
 		userAllowed, userRemaining, err := rateLimiter.CheckAndIncrement(userKey, userMaxRequests, userWindow)
 		if err != nil {
-			c.Next()
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"success": false,
+				"error":   "成本保护暂时不可用，请稍后再试",
+			})
+			c.Abort()
 			return
 		}
 
@@ -127,7 +165,11 @@ func UserRateLimitMiddleware(rateLimiter repositories.RateLimiter) gin.HandlerFu
 		globalKey := "global_ratelimit:preference"
 		globalAllowed, globalRemaining, err := rateLimiter.CheckAndIncrement(globalKey, globalMaxRequests, globalWindow)
 		if err != nil {
-			c.Next()
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"success": false,
+				"error":   "成本保护暂时不可用，请稍后再试",
+			})
+			c.Abort()
 			return
 		}
 
@@ -280,17 +322,17 @@ func RequestLoggingMiddleware() gin.HandlerFunc {
 		if param.StatusCode >= 400 {
 			logger.Error("request_failed", "HTTP request failed", nil, map[string]interface{}{
 				"method":     param.Method,
-				"path":       param.Path,
+				"path":       param.Request.URL.Path,
 				"status":     param.StatusCode,
 				"duration":   param.Latency.String(),
 				"client_ip":  param.ClientIP,
 				"user_agent": param.Request.UserAgent(),
 			})
-		} else if strings.HasPrefix(param.Path, "/api/v1/agent/") {
+		} else if strings.HasPrefix(param.Request.URL.Path, "/api/v1/agent/") {
 			// Log successful agent requests for observability
 			logger.Info("agent_request", "Agent API request", map[string]interface{}{
 				"method":   param.Method,
-				"path":     param.Path,
+				"path":     param.Request.URL.Path,
 				"status":   param.StatusCode,
 				"duration": param.Latency.String(),
 			})

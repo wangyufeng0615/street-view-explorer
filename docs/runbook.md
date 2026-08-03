@@ -282,6 +282,8 @@ Use `--skip-proxy-check` only when the proxy health check itself is unreliable b
 ### Rate limits
 
 - SQLite-backed rate limiting is enabled by default.
+- Paid description limits are 12 standard and 6 detailed requests per IP per minute, with global hourly budgets of 360 and 120 respectively. A limiter storage failure intentionally returns `503` before an OpenRouter request is made.
+- Odyssey clients should send traveler IDs only as `Authorization: Bearer <ID>`. Query-token support is legacy compatibility and must not be used in generated letters or browser URLs.
 - `/api/v1/locations/random` has a per-IP limit of 120 requests per minute.
 - `/api/v1/locations/search` has a per-IP limit of 45 requests per minute.
 - `/api/v1/geo/ai-guess` has a per-IP limit of 30 requests per minute.

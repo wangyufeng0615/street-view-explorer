@@ -8,7 +8,12 @@ vi.mock("../i18n", () => ({
   default: { language: "zh", resolvedLanguage: "zh" },
 }));
 
-import { getVisitHistory, streamLocationDescription } from "./api";
+import {
+  getAgentJourneyDetail,
+  getAgentJourneys,
+  getVisitHistory,
+  streamLocationDescription,
+} from "./api";
 
 function streamingResponse(chunks) {
   const encoded = chunks.map((chunk) => new TextEncoder().encode(chunk));
@@ -101,5 +106,26 @@ describe("visit history client", () => {
     expect(fetchMock.mock.calls[0][0]).toContain(
       "/api/v1/visits?limit=5000&offset=0&source=random",
     );
+  });
+});
+
+describe("Agent journey authentication", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("keeps the traveler token out of journey URLs", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      text: async () => JSON.stringify({ success: true, data: {} }),
+    });
+
+    await getAgentJourneys("secret-traveler");
+    await getAgentJourneyDetail("journey/with slash", "secret-traveler");
+
+    for (const [url, options] of fetchMock.mock.calls) {
+      expect(url).not.toContain("secret-traveler");
+      expect(options.headers.Authorization).toBe("Bearer secret-traveler");
+    }
+    expect(fetchMock.mock.calls[1][0]).toContain("journey%2Fwith%20slash");
   });
 });

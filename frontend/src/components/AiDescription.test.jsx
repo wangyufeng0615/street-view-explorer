@@ -1,5 +1,5 @@
 import React from "react";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import AiDescription from "./AiDescription";
 import { streamLocationDetailedDescription } from "../services/api";
@@ -15,16 +15,22 @@ const translations = {
   "ai.tellMeMore": "Atlas，再多讲讲",
 };
 
+const languageState = vi.hoisted(() => ({ current: "zh" }));
+
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
     t: (key) => translations[key] || key,
-    i18n: { language: "zh", resolvedLanguage: "zh" },
+    i18n: {
+      language: languageState.current,
+      resolvedLanguage: languageState.current,
+    },
   }),
 }));
 
 describe("AiDescription thinking states", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    languageState.current = "zh";
   });
 
   it("renders an accessible, prominent status while the first description loads", () => {
@@ -88,5 +94,37 @@ describe("AiDescription thinking states", () => {
     expect(
       screen.queryByRole("button", { name: "Atlas，再多讲讲" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("aborts and clears a detailed response when the UI language changes", async () => {
+    let receivedSignal;
+    streamLocationDetailedDescription.mockImplementation(
+      (_panoId, _language, signal) => {
+        receivedSignal = signal;
+        return new Promise(() => {});
+      },
+    );
+    const props = {
+      isLoading: false,
+      error: null,
+      description: "眼前是一条山路。",
+      citations: null,
+      retries: 0,
+      panoId: "pano-language",
+      onRetry: vi.fn(),
+    };
+    const { rerender } = render(<AiDescription {...props} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Atlas，再多讲讲" }));
+    expect(await screen.findByText("Atlas 正在深入了解…")).toBeInTheDocument();
+
+    languageState.current = "en";
+    rerender(<AiDescription {...props} description="A mountain road." />);
+
+    await waitFor(() => expect(receivedSignal.aborted).toBe(true));
+    expect(screen.queryByText("Atlas 正在深入了解…")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Atlas，再多讲讲" }),
+    ).toBeInTheDocument();
   });
 });

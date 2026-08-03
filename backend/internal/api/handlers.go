@@ -192,19 +192,55 @@ type ModeServices struct {
 }
 
 type Handlers struct {
-	global *ModeServices
+	global            *ModeServices
+	descriptionBudget repositories.RateLimiter
 }
 
 func NewHandlers(
 	locationService *services.LocationService,
 	aiService *services.AIService,
+	descriptionBudget ...repositories.RateLimiter,
 ) *Handlers {
-	return &Handlers{
+	handlers := &Handlers{
 		global: &ModeServices{
 			LocationService: locationService,
 			AIService:       aiService,
 		},
 	}
+	if len(descriptionBudget) > 0 {
+		handlers.descriptionBudget = descriptionBudget[0]
+	}
+	return handlers
+}
+
+func (h *Handlers) reserveDescriptionBudget(c *gin.Context, detailed bool) bool {
+	if h.descriptionBudget == nil {
+		return true
+	}
+
+	key := "global_ratelimit:description:standard"
+	maxRequests := 360
+	if detailed {
+		key = "global_ratelimit:description:detailed"
+		maxRequests = 120
+	}
+	allowed, _, err := h.descriptionBudget.CheckAndIncrement(key, maxRequests, time.Hour)
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"success": false,
+			"error":   "描述服务的成本保护暂时不可用，请稍后再试",
+		})
+		return false
+	}
+	if !allowed {
+		c.Header("Retry-After", "3600")
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"success": false,
+			"error":   "描述服务已达到当前时段额度，请稍后再试",
+		})
+		return false
+	}
+	return true
 }
 
 // GlobalServices returns the global mode services (used by AgentHandlers).
@@ -329,6 +365,9 @@ func (h *Handlers) GetLocationDescription(c *gin.Context) {
 		})
 		return
 	}
+	if !h.reserveDescriptionBudget(c, false) {
+		return
+	}
 	if wantsDescriptionStream(c) {
 		h.streamDescription(c, svc.AIService, *loc, language, view, false)
 		return
@@ -437,6 +476,9 @@ func (h *Handlers) GetLocationDetailedDescription(c *gin.Context) {
 			"success": false,
 			"error":   PublicErrorMessage(err),
 		})
+		return
+	}
+	if !h.reserveDescriptionBudget(c, true) {
 		return
 	}
 	if wantsDescriptionStream(c) {

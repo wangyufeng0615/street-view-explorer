@@ -547,7 +547,10 @@ export async function deleteExplorationPreference(language = null) {
 // 获取全站共享访问历史
 export async function getVisitHistory(limit = 1000, offset = 0, source = null) {
   try {
-    const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+    const params = new URLSearchParams({
+      limit: String(limit),
+      offset: String(offset),
+    });
     if (source) params.set("source", source);
     const resp = await fetchWithTimeout(
       `${API_V1}/visits?${params.toString()}`,
@@ -588,10 +591,10 @@ export async function getVisitHistory(limit = 1000, offset = 0, source = null) {
 // 获取旅程列表
 export async function getAgentJourneys(token) {
   try {
-    const resp = await fetchWithTimeout(
-      `${API_V1}/agent/journeys?token=${encodeURIComponent(token)}`,
-      { method: "GET" },
-    );
+    const resp = await fetchWithTimeout(`${API_V1}/agent/journeys`, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${token}` },
+    });
     const text = await resp.text();
     if (!text) return { success: false, error: "Empty response" };
     return JSON.parse(text);
@@ -604,8 +607,11 @@ export async function getAgentJourneys(token) {
 export async function getAgentJourneyDetail(journeyId, token) {
   try {
     const resp = await fetchWithTimeout(
-      `${API_V1}/agent/journeys/${journeyId}?token=${encodeURIComponent(token)}`,
-      { method: "GET" },
+      `${API_V1}/agent/journeys/${encodeURIComponent(journeyId)}`,
+      {
+        method: "GET",
+        headers: { Authorization: `Bearer ${token}` },
+      },
     );
     const text = await resp.text();
     if (!text) return { success: false, error: "Empty response" };

@@ -40,6 +40,8 @@ func setupTestAgentHandlers(t *testing.T) (*AgentHandlers, *gin.Engine) {
 		agent.POST("/journeys/:id/stops", ah.SaveJourneyStop)
 		agent.GET("/journeys/:id/stops", ah.GetJourneyStops)
 		agent.POST("/journeys/:id/letter", ah.SaveJourneyLetter)
+		agent.GET("/journeys/:id/public-letter", ah.GetPublicLetter)
+		agent.GET("/streetview", ah.StreetViewImage)
 	}
 
 	return ah, r
@@ -386,6 +388,86 @@ func TestLetterValidation(t *testing.T) {
 	)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("empty letter: status = %d, want 400", w.Code)
+	}
+}
+
+func TestPublicLetterRemovesTravelerTokenAndUsesStopReference(t *testing.T) {
+	_, r := setupTestAgentHandlers(t)
+	token := "public-secret-token"
+	w := doJSON(r, http.MethodPost, "/api/v1/agent/journeys", map[string]interface{}{
+		"start_lat": 10, "start_lng": 20, "total_stops": 1, "token": token,
+	})
+	journeyID := parseResp(t, w)["data"].(map[string]interface{})["journey_id"].(string)
+
+	w = doJSON(r, http.MethodPost, "/api/v1/agent/journeys/"+journeyID+"/stops", map[string]interface{}{
+		"stop_number": 1, "lat": 10, "lng": 20, "pano_id": "pano-public", "photo_heading": 90,
+	}, "Authorization", "Bearer "+token)
+	if w.Code != http.StatusOK {
+		t.Fatalf("save stop: status = %d; body: %s", w.Code, w.Body.String())
+	}
+
+	letter := "Traveler " + token + "\n![Stop](/api/v1/agent/streetview?pano_id=pano-public&heading=90&token=" + token + ")"
+	w = doJSON(r, http.MethodPost, "/api/v1/agent/journeys/"+journeyID+"/letter", map[string]interface{}{
+		"letter": letter,
+	}, "Authorization", "Bearer "+token)
+	if w.Code != http.StatusOK {
+		t.Fatalf("save letter: status = %d; body: %s", w.Code, w.Body.String())
+	}
+
+	w = doJSON(r, http.MethodGet, "/api/v1/agent/journeys/"+journeyID+"/public-letter", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("public letter: status = %d; body: %s", w.Code, w.Body.String())
+	}
+	if strings.Contains(w.Body.String(), token) {
+		t.Fatalf("public response exposed traveler token: %s", w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "stop_1") {
+		t.Fatalf("public response did not rewrite image to stop reference: %s", w.Body.String())
+	}
+}
+
+func TestPublicStreetViewRejectsImageOutsideJourney(t *testing.T) {
+	_, r := setupTestAgentHandlers(t)
+	token := "image-owner-token"
+	w := doJSON(r, http.MethodPost, "/api/v1/agent/journeys", map[string]interface{}{
+		"start_lat": 10, "start_lng": 20, "total_stops": 1, "token": token,
+	})
+	journeyID := parseResp(t, w)["data"].(map[string]interface{})["journey_id"].(string)
+	w = doJSON(r, http.MethodPost, "/api/v1/agent/journeys/"+journeyID+"/stops", map[string]interface{}{
+		"stop_number": 1, "lat": 10, "lng": 20, "pano_id": "allowed-pano", "photo_heading": 0,
+	}, "Authorization", "Bearer "+token)
+	if w.Code != http.StatusOK {
+		t.Fatalf("save stop: status = %d; body: %s", w.Code, w.Body.String())
+	}
+	w = doJSON(r, http.MethodPost, "/api/v1/agent/journeys/"+journeyID+"/letter", map[string]interface{}{
+		"letter": "A published letter",
+	}, "Authorization", "Bearer "+token)
+	if w.Code != http.StatusOK {
+		t.Fatalf("save letter: status = %d; body: %s", w.Code, w.Body.String())
+	}
+
+	w = doJSON(r, http.MethodGet, "/api/v1/agent/streetview?pano_id=other-pano&journey_id="+journeyID, nil)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403; body: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestSaveJourneyStopRejectsInvalidImageMetadata(t *testing.T) {
+	_, r := setupTestAgentHandlers(t)
+	token := "image-validation-token"
+	w := doJSON(r, http.MethodPost, "/api/v1/agent/journeys", map[string]interface{}{
+		"start_lat": 10, "start_lng": 20, "total_stops": 1, "token": token,
+	})
+	journeyID := parseResp(t, w)["data"].(map[string]interface{})["journey_id"].(string)
+
+	for _, body := range []map[string]interface{}{
+		{"stop_number": 1, "lat": 10, "lng": 20, "pano_id": "bad pano"},
+		{"stop_number": 1, "lat": 10, "lng": 20, "pano_id": "valid-pano", "photo_heading": 361},
+	} {
+		w = doJSON(r, http.MethodPost, "/api/v1/agent/journeys/"+journeyID+"/stops", body, "Authorization", "Bearer "+token)
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400; body: %s", w.Code, w.Body.String())
+		}
 	}
 }
 

@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { useTranslation } from "react-i18next";
+import { Trans, useTranslation } from "react-i18next";
 import { loadGoogleMapsScript } from "../utils/googleMaps";
 import { getAgentJourneys, getAgentJourneyDetail } from "../services/api";
+import LetterContent from "../components/LetterContent";
 import "../styles/AgentPage.css";
 
 // Load classical fonts for title
@@ -15,32 +16,60 @@ if (
   const link = document.createElement("link");
   link.id = "odyssey-fonts";
   link.rel = "stylesheet";
-  link.href = "https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&display=swap";
+  link.href =
+    "https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&display=swap";
   document.head.appendChild(link);
 
   const lxgw = document.createElement("link");
   lxgw.rel = "stylesheet";
-  lxgw.href = "https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/style.css";
+  lxgw.href =
+    "https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/style.css";
   document.head.appendChild(lxgw);
 }
 
 // Natural borderless map — Lonely Planet inspired
 const NATURAL_MAP_STYLE = [
-  { featureType: "administrative", elementType: "geometry", stylers: [{ visibility: "off" }] },
-  { featureType: "administrative", elementType: "labels", stylers: [{ visibility: "off" }] },
+  {
+    featureType: "administrative",
+    elementType: "geometry",
+    stylers: [{ visibility: "off" }],
+  },
+  {
+    featureType: "administrative",
+    elementType: "labels",
+    stylers: [{ visibility: "off" }],
+  },
   { featureType: "poi", stylers: [{ visibility: "off" }] },
   { featureType: "road", stylers: [{ visibility: "off" }] },
   { featureType: "transit", stylers: [{ visibility: "off" }] },
-  { featureType: "water", elementType: "geometry.fill", stylers: [{ color: "#a3c4d9" }] },
-  { featureType: "water", elementType: "labels", stylers: [{ visibility: "off" }] },
-  { featureType: "landscape.natural", elementType: "geometry.fill", stylers: [{ color: "#e4dfd3" }] },
-  { featureType: "landscape.natural.terrain", elementType: "geometry.fill", stylers: [{ color: "#d6cfc0" }] },
-  { featureType: "landscape.natural.landcover", elementType: "geometry.fill", stylers: [{ color: "#c8d9c0" }] },
+  {
+    featureType: "water",
+    elementType: "geometry.fill",
+    stylers: [{ color: "#a3c4d9" }],
+  },
+  {
+    featureType: "water",
+    elementType: "labels",
+    stylers: [{ visibility: "off" }],
+  },
+  {
+    featureType: "landscape.natural",
+    elementType: "geometry.fill",
+    stylers: [{ color: "#e4dfd3" }],
+  },
+  {
+    featureType: "landscape.natural.terrain",
+    elementType: "geometry.fill",
+    stylers: [{ color: "#d6cfc0" }],
+  },
+  {
+    featureType: "landscape.natural.landcover",
+    elementType: "geometry.fill",
+    stylers: [{ color: "#c8d9c0" }],
+  },
 ];
 
 const TOTAL_STOPS = 5;
-const IMAGE_PLACEHOLDER_PREFIX = "__ATLAS_IMG_";
-const IMAGE_PLACEHOLDER_SUFFIX = "__";
 
 async function copyText(text) {
   if (navigator.clipboard?.writeText) {
@@ -57,60 +86,6 @@ async function copyText(text) {
   const copied = document.execCommand("copy");
   document.body.removeChild(textArea);
   if (!copied) throw new Error("copy_failed");
-}
-
-// Simple markdown renderer for letter content.
-// Extracts images BEFORE HTML-escaping to preserve & in URLs.
-function renderLetterMarkdown(text, stopImageMap = {}) {
-  // 1. Extract images into placeholders (before HTML-escape breaks URLs)
-  const images = [];
-  let processed = text.replace(
-    /!\[([^\]]*)\]\(([^)]+)\)/g,
-    (match, alt, url) => {
-      let src = "";
-      if (url.includes("/api/v1/agent/streetview")) {
-        src = url;
-      } else {
-        const stopMatch = url.match(/stop[_-]?(\d+)/i);
-        if (stopMatch && stopImageMap[parseInt(stopMatch[1], 10)]) {
-          src = stopImageMap[parseInt(stopMatch[1], 10)];
-        }
-      }
-      if (!src) return "";
-      const idx = images.length;
-      images.push(`<img src="${src}" alt="${alt}" loading="lazy" class="agent-letter-img" />`);
-      return `${IMAGE_PLACEHOLDER_PREFIX}${idx}${IMAGE_PLACEHOLDER_SUFFIX}`;
-    },
-  );
-
-  // 2. HTML-escape (now safe — URLs are in placeholders)
-  processed = processed
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-
-  // 3. Headings
-  processed = processed.replace(/^### (.+)$/gm, '<h4 class="agent-letter-h3">$1</h4>');
-  processed = processed.replace(/^## (.+)$/gm, '<h3 class="agent-letter-h2">$1</h3>');
-  processed = processed.replace(/^# (.+)$/gm, '<h2 class="agent-letter-h1">$1</h2>');
-
-  // 4. Bold
-  processed = processed.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
-
-  // 5. Horizontal rule
-  processed = processed.replace(/^---$/gm, '<hr class="agent-letter-hr" />');
-
-  // 6. Line breaks
-  processed = processed.replace(/\n/g, "<br />");
-
-  // 7. Restore images
-  const imagePlaceholderPattern = new RegExp(
-    `${IMAGE_PLACEHOLDER_PREFIX}(\\d+)${IMAGE_PLACEHOLDER_SUFFIX}`,
-    "g",
-  );
-  processed = processed.replace(imagePlaceholderPattern, (_, idx) => images[parseInt(idx, 10)]);
-
-  return processed;
 }
 
 // ==================== Skills Templates ====================
@@ -166,12 +141,12 @@ Body: \`{"status": "in_progress"}\` (with auth header)
 
 ## API Reference
 
-Auth: \`Authorization: Bearer {YOUR_TRAVELER_ID}\` or \`?token={YOUR_TRAVELER_ID}\`.
+Auth: always send \`Authorization: Bearer {YOUR_TRAVELER_ID}\`. Never put the Traveler ID in a URL.
 
 | Action | Method & URL |
 |--------|-------------|
-| Find street view | \`GET /api/v1/agent/explore?lat={LAT}&lng={LNG}&token={ID}\` |
-| See image | \`GET /api/v1/agent/streetview?pano_id={PANO}&heading={0-360}&token={ID}\` |
+| Find street view | \`GET /api/v1/agent/explore?lat={LAT}&lng={LNG}\` with auth header |
+| See image | \`GET /api/v1/agent/streetview?pano_id={PANO}&heading={0-360}\` with auth header |
 | Atlas description | \`GET /api/v1/locations/{PANO}/description?lang=en\` |
 | Save stop | \`POST /api/v1/agent/journeys/{JID}/stops\` |
 | Save letter | \`POST /api/v1/agent/journeys/{JID}/letter\` |
@@ -192,8 +167,8 @@ At each of the ${totalStops} stops:
 ## After all stops
 
 1. **Write a full illustrated letter** to your human. This is the main output.
-   Write one complete version with streetview URLs as images:
-   \`![Stop 1](${baseUrl}/api/v1/agent/streetview?pano_id={PANO_ID}&heading={HEADING}&token={YOUR_TRAVELER_ID})\`
+   Write one complete version with stable stop references as images:
+   \`![Stop 1](stop_1)\`. Never embed your Traveler ID or an authenticated URL in the letter.
 
 2. **Save to server** — the COMPLETE letter, every word, every image:
    \`POST /api/v1/agent/journeys/{JID}/letter\` body \`{"letter": "..."}\`
@@ -299,12 +274,12 @@ Body: \`{"status": "in_progress"}\`（带认证头）
 
 ## API 参考
 
-认证: \`Authorization: Bearer {你的旅行者ID}\` 或 \`?token={你的旅行者ID}\`。
+认证：始终发送 \`Authorization: Bearer {你的旅行者ID}\`，绝不能把旅行者 ID 放进 URL。
 
 | 操作 | 方法与 URL |
 |------|-----------|
-| 寻找街景 | \`GET /api/v1/agent/explore?lat={LAT}&lng={LNG}&token={ID}\` |
-| 查看图片 | \`GET /api/v1/agent/streetview?pano_id={PANO}&heading={0-360}&token={ID}\` |
+| 寻找街景 | \`GET /api/v1/agent/explore?lat={LAT}&lng={LNG}\`（带认证头） |
+| 查看图片 | \`GET /api/v1/agent/streetview?pano_id={PANO}&heading={0-360}\`（带认证头） |
 | Atlas 描述 | \`GET /api/v1/locations/{PANO}/description?lang=zh\` |
 | 保存一站 | \`POST /api/v1/agent/journeys/{JID}/stops\` |
 | 保存来信 | \`POST /api/v1/agent/journeys/{JID}/letter\` |
@@ -325,8 +300,8 @@ Body: \`{"status": "in_progress"}\`（带认证头）
 ## 所有站点结束后
 
 1. **写一封完整的图文来信**给你的人类——包含你的观察、感悟，以及每一站的照片。
-   这是你旅程的核心产出。照片直接使用街景 URL：
-   \`![第 1 站](${baseUrl}/api/v1/agent/streetview?pano_id={PANO_ID}&heading={HEADING}&token={你的旅行者ID})\`
+   这是你旅程的核心产出。照片使用稳定的站点引用：
+   \`![第 1 站](stop_1)\`。绝不能在来信中嵌入旅行者 ID 或带认证信息的 URL。
 
 2. **保存到服务端** — 完整来信，一字不少，每张图片都要有：
    \`POST /api/v1/agent/journeys/{JID}/letter\` body \`{"letter": "..."}\`
@@ -424,8 +399,20 @@ export default function AgentPage() {
   const currentLanguage = i18n.resolvedLanguage || "en";
   const currentLocale = currentLanguage === "zh" ? "zh-CN" : "en-US";
   const skillsText = pin
-    ? generateSkillsText(pin.lat, pin.lng, TOTAL_STOPS, baseUrl, currentLanguage)
-    : generateSkillsText(35.6762, 139.6503, TOTAL_STOPS, baseUrl, currentLanguage);
+    ? generateSkillsText(
+        pin.lat,
+        pin.lng,
+        TOTAL_STOPS,
+        baseUrl,
+        currentLanguage,
+      )
+    : generateSkillsText(
+        35.6762,
+        139.6503,
+        TOTAL_STOPS,
+        baseUrl,
+        currentLanguage,
+      );
 
   useEffect(() => {
     if (!feedback) return undefined;
@@ -434,7 +421,9 @@ export default function AgentPage() {
   }, [feedback]);
 
   useEffect(() => {
-    return () => { if (copyTimerRef.current) clearTimeout(copyTimerRef.current); };
+    return () => {
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    };
   }, []);
 
   // Persist traveler ID to localStorage & auto-query
@@ -478,7 +467,10 @@ export default function AgentPage() {
     initMap();
     return () => {
       cancelled = true;
-      if (markerRef.current) { markerRef.current.setMap(null); markerRef.current = null; }
+      if (markerRef.current) {
+        markerRef.current.setMap(null);
+        markerRef.current = null;
+      }
       mapInstanceRef.current = null;
     };
   }, [mapRetryKey, t]);
@@ -495,8 +487,11 @@ export default function AgentPage() {
         map: mapInstanceRef.current,
         icon: {
           path: window.google.maps.SymbolPath.CIRCLE,
-          scale: 8, fillColor: "#0e7490", fillOpacity: 1,
-          strokeColor: "#fff", strokeWeight: 3,
+          scale: 8,
+          fillColor: "#0e7490",
+          fillOpacity: 1,
+          strokeColor: "#fff",
+          strokeWeight: 3,
         },
       });
     }
@@ -516,20 +511,23 @@ export default function AgentPage() {
   }, [skillsText, t]);
 
   // Journey viewer
-  const loadJourneys = useCallback(async (travelerId) => {
-    if (!travelerId) return;
-    setIsLoadingJourneys(true);
-    setJourneysError("");
-    const res = await getAgentJourneys(travelerId);
-    if (res.success && res.data) {
-      setJourneys(res.data.journeys || []);
-      setTotalPlaces(res.data.total_places || 0);
-      setJourneysLoaded(true);
-    } else {
-      setJourneysError(res.error || t("agent.error_load_journeys"));
-    }
-    setIsLoadingJourneys(false);
-  }, [t]);
+  const loadJourneys = useCallback(
+    async (travelerId) => {
+      if (!travelerId) return;
+      setIsLoadingJourneys(true);
+      setJourneysError("");
+      const res = await getAgentJourneys(travelerId);
+      if (res.success && res.data) {
+        setJourneys(res.data.journeys || []);
+        setTotalPlaces(res.data.total_places || 0);
+        setJourneysLoaded(true);
+      } else {
+        setJourneysError(res.error || t("agent.error_load_journeys"));
+      }
+      setIsLoadingJourneys(false);
+    },
+    [t],
+  );
 
   const handleLookup = useCallback(() => {
     const id = viewerTravelerId.trim();
@@ -556,7 +554,8 @@ export default function AgentPage() {
           setJourneyDetails((prev) => ({ ...prev, [journeyId]: res.data }));
         } else {
           setJourneyDetailErrors((prev) => ({
-            ...prev, [journeyId]: res.error || t("agent.error_load_journey"),
+            ...prev,
+            [journeyId]: res.error || t("agent.error_load_journey"),
           }));
         }
       } finally {
@@ -586,39 +585,51 @@ export default function AgentPage() {
     const loading = journeyDetailLoadingId === journeyId;
     const tid = viewerTravelerId.trim();
 
-    if (!data && loading) return <div className="agent-detail-state">{t("agent.loading_journey")}</div>;
-    if (!data && error) return (
-      <div className="agent-detail-state error">
-        <div>{error}</div>
-        <button className="agent-secondary-btn" onClick={() => loadJourneyDetail(journeyId, tid)}>{t("common.retry")}</button>
-      </div>
-    );
+    if (!data && loading)
+      return (
+        <div className="agent-detail-state">{t("agent.loading_journey")}</div>
+      );
+    if (!data && error)
+      return (
+        <div className="agent-detail-state error">
+          <div>{error}</div>
+          <button
+            className="agent-secondary-btn"
+            onClick={() => loadJourneyDetail(journeyId, tid)}
+          >
+            {t("common.retry")}
+          </button>
+        </div>
+      );
     if (!data) return null;
 
     // Build a map of stop images so we can inject server-side URLs into the letter
     const stopImageMap = {};
     for (const stop of data.stops) {
       if (stop.pano_id) {
-        stopImageMap[stop.stop_number] = `/api/v1/agent/streetview?pano_id=${encodeURIComponent(stop.pano_id)}&heading=${stop.photo_heading || 0}&token=${encodeURIComponent(tid)}`;
+        stopImageMap[stop.stop_number] =
+          `/api/v1/agent/streetview?pano_id=${encodeURIComponent(stop.pano_id)}&heading=${stop.photo_heading || 0}&journey_id=${encodeURIComponent(journeyId)}`;
       }
     }
 
     return (
       <>
-        {loading && <div className="agent-detail-subtle">{t("agent.refreshing")}</div>}
+        {loading && (
+          <div className="agent-detail-subtle">{t("agent.refreshing")}</div>
+        )}
         {data.journey.letter ? (
           <div className="agent-letter-section">
-            <div
-              className="agent-letter-content"
-              dangerouslySetInnerHTML={{
-                __html: renderLetterMarkdown(data.journey.letter, stopImageMap),
-              }}
+            <LetterContent
+              text={data.journey.letter}
+              stopImageMap={stopImageMap}
+              journeyId={journeyId}
             />
           </div>
         ) : (
           <div className="agent-no-journeys">
             {data.stops.length > 0
-              ? t("agent.status_in_progress") + ` — ${data.stops.length} / ${data.journey.total_stops}`
+              ? t("agent.status_in_progress") +
+                ` — ${data.stops.length} / ${data.journey.total_stops}`
               : t("agent.journey_empty")}
           </div>
         )}
@@ -640,24 +651,32 @@ export default function AgentPage() {
   return (
     <div className="agent-page">
       <div className="agent-header">
-        <button className="agent-back-btn" onClick={() => navigate("/")}>← {t("agent.back_home")}</button>
+        <button className="agent-back-btn" onClick={() => navigate("/")}>
+          ← {t("agent.back_home")}
+        </button>
         <div className="agent-header-lang">
           <button
             className={`agent-lang-btn${currentLanguage === "en" ? " active" : ""}`}
             onClick={() => i18n.changeLanguage("en")}
             disabled={currentLanguage === "en"}
-          >EN</button>
+          >
+            EN
+          </button>
           <button
             className={`agent-lang-btn${currentLanguage === "zh" ? " active" : ""}`}
             onClick={() => i18n.changeLanguage("zh")}
             disabled={currentLanguage === "zh"}
-          >中</button>
+          >
+            中
+          </button>
         </div>
       </div>
 
       <div className="agent-content">
         {feedback && (
-          <div className={`agent-feedback-toast ${feedback.type}`}>{feedback.message}</div>
+          <div className={`agent-feedback-toast ${feedback.type}`}>
+            {feedback.message}
+          </div>
         )}
 
         {/* Hero */}
@@ -672,16 +691,28 @@ export default function AgentPage() {
           <h3 className="agent-step-title">{t("agent.pick_start")}</h3>
           <p className="agent-step-desc">{t("agent.pick_start_hint")}</p>
           <div className="agent-map-container">
-            <div ref={mapRef} style={{ width: "100%", height: "100%", opacity: mapReady ? 1 : 0 }} />
+            <div
+              ref={mapRef}
+              style={{
+                width: "100%",
+                height: "100%",
+                opacity: mapReady ? 1 : 0,
+              }}
+            />
             {!mapReady && !mapError && (
               <div className="agent-map-overlay">
-                <div className="agent-map-overlay-title">{t("agent.map_loading")}</div>
+                <div className="agent-map-overlay-title">
+                  {t("agent.map_loading")}
+                </div>
               </div>
             )}
             {mapError && (
               <div className="agent-map-overlay">
                 <div className="agent-map-overlay-title">{mapError}</div>
-                <button className="agent-secondary-btn" onClick={() => setMapRetryKey((k) => k + 1)}>
+                <button
+                  className="agent-secondary-btn"
+                  onClick={() => setMapRetryKey((k) => k + 1)}
+                >
                   {t("agent.map_retry")}
                 </button>
               </div>
@@ -692,7 +723,10 @@ export default function AgentPage() {
           </div>
           {pin && (
             <div className="agent-coords">
-              {t("agent.starting_at")} <span>{pin.lat.toFixed(4)}°, {pin.lng.toFixed(4)}°</span>
+              {t("agent.starting_at")}{" "}
+              <span>
+                {pin.lat.toFixed(4)}°, {pin.lng.toFixed(4)}°
+              </span>
             </div>
           )}
         </div>
@@ -741,8 +775,18 @@ export default function AgentPage() {
         <div className="agent-step agent-journeys">
           <span className="agent-step-label">4</span>
           <h3 className="agent-step-title">{t("agent.results_title")}</h3>
-          <p className="agent-viewer-hint" dangerouslySetInnerHTML={{ __html: t("agent.viewer_hint_1") }} />
-          <p className="agent-viewer-hint" dangerouslySetInnerHTML={{ __html: t("agent.viewer_hint_2") }} />
+          <p className="agent-viewer-hint">
+            <Trans
+              i18nKey="agent.viewer_hint_1"
+              components={{ memory: <span className="hl-memory" /> }}
+            />
+          </p>
+          <p className="agent-viewer-hint">
+            <Trans
+              i18nKey="agent.viewer_hint_2"
+              components={{ travelerId: <span className="hl-id" /> }}
+            />
+          </p>
 
           <div className="agent-viewer-input">
             <input
@@ -768,30 +812,50 @@ export default function AgentPage() {
           )}
 
           {isLoadingJourneys && (
-            <div className="agent-detail-state">{t("agent.loading_journeys")}</div>
+            <div className="agent-detail-state">
+              {t("agent.loading_journeys")}
+            </div>
           )}
 
           {journeysError && (
-            <div className="agent-detail-state error"><div>{journeysError}</div></div>
+            <div className="agent-detail-state error">
+              <div>{journeysError}</div>
+            </div>
           )}
 
-          {journeysLoaded && !isLoadingJourneys && visibleJourneys.length === 0 && !journeysError && (
-            <div className="agent-no-journeys">{t("agent.no_journeys_for_id")}</div>
-          )}
+          {journeysLoaded &&
+            !isLoadingJourneys &&
+            visibleJourneys.length === 0 &&
+            !journeysError && (
+              <div className="agent-no-journeys">
+                {t("agent.no_journeys_for_id")}
+              </div>
+            )}
 
           {visibleJourneys.map((j) => (
             <div key={j.id}>
-              <div className="agent-journey-card" onClick={() => toggleJourneyDetail(j.id)}>
+              <div
+                className="agent-journey-card"
+                onClick={() => toggleJourneyDetail(j.id)}
+              >
                 <div className="agent-journey-card-header">
                   <div>
                     <div className="agent-journey-card-title">
                       {t("agent.journey")} · {j.total_stops} {t("agent.stops")}
-                      <span className={`agent-status-badge ${j.status}`}>{statusLabel(j.status)}</span>
+                      <span className={`agent-status-badge ${j.status}`}>
+                        {statusLabel(j.status)}
+                      </span>
                     </div>
                     <div className="agent-journey-card-meta">
-                      {new Date(j.created_at).toLocaleDateString(currentLocale, {
-                        year: "numeric", month: "short", day: "numeric",
-                      })} · {j.start_lat.toFixed(2)}°, {j.start_lng.toFixed(2)}°
+                      {new Date(j.created_at).toLocaleDateString(
+                        currentLocale,
+                        {
+                          year: "numeric",
+                          month: "short",
+                          day: "numeric",
+                        },
+                      )}{" "}
+                      · {j.start_lat.toFixed(2)}°, {j.start_lng.toFixed(2)}°
                     </div>
                   </div>
                   <div className="agent-journey-card-actions">
@@ -802,7 +866,10 @@ export default function AgentPage() {
                           e.stopPropagation();
                           const url = `${window.location.origin}/agent/letter/${j.id}`;
                           copyText(url).then(() => {
-                            setFeedback({ type: "success", message: t("agent.link_copied") });
+                            setFeedback({
+                              type: "success",
+                              message: t("agent.link_copied"),
+                            });
                           });
                         }}
                       >
@@ -812,7 +879,10 @@ export default function AgentPage() {
                   </div>
                 </div>
                 {expandedJourney === j.id && (
-                  <div className="agent-journey-detail" onClick={(e) => e.stopPropagation()}>
+                  <div
+                    className="agent-journey-detail"
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     {renderJourneyDetail(j.id)}
                   </div>
                 )}

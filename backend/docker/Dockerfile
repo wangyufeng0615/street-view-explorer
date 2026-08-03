@@ -1,5 +1,5 @@
 # 构建阶段
-FROM golang:1.22.2-alpine AS builder
+FROM golang:1.26.5-alpine AS builder
 
 WORKDIR /app
 
@@ -18,7 +18,7 @@ COPY internal/ ./internal/
 RUN CGO_ENABLED=0 GOOS=linux go build -o main ./cmd/server
 
 # 运行阶段
-FROM alpine:3.19
+FROM alpine:3.22
 
 WORKDIR /app
 

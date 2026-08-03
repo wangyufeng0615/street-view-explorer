@@ -214,7 +214,7 @@ func main() {
 	}
 
 	// 设置路由
-	handlers := api.NewHandlers(locationService, aiService)
+	handlers := api.NewHandlers(locationService, aiService, repo)
 	agentHandlers := api.NewAgentHandlers(repo, repo, handlers.GlobalServices(), cfg.GoogleMapsAPIKey(), googleMaps.HTTPClient())
 	geoHandlers := api.NewGeoHandlers(globalAIClient, cfg.GoogleMapsAPIKey(), locationService, geoBattleService, googleMaps.HTTPClient())
 	realtimeHandlers := api.NewRealtimeHandlers()
