@@ -134,7 +134,7 @@ Backend variables live in `backend/.env`.
 | `DOUBAO_TTS_SPEECH_RATE`, `DOUBAO_TTS_LOUDNESS_RATE`, `DOUBAO_TTS_EMOTION`, `DOUBAO_TTS_EMOTION_SCALE` | No | Optional Doubao speech tuning. |
 | `DOUBAO_TTS_PROXY_URL` | No | Doubao-specific outbound proxy. Falls back to `AI_PROXY_URL` or `PROXY_URL`. |
 | `OPENROUTER_MODEL`, `AI_MODEL` | No | Text-only OpenRouter model for Atlas descriptions and interest-region generation, default `deepseek/deepseek-v4-flash`. `OPENROUTER_MODEL` takes precedence. |
-| `OPENROUTER_VISION_MODEL` | No | Vision-capable OpenRouter model used by Geo Guess satellite-image analysis, default `anthropic/claude-haiku-4.5`. |
+| `OPENROUTER_VISION_MODEL` | No | Vision-capable OpenRouter model used by Geo Guess satellite-image analysis, default `qwen/qwen3.7-plus`. Geo Guess disables model reasoning and caps the response to keep latency bounded. |
 | `CN_AI_MODEL` | No | Optional fallback model used only when no AI/shared proxy is configured. |
 | `OPENROUTER_PROVIDER_SORT` | No | Geo Guess vision-provider preference: `latency` (default), `throughput`, `price`, or `off`. Description requests leave sorting unset for Auto Exacto tool routing. |
 | `GOOGLE_API_KEY` | Yes | Backend Google Maps, Street View, and Static Maps access. |

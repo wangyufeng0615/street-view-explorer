@@ -23,11 +23,12 @@ import (
 const (
 	defaultAPIEndpoint     = "https://openrouter.ai/api/v1/chat/completions"
 	defaultModel           = "deepseek/deepseek-v4-flash"
-	defaultVisionModel     = "anthropic/claude-haiku-4.5"
+	defaultVisionModel     = "qwen/qwen3.7-plus"
 	defaultProviderSort    = "latency"
 	maxRetries             = 2
 	retryBaseDelay         = 500 * time.Millisecond
 	timeout                = 15 * time.Second
+	geoAIMaxTokens         = 480
 	geoAIReasoningMaxRunes = 600
 
 	geoGuessSystemPrompt = "You are Atlas in a geography guessing game, but for this task you must act as a strict satellite-image geolocation estimator.\n\n" +
@@ -1450,8 +1451,10 @@ func (c *client) GuessLocationFromImage(parentCtx context.Context, imageBase64 s
 	dataURI := "data:image/png;base64," + imageBase64
 
 	reqBody := visionChatRequest{
-		Model:    c.visionModel(),
-		Provider: selectProviderPreferences(),
+		Model:     c.visionModel(),
+		MaxTokens: geoAIMaxTokens,
+		Provider:  selectProviderPreferences(),
+		Reasoning: &reasoningConfig{Enabled: false},
 		Messages: []visionMessage{
 			{
 				Role:    "system",

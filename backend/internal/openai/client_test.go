@@ -547,6 +547,13 @@ func TestGuessLocationFromImageUsesSeparateVisionModel(t *testing.T) {
 	if got := requestBody["model"]; got != "vision-test-model" {
 		t.Fatalf("request model = %v, want vision-test-model", got)
 	}
+	if got := requestBody["max_tokens"]; got != float64(geoAIMaxTokens) {
+		t.Fatalf("request max_tokens = %v, want %d", got, geoAIMaxTokens)
+	}
+	reasoning, ok := requestBody["reasoning"].(map[string]interface{})
+	if !ok || reasoning["enabled"] != false {
+		t.Fatalf("request reasoning = %#v, want enabled=false", requestBody["reasoning"])
+	}
 }
 
 func TestGenerateLocationDescriptionAcceptsResponseWhenSearchUsageMetadataIsMissing(t *testing.T) {
@@ -720,10 +727,10 @@ func TestSelectModelUsesDeepSeekV4FlashByDefault(t *testing.T) {
 	}
 }
 
-func TestSelectVisionModelUsesClaudeHaiku45ByDefaultAndAllowsOverride(t *testing.T) {
+func TestSelectVisionModelUsesQwen37PlusByDefaultAndAllowsOverride(t *testing.T) {
 	t.Setenv("OPENROUTER_VISION_MODEL", "")
-	if got := selectVisionModel(); got != "anthropic/claude-haiku-4.5" {
-		t.Fatalf("selectVisionModel = %q, want anthropic/claude-haiku-4.5", got)
+	if got := selectVisionModel(); got != "qwen/qwen3.7-plus" {
+		t.Fatalf("selectVisionModel = %q, want qwen/qwen3.7-plus", got)
 	}
 
 	t.Setenv("OPENROUTER_VISION_MODEL", "google/gemini-2.5-flash")
