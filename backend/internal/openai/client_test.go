@@ -107,7 +107,7 @@ func TestTextSystemPromptKeepsCitationsOutOfBody(t *testing.T) {
 	}
 }
 
-func TestGenerateLocationDescriptionUsesTextOnlyContextWithoutPlusCodeMetadata(t *testing.T) {
+func TestGenerateLocationDescriptionUsesSceneModelAndImageWithoutPlusCodeMetadata(t *testing.T) {
 	var requestBody map[string]interface{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
@@ -121,10 +121,11 @@ func TestGenerateLocationDescriptionUsesTextOnlyContextWithoutPlusCodeMetadata(t
 	defer server.Close()
 
 	c := &client{
-		apiKey:     "test-key",
-		modelName:  "test-model",
-		httpClient: server.Client(),
-		endpoint:   server.URL,
+		apiKey:         "test-key",
+		modelName:      "text-test-model",
+		sceneModelName: "scene-test-model",
+		httpClient:     server.Client(),
+		endpoint:       server.URL,
 	}
 
 	_, _, err := c.GenerateLocationDescription(
@@ -135,6 +136,7 @@ func TestGenerateLocationDescriptionUsesTextOnlyContextWithoutPlusCodeMetadata(t
 			"locality":          "Majdal Shams",
 			"plus_code_global":  "8G5Q7QGF+9X",
 		},
+		&SceneImage{Base64: "c2NlbmU=", ContentType: "image/jpeg", Heading: 90, Pitch: 0, FOV: 80},
 		"zh",
 	)
 	if err != nil {
@@ -146,11 +148,14 @@ func TestGenerateLocationDescriptionUsesTextOnlyContextWithoutPlusCodeMetadata(t
 		t.Fatalf("marshal captured request: %v", err)
 	}
 	body := string(encoded)
-	if strings.Contains(body, "data:image/") || strings.Contains(body, "c2NlbmU=") || strings.Contains(body, `"image_url"`) {
-		t.Fatalf("request included scene image in text-only description: %s", body)
+	if !strings.Contains(body, "data:image/jpeg;base64,c2NlbmU=") || !strings.Contains(body, `"image_url"`) {
+		t.Fatalf("request did not include the current Street View frame: %s", body)
 	}
-	if !strings.Contains(body, "no image is provided") {
-		t.Fatalf("request did not make the text-only grounding contract explicit: %s", body)
+	if !strings.Contains(body, "Street View Frame: provided (heading=90, pitch=0, fov=80)") || !strings.Contains(body, "可见事实只能来自当前街景图片") {
+		t.Fatalf("request did not make the visual grounding contract explicit: %s", body)
+	}
+	if got := requestBody["model"]; got != "scene-test-model" {
+		t.Fatalf("request model = %v, want scene-test-model", got)
 	}
 	if !strings.Contains(body, `"reasoning":{"enabled":false}`) {
 		t.Fatalf("request did not disable paid reasoning tokens for the description path: %s", body)
@@ -293,14 +298,14 @@ func TestDescriptionClientsReturnExactlyTheBoundedVisibleStream(t *testing.T) {
 			name:     "standard",
 			maxRunes: standardDescriptionEmergencyMaxRunes,
 			generate: func(onDelta func(string) error) (string, []Citation, error) {
-				return c.StreamLocationDescription(context.Background(), 1, 2, map[string]string{}, "zh", onDelta)
+				return c.StreamLocationDescription(context.Background(), 1, 2, map[string]string{}, nil, "zh", onDelta)
 			},
 		},
 		{
 			name:     "detailed",
 			maxRunes: detailedDescriptionEmergencyMaxRunes,
 			generate: func(onDelta func(string) error) (string, []Citation, error) {
-				return c.StreamDetailedLocationDescription(context.Background(), 1, 2, map[string]string{}, "zh", onDelta)
+				return c.StreamDetailedLocationDescription(context.Background(), 1, 2, map[string]string{}, nil, "zh", onDelta)
 			},
 		},
 	}
@@ -429,7 +434,7 @@ func TestReadChatCompletionStreamForwardsDeltasAndUsage(t *testing.T) {
 	}
 }
 
-func TestGenerateDetailedLocationDescriptionUsesTextOnlyContext(t *testing.T) {
+func TestGenerateDetailedLocationDescriptionUsesSceneModelAndImage(t *testing.T) {
 	var requestBody map[string]interface{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
@@ -442,11 +447,12 @@ func TestGenerateDetailedLocationDescriptionUsesTextOnlyContext(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c := &client{apiKey: "test-key", modelName: "test-model", httpClient: server.Client(), endpoint: server.URL}
+	c := &client{apiKey: "test-key", modelName: "text-test-model", sceneModelName: "scene-test-model", httpClient: server.Client(), endpoint: server.URL}
 	_, _, err := c.GenerateDetailedLocationDescription(
 		1,
 		2,
 		map[string]string{"formatted_address": "Test Street"},
+		&SceneImage{Base64: "c2NlbmU=", ContentType: "image/jpeg", Heading: 180, Pitch: -5, FOV: 75},
 		"zh",
 	)
 	if err != nil {
@@ -458,11 +464,14 @@ func TestGenerateDetailedLocationDescriptionUsesTextOnlyContext(t *testing.T) {
 		t.Fatalf("marshal captured request: %v", err)
 	}
 	body := string(encoded)
-	if strings.Contains(body, "data:image/") || strings.Contains(body, "c2NlbmU=") || strings.Contains(body, `"image_url"`) {
-		t.Fatalf("detailed request included scene image: %s", body)
+	if !strings.Contains(body, "data:image/jpeg;base64,c2NlbmU=") || !strings.Contains(body, `"image_url"`) {
+		t.Fatalf("detailed request did not include scene image: %s", body)
 	}
-	if !strings.Contains(body, "No image is provided") {
-		t.Fatalf("detailed request did not declare text-only grounding: %s", body)
+	if !strings.Contains(body, "A current Street View frame is attached at heading 180, pitch -5, fov 75") {
+		t.Fatalf("detailed request did not declare visual grounding: %s", body)
+	}
+	if got := requestBody["model"]; got != "scene-test-model" {
+		t.Fatalf("request model = %v, want scene-test-model", got)
 	}
 	if strings.Contains(body, `"provider"`) {
 		t.Fatalf("detailed request overrode OpenRouter Auto Exacto provider routing: %s", body)
@@ -577,6 +586,7 @@ func TestGenerateLocationDescriptionAcceptsResponseWhenSearchUsageMetadataIsMiss
 		1,
 		2,
 		map[string]string{},
+		nil,
 		"en",
 		func(delta string) error {
 			visibleDeltas = append(visibleDeltas, delta)
@@ -727,10 +737,19 @@ func TestSelectModelUsesDeepSeekV4FlashByDefault(t *testing.T) {
 	}
 }
 
-func TestSelectVisionModelUsesQwen37PlusByDefaultAndAllowsOverride(t *testing.T) {
+func TestSelectSceneAndVisionModelsUseDeepSeekVisionByDefaultAndAllowOverrides(t *testing.T) {
+	t.Setenv("OPENROUTER_SCENE_MODEL", "")
+	if got := selectSceneModel(); got != "deepseek/deepseek-v4-flash-vision-exp" {
+		t.Fatalf("selectSceneModel = %q, want deepseek/deepseek-v4-flash-vision-exp", got)
+	}
+	t.Setenv("OPENROUTER_SCENE_MODEL", "scene-override")
+	if got := selectSceneModel(); got != "scene-override" {
+		t.Fatalf("selectSceneModel override = %q, want scene-override", got)
+	}
+
 	t.Setenv("OPENROUTER_VISION_MODEL", "")
-	if got := selectVisionModel(); got != "qwen/qwen3.7-plus" {
-		t.Fatalf("selectVisionModel = %q, want qwen/qwen3.7-plus", got)
+	if got := selectVisionModel(); got != "deepseek/deepseek-v4-flash-vision-exp" {
+		t.Fatalf("selectVisionModel = %q, want deepseek/deepseek-v4-flash-vision-exp", got)
 	}
 
 	t.Setenv("OPENROUTER_VISION_MODEL", "google/gemini-2.5-flash")

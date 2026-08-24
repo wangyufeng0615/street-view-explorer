@@ -14,6 +14,10 @@ const scenePresenceEN = "Write as if you have arrived at this location and are s
 
 const scenePresenceZH = "你要像已经抵达这个地点、正给远方朋友写信一样说话。具体事实以地点元数据和联网资料为依据。你不会收到当前街景图片，不要声称亲眼看见某个物体、人物、招牌、天气或路况。"
 
+const visualScenePresenceEN = "Write as if you have arrived at this location and are sending a friend a letter from there. A current Street View frame is attached: treat it as the authoritative source for visible objects, people, signs, weather, road conditions, architecture, vegetation, and terrain. Keep direct visual observations clearly distinct from location metadata and researched background, and never invent details outside the frame."
+
+const visualScenePresenceZH = "你要像已经抵达这个地点、正给远方朋友写信一样说话。请求会附带当前街景图片：图中内容是物体、人物、招牌、天气、路况、建筑、植被和地形等可见事实的唯一依据。把亲眼可见的观察与地点元数据、联网背景明确分开，绝不编造画面外的细节。"
+
 func CorePersona(language string) string {
 	if strings.HasPrefix(strings.ToLower(language), "zh") {
 		return corePersonaZH
@@ -172,6 +176,36 @@ func TextSystemPrompt(language ...string) string {
 		lengthGuidance,
 		"Build a gentle arc: arrival beat, precise place, historical story, memorable human detail, and a closing thought that leaves the reader feeling they have actually met the place. Keep Atlas warm, playful, informed, and real.",
 	}, "\n")
+}
+
+// VisualTextSystemPrompt keeps the established Atlas letter contract while
+// replacing the text-only grounding rules with an explicit current-scene
+// contract for requests that actually attach a Street View frame.
+func VisualTextSystemPrompt(language ...string) string {
+	prompt := TextSystemPrompt(language...)
+	isChinese := len(language) > 0 && strings.HasPrefix(strings.ToLower(strings.TrimSpace(language[0])), "zh")
+	if isChinese {
+		replacer := strings.NewReplacer(
+			"但不会假装亲眼看见用户当前的街景画面。", "并会认真观察随请求提供的当前街景画面。",
+			scenePresenceZH, visualScenePresenceZH,
+			"旁白只能营造抵达感，不能声称看到了当前街景，也不计入正文段落。", "旁白可以从图中一个明确可见的细节自然起笔，但不能夸大或编造画面外内容，也不计入正文段落。",
+			"- 具体主张只能来自地点元数据和一次联网检索；当前没有街景图片", "- 可见事实只能来自当前街景图片；地点身份、历史和地方生活背景来自地点元数据与一次联网检索",
+			"- 不得声称亲眼看见当前建筑、招牌、人物、道路状况、天气或景观", "- 只有图中明确可见时，才能描述当前建筑、招牌、人物、道路状况、天气或景观；看不清就明确收敛",
+			"- 建筑、植被、基础设施和社区气质只有在资料确实支持时才能描述", "- 建筑、植被、基础设施等现场细节以图片为准；社区气质和画面外背景仍须有资料支持",
+		)
+		return replacer.Replace(prompt)
+	}
+
+	replacer := strings.NewReplacer(
+		"without pretending to witness the user's current view.", "while carefully observing the attached current Street View frame.",
+		scenePresenceEN, visualScenePresenceEN,
+		"The bracket line creates atmosphere but must not claim current visual evidence, and it is not one of the substantive body paragraphs.", "The bracket line may begin from one clearly visible detail in the attached frame, but it must not exaggerate or invent anything outside the image; it is not one of the substantive body paragraphs.",
+		"- No current Street View image is attached. Ground the description in location metadata and the single web-research result", "- A current Street View image is attached. Use it as the sole authority for visible scene details; use location metadata and the single web-research result for identity and background",
+		"- Never claim to see a building, sign, person, road condition, weather condition, or landscape in the user's current view", "- Describe a building, sign, person, road condition, weather condition, or landscape only when it is clearly visible in the attached frame; stay modest when details are unclear",
+		"- Speak with an arrival-letter atmosphere without pretending to have visual evidence", "- Let the arrival-letter atmosphere grow from one concrete visual observation, then connect it to verified background without blurring the two",
+		"- Mention architecture, vegetation, infrastructure, population, trade, migration, geology, or climate only when one of them is among those selected facts", "- Visible architecture, vegetation, and infrastructure may come from the frame; population, trade, migration, geology, climate, and off-screen context still require metadata or research support",
+	)
+	return replacer.Replace(prompt)
 }
 
 func RealtimeInstructions(language string) string {

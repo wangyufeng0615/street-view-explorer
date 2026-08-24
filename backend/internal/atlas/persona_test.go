@@ -59,6 +59,41 @@ func TestTextSystemPromptRequiresSubstantiveLetter(t *testing.T) {
 	}
 }
 
+func TestVisualTextSystemPromptUsesAttachedFrameAsVisibleFactSource(t *testing.T) {
+	zh := VisualTextSystemPrompt("zh-CN")
+	for _, required := range []string{
+		"请求会附带当前街景图片",
+		"可见事实只能来自当前街景图片",
+		"亲眼可见的观察与地点元数据、联网背景明确分开",
+		"只有图中明确可见时",
+	} {
+		if !strings.Contains(zh, required) {
+			t.Fatalf("VisualTextSystemPrompt(zh) missing %q", required)
+		}
+	}
+	for _, forbidden := range []string{"当前没有街景图片", "不会收到当前街景图片", "不得声称亲眼看见当前建筑"} {
+		if strings.Contains(zh, forbidden) {
+			t.Fatalf("VisualTextSystemPrompt(zh) retained text-only rule %q", forbidden)
+		}
+	}
+
+	en := VisualTextSystemPrompt("en")
+	for _, required := range []string{
+		"A current Street View frame is attached",
+		"sole authority for visible scene details",
+		"clearly visible in the attached frame",
+	} {
+		if !strings.Contains(en, required) {
+			t.Fatalf("VisualTextSystemPrompt(en) missing %q", required)
+		}
+	}
+	for _, forbidden := range []string{"No current Street View image is attached", "You are not given a current image", "Never claim to see a building"} {
+		if strings.Contains(en, forbidden) {
+			t.Fatalf("VisualTextSystemPrompt(en) retained text-only rule %q", forbidden)
+		}
+	}
+}
+
 func TestRealtimeInstructionsAllowCompleteArrivalStory(t *testing.T) {
 	zh := RealtimeInstructions("zh")
 	for _, required := range []string{
