@@ -142,6 +142,24 @@ func TestRandomCandidatesPreferNovelPanoFromSessionHistory(t *testing.T) {
 	}
 }
 
+func TestRandomCandidatesAllowRecentPanoAsSoftFallback(t *testing.T) {
+	provider := &randomTestMapProvider{repeatUntil: randomCandidateCount}
+	service, repo := newRandomTestService(t, provider)
+	if err := repo.RecordVisit("session-soft-repeat", models.Location{
+		PanoID: "pano-repeat", Latitude: 0.5, Longitude: 0.5,
+	}, models.VisitSourceRandom); err != nil {
+		t.Fatalf("RecordVisit() error = %v", err)
+	}
+
+	location, err := service.generateRandomLocation(context.Background(), testPreferenceRegion(), "en", "session-soft-repeat", "")
+	if err != nil {
+		t.Fatalf("generateRandomLocation() error = %v", err)
+	}
+	if location.PanoID != "pano-repeat" {
+		t.Fatalf("soft fallback pano = %q, want recently visited pano", location.PanoID)
+	}
+}
+
 func TestRandomCandidatesUseVerifiedReservoirWhenLiveLookupsFail(t *testing.T) {
 	requireRandomServiceGeoData(t)
 	provider := &randomTestMapProvider{fail: true}
@@ -168,8 +186,11 @@ func TestRandomLocationPenaltyUsesPanoAndDistance(t *testing.T) {
 	if got := randomLocationPenalty(models.Location{PanoID: "old", Latitude: 0, Longitude: 0}, recent); got != 2 {
 		t.Fatalf("exact pano penalty = %d, want 2", got)
 	}
-	if got := randomLocationPenalty(models.Location{PanoID: "new", Latitude: 10.01, Longitude: 20.01}, recent); got != 1 {
+	if got := randomLocationPenalty(models.Location{PanoID: "new", Latitude: 10.35, Longitude: 20}, recent); got != 1 {
 		t.Fatalf("nearby penalty = %d, want 1", got)
+	}
+	if got := randomLocationPenalty(models.Location{PanoID: "new", Latitude: 10.55, Longitude: 20}, recent); got != 0 {
+		t.Fatalf("location outside soft avoidance radius penalty = %d, want 0", got)
 	}
 	if got := randomLocationPenalty(models.Location{PanoID: "new", Latitude: 30, Longitude: 40}, recent); got != 0 {
 		t.Fatalf("novel penalty = %d, want 0", got)

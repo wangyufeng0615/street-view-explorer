@@ -24,7 +24,7 @@ const (
 	randomReservoirMaxWait    = 1500 * time.Millisecond
 	randomRecentHistoryLimit  = 100
 	randomRecentQueryLimit    = 250
-	randomNearbyExclusionKm   = 10.0
+	randomNearbyAvoidanceKm   = 50.0
 	randomReservoirQueryLimit = 500
 )
 
@@ -131,13 +131,9 @@ func (ls *LocationService) generateRandomLocation(ctx context.Context, regions [
 		strategy = utils.RandomStrategyCountry
 	}
 
-	candidates := make([]utils.RandomCoordinateCandidate, 0, randomCandidateCount)
-	for attempt := 1; attempt <= randomCandidateCount; attempt++ {
-		candidate, candidateErr := utils.GenerateRandomCoordinateCandidate(regions, countryCode, strategy)
-		if candidateErr != nil {
-			return models.Location{}, candidateErr
-		}
-		candidates = append(candidates, candidate)
+	candidates, err := utils.GenerateRandomCoordinateCandidates(regions, countryCode, strategy, randomCandidateCount)
+	if err != nil {
+		return models.Location{}, err
 	}
 
 	searchCtx, cancel := context.WithCancel(ctx)
@@ -294,7 +290,7 @@ func randomLocationPenalty(location models.Location, recent []models.VisitRecord
 		if visit.PanoID == location.PanoID {
 			return 2
 		}
-		if utils.CalculateDistance(location.Latitude, location.Longitude, visit.Latitude, visit.Longitude) < randomNearbyExclusionKm {
+		if utils.CalculateDistance(location.Latitude, location.Longitude, visit.Latitude, visit.Longitude) < randomNearbyAvoidanceKm {
 			nearby = true
 		}
 	}

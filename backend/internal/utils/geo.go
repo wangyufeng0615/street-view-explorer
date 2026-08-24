@@ -464,56 +464,94 @@ func ChooseRandomStrategy() string {
 	}
 }
 
-// GenerateRandomCoordinateCandidate returns both the sampled coordinate and
-// the intended country. The caller must verify that the resolved panorama is
-// still inside TargetCountryCode before accepting it.
+// GenerateRandomCoordinateCandidate returns one coordinate candidate. Global
+// callers that need a batch should use GenerateRandomCoordinateCandidates so
+// the same country is not sampled repeatedly within one request.
 func GenerateRandomCoordinateCandidate(userRegions []models.Region, countryCode, strategy string) (RandomCoordinateCandidate, error) {
+	candidates, err := GenerateRandomCoordinateCandidates(userRegions, countryCode, strategy, 1)
+	if err != nil {
+		return RandomCoordinateCandidate{}, err
+	}
+	return candidates[0], nil
+}
+
+// GenerateRandomCoordinateCandidates samples a fixed batch of coordinates.
+// Unconstrained global batches use weighted sampling without replacement at
+// the country level; country and interest requests keep their explicit scope.
+func GenerateRandomCoordinateCandidates(userRegions []models.Region, countryCode, strategy string, count int) ([]RandomCoordinateCandidate, error) {
+	if count <= 0 {
+		return []RandomCoordinateCandidate{}, nil
+	}
+
 	if countryCode != "" {
 		regions, err := countryRegionsByISOAlpha2(countryCode)
 		if err != nil {
-			return RandomCoordinateCandidate{}, err
+			return nil, err
 		}
-		region := selectRegionWithinCountry(regions)
-		lat, lng := generateCoordinateInRegion(region)
-		return RandomCoordinateCandidate{
-			Latitude:          lat,
-			Longitude:         lng,
-			TargetCountryCode: strings.ToUpper(countryCode),
-			Strategy:          strategy,
-		}, nil
+		normalizedCode, _ := NormalizeISOAlpha2CountryCode(countryCode)
+		candidates := make([]RandomCoordinateCandidate, 0, count)
+		for range count {
+			region := selectRegionWithinCountry(regions)
+			lat, lng := generateCoordinateInRegion(region)
+			candidates = append(candidates, RandomCoordinateCandidate{
+				Latitude:          lat,
+				Longitude:         lng,
+				TargetCountryCode: normalizedCode,
+				Strategy:          strategy,
+			})
+		}
+		return candidates, nil
 	}
 
 	if len(userRegions) > 0 {
-		region := selectRandomRegion(selectRegionSource(userRegions))
-		lat, lng := generateCoordinateInRegion(region)
-		return RandomCoordinateCandidate{
-			Latitude:  lat,
-			Longitude: lng,
-			Strategy:  RandomStrategyInterest,
-		}, nil
+		selectedRegions := selectRegionSource(userRegions)
+		candidates := make([]RandomCoordinateCandidate, 0, count)
+		for range count {
+			region := selectRandomRegion(selectedRegions)
+			lat, lng := generateCoordinateInRegion(region)
+			candidates = append(candidates, RandomCoordinateCandidate{
+				Latitude:  lat,
+				Longitude: lng,
+				Strategy:  RandomStrategyInterest,
+			})
+		}
+		return candidates, nil
 	}
 
 	landRegions, err := getLandMassRegions()
 	if err != nil {
-		return RandomCoordinateCandidate{}, err
+		return nil, err
 	}
 	countryRegions := groupRegionsByISO2(landRegions)
 	if len(countryRegions) == 0 {
-		return RandomCoordinateCandidate{}, fmt.Errorf("没有可用于随机探索的国家区域")
+		return nil, fmt.Errorf("没有可用于随机探索的国家区域")
+	}
+	if count > len(countryRegions) {
+		return nil, fmt.Errorf("候选数量 %d 超过可用国家数量 %d", count, len(countryRegions))
 	}
 	if strategy == "" {
 		strategy = ChooseRandomStrategy()
 	}
-	selectedCode := selectCountryForStrategy(countryRegions, strategy)
-	regions := countryRegions[selectedCode]
-	region := selectRegionWithinCountry(regions)
-	lat, lng := generateCoordinateInRegion(region)
-	return RandomCoordinateCandidate{
-		Latitude:          lat,
-		Longitude:         lng,
-		TargetCountryCode: selectedCode,
-		Strategy:          strategy,
-	}, nil
+
+	remainingCountries := make(map[string][]Region, len(countryRegions))
+	for code, regions := range countryRegions {
+		remainingCountries[code] = regions
+	}
+	candidates := make([]RandomCoordinateCandidate, 0, count)
+	for range count {
+		selectedCode := selectCountryForStrategy(remainingCountries, strategy)
+		regions := remainingCountries[selectedCode]
+		delete(remainingCountries, selectedCode)
+		region := selectRegionWithinCountry(regions)
+		lat, lng := generateCoordinateInRegion(region)
+		candidates = append(candidates, RandomCoordinateCandidate{
+			Latitude:          lat,
+			Longitude:         lng,
+			TargetCountryCode: selectedCode,
+			Strategy:          strategy,
+		})
+	}
+	return candidates, nil
 }
 
 func groupRegionsByISO2(regions []Region) map[string][]Region {

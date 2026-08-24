@@ -210,6 +210,36 @@ func TestRandomCoordinateCandidateCarriesTargetCountry(t *testing.T) {
 	}
 }
 
+func TestGlobalCandidateBatchUsesDistinctCountries(t *testing.T) {
+	requireGeoTestData(t)
+	for _, strategy := range []string{RandomStrategyBroad, RandomStrategyFair, RandomStrategyFrontier} {
+		t.Run(strategy, func(t *testing.T) {
+			candidates, err := GenerateRandomCoordinateCandidates(nil, "", strategy, 12)
+			if err != nil {
+				t.Fatalf("GenerateRandomCoordinateCandidates() error = %v", err)
+			}
+			if len(candidates) != 12 {
+				t.Fatalf("candidate count = %d, want 12", len(candidates))
+			}
+
+			seen := make(map[string]struct{}, len(candidates))
+			for _, candidate := range candidates {
+				if _, exists := seen[candidate.TargetCountryCode]; exists {
+					t.Fatalf("country %s repeated within one candidate batch", candidate.TargetCountryCode)
+				}
+				seen[candidate.TargetCountryCode] = struct{}{}
+				regions, regionsErr := countryRegionsByISOAlpha2(candidate.TargetCountryCode)
+				if regionsErr != nil {
+					t.Fatalf("target country %q not resolvable: %v", candidate.TargetCountryCode, regionsErr)
+				}
+				if !coordinateInAnyPolygon(candidate.Latitude, candidate.Longitude, regions) {
+					t.Fatalf("candidate (%.6f, %.6f) outside target %s", candidate.Latitude, candidate.Longitude, candidate.TargetCountryCode)
+				}
+			}
+		})
+	}
+}
+
 func TestGlobalCandidateCountriesExcludeUnownedMinorIslandOverlay(t *testing.T) {
 	requireGeoTestData(t)
 	regions, err := getLandMassRegions()
