@@ -178,8 +178,8 @@ func TestGenerateLocationDescriptionUsesSceneModelAndImageWithoutPlusCodeMetadat
 	if strings.Contains(body, `"require_parameters"`) {
 		t.Fatalf("request used a hard parameter filter that can exclude every server-tool endpoint: %s", body)
 	}
-	if !strings.Contains(body, `"tool_choice":"auto"`) {
-		t.Fatalf("request did not allow synthesis after the required search step: %s", body)
+	if !strings.Contains(body, `"tool_choice":"required"`) {
+		t.Fatalf("request did not require the web-search server tool: %s", body)
 	}
 	if !strings.Contains(body, "静默调用联网搜索工具一次") {
 		t.Fatalf("request did not explicitly require one research step: %s", body)
