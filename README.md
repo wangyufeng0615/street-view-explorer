@@ -194,7 +194,7 @@ All standard JSON endpoints return a `{ "success": boolean, "data": ..., "error"
 - `GET /api/v1/locations/search` - resolves a concrete place/landmark query through Google Places/Geocoding, then loads nearby Street View.
 - `GET /api/v1/locations/:panoId/description`
 - `GET /api/v1/locations/:panoId/detailed-description`
-- `GET /api/v1/locations/:panoId/streetview-frame` - returns the current heading/pitch/FOV frame used by Atlas Voice. Text descriptions no longer fetch or upload a Street View frame.
+- `GET /api/v1/locations/:panoId/streetview-frame` - returns an exact heading/pitch/FOV frame used by Atlas descriptions and Atlas Voice visual context.
 - `GET /api/v1/visits` - shared site-wide visit history; accepts `source=random|shared|lookup|map_pick`. Atlas footprints request `source=random`.
 - `POST /api/v1/preferences/exploration`
 - `POST /api/v1/preferences/exploration/remove`

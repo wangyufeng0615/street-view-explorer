@@ -255,6 +255,12 @@ Use `--skip-proxy-check` only when the proxy health check itself is unreliable b
 - Geo Guess prefers vision providers sorted by latency. Description requests leave provider sorting unset so OpenRouter Auto Exacto can prioritize web-tool reliability. Set `OPENROUTER_PROVIDER_SORT=throughput`, `price`, or `off` to change the Geo Guess policy.
 - AI endpoints can take longer than normal JSON calls; the streaming frontend timeout is 30 seconds for the first Atlas letter and 35 seconds for the detailed follow-up. The backend retries transient OpenRouter statuses (`408`, `429`, and `5xx`) before streaming begins. OpenRouter usage logs should show at least one web-search request for either description path.
 
+### Street View is black while its controls remain visible
+
+- First compare the same pano through `GET /api/v1/locations/:panoId/streetview-frame` or Google Maps. If that image works while the JavaScript panorama is black, inspect the document CSP before discarding the pano.
+- Community-contributed Photo Spheres can load tiles from `https://*.googleusercontent.com`, while Google-owned panoramas commonly use `https://*.googleapis.com`. Both must remain in the Nginx `img-src` directive. Maps render workers also require `worker-src blob:`; keep this policy aligned with Google's [Maps JavaScript API CSP guide](https://developers.google.com/maps/documentation/javascript/content-security-policy).
+- Run `make check-config` after editing `nginx/conf.d/default.conf`; deployment runs the same check automatically.
+
 ### Online duel room disappears
 
 - Online duel state is in backend memory and is lost on backend restart.

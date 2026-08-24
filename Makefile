@@ -21,7 +21,7 @@ LOCAL_GIT_REMOTE ?= origin
 REMOTE_GIT_REMOTE ?= origin
 HEALTH_TIMEOUT ?= 240
 
-.PHONY: deploy deploy-remote clean dev dev-start dev-stop dev-open backend-dev frontend-dev
+.PHONY: check-config deploy deploy-remote clean dev dev-start dev-stop dev-open backend-dev frontend-dev
 
 # 前台启动开发环境（Ctrl+C 同时停止）
 dev:
@@ -34,7 +34,10 @@ dev-open:
 	@open -na "Google Chrome" --args --proxy-server="$(LOCAL_PROXY_URL)" --proxy-bypass-list="127.0.0.1;localhost;::1" "http://$(LOCAL_FRONTEND_HOST):$(LOCAL_FRONTEND_PORT)/"
 
 # 部署命令：会构建镜像并修改本机 Docker Compose 运行状态。
-deploy:
+check-config:
+	@scripts/check_nginx_csp.sh
+
+deploy: check-config
 	@echo "正在构建和部署服务..."
 	docker compose build --progress=plain
 	@echo "构建完成，启动服务..."
