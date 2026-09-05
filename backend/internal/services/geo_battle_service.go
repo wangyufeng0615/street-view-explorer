@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
@@ -77,6 +78,8 @@ type geoBattleRoom struct {
 	CurrentRound    int
 	ScheduleToken   uint64
 	PrepareToken    uint64
+	PrepareContext  context.Context
+	PrepareCancel   context.CancelFunc
 }
 
 type geoBattlePlayer struct {
@@ -89,6 +92,13 @@ type geoBattlePlayer struct {
 	LastSeenAt   time.Time
 	CurrentZoom  int
 	CurrentSteps int
+}
+
+func cancelGeoBattlePreparation(room *geoBattleRoom) {
+	if room.PrepareCancel != nil {
+		room.PrepareCancel()
+		room.PrepareCancel = nil
+	}
 }
 
 type geoBattleRound struct {
@@ -471,7 +481,7 @@ func (s *GeoBattleService) ZoomOut(roomID, sessionID string) (models.GeoBattleRo
 	if err != nil {
 		return models.GeoBattleRoomSnapshot{}, err
 	}
-	if room.Phase != models.GeoBattlePhasePlaying {
+	if room.Phase != models.GeoBattlePhasePlaying || room.PhaseDeadlineAt == nil || !time.Now().Before(*room.PhaseDeadlineAt) {
 		return models.GeoBattleRoomSnapshot{}, ErrGeoBattleInvalidPhase
 	}
 
@@ -502,7 +512,8 @@ func (s *GeoBattleService) SubmitGuess(roomID, sessionID string, lat, lng *float
 	if err != nil {
 		return models.GeoBattleRoomSnapshot{}, err
 	}
-	if room.Phase != models.GeoBattlePhasePlaying {
+	now := time.Now()
+	if room.Phase != models.GeoBattlePhasePlaying || room.PhaseDeadlineAt == nil || !now.Before(*room.PhaseDeadlineAt) {
 		return models.GeoBattleRoomSnapshot{}, ErrGeoBattleInvalidPhase
 	}
 
@@ -520,7 +531,6 @@ func (s *GeoBattleService) SubmitGuess(roomID, sessionID string, lat, lng *float
 	}
 
 	round := &room.Rounds[room.CurrentRound]
-	now := time.Now()
 	guess := &geoBattleGuess{
 		Skipped:     skipped,
 		ZoomSteps:   player.CurrentSteps,
@@ -656,8 +666,16 @@ func (s *GeoBattleService) cleanupLoop() {
 }
 
 func (s *GeoBattleService) generatePreparedRoundsAsync(roomID string, token uint64) {
+	s.mu.Lock()
+	room, exists := s.rooms[roomID]
+	if !exists || room.PrepareToken != token || room.Phase != models.GeoBattlePhasePreparing {
+		s.mu.Unlock()
+		return
+	}
+	ctx := room.PrepareContext
+	s.mu.Unlock()
 	go func(expectedToken uint64) {
-		rounds, err := s.generateRounds()
+		rounds, err := s.generateRounds(ctx)
 
 		s.mu.Lock()
 		defer s.mu.Unlock()
@@ -666,6 +684,7 @@ func (s *GeoBattleService) generatePreparedRoundsAsync(roomID string, token uint
 		if !ok || room.PrepareToken != expectedToken || room.Phase != models.GeoBattlePhasePreparing {
 			return
 		}
+		cancelGeoBattlePreparation(room)
 
 		if err != nil {
 			room.Phase = models.GeoBattlePhaseLobby
@@ -698,6 +717,8 @@ func (s *GeoBattleService) generatePreparedRoundsAsync(roomID string, token uint
 }
 
 func (s *GeoBattleService) enterPreparingLocked(room *geoBattleRoom, token uint64) {
+	cancelGeoBattlePreparation(room)
+	room.PrepareContext, room.PrepareCancel = context.WithTimeout(context.Background(), 45*time.Second)
 	now := time.Now()
 	room.PrepareToken = token
 	room.ScheduleToken++
@@ -719,6 +740,7 @@ func (s *GeoBattleService) enterPreparingLocked(room *geoBattleRoom, token uint6
 }
 
 func (s *GeoBattleService) resetRoomToLobbyLocked(room *geoBattleRoom, now time.Time) {
+	cancelGeoBattlePreparation(room)
 	room.Phase = models.GeoBattlePhaseLobby
 	room.PhaseDeadlineAt = nil
 	room.Message = ""
@@ -737,7 +759,7 @@ func (s *GeoBattleService) resetRoomToLobbyLocked(room *geoBattleRoom, now time.
 	}
 }
 
-func (s *GeoBattleService) generateRounds() ([]geoBattleRound, error) {
+func (s *GeoBattleService) generateRounds(ctx context.Context) ([]geoBattleRound, error) {
 	rounds := make([]geoBattleRound, 0, models.GeoBattleTotalRounds)
 	seenPanoIDs := make(map[string]struct{})
 
@@ -747,7 +769,10 @@ func (s *GeoBattleService) generateRounds() ([]geoBattleRound, error) {
 			err error
 		)
 		for attempt := 0; attempt < geoBattleMaxRoundGenRetries; attempt++ {
-			loc, err = s.locationService.GetRandomLocation("", "en")
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			loc, err = s.locationService.GetRandomLocationWithContext(ctx, "", "en")
 			if err != nil {
 				continue
 			}
@@ -896,6 +921,7 @@ func (s *GeoBattleService) enterRevealLocked(room *geoBattleRoom, message string
 }
 
 func (s *GeoBattleService) finishRoomLocked(room *geoBattleRoom) {
+	cancelGeoBattlePreparation(room)
 	room.Phase = models.GeoBattlePhaseFinished
 	room.PhaseDeadlineAt = nil
 	room.UpdatedAt = time.Now()
@@ -1150,6 +1176,7 @@ func (s *GeoBattleService) deleteRoomLocked(roomID string) {
 	if !ok {
 		return
 	}
+	cancelGeoBattlePreparation(room)
 	if room.Code != "" {
 		delete(s.roomCodes, room.Code)
 	}

@@ -125,6 +125,7 @@ export default function HomePage({ showFootprintFromRoute = false }) {
   const {
     description,
     descriptionCitations,
+    descriptionResearchStatus,
     isLoadingDesc,
     descError,
     descRetries,
@@ -410,6 +411,7 @@ export default function HomePage({ showFootprintFromRoute = false }) {
           streetViewView={streetViewView}
           description={description}
           descriptionCitations={descriptionCitations}
+          descriptionResearchStatus={descriptionResearchStatus}
           isLoadingDesc={isLoadingDesc}
           descError={descError}
           descRetries={descRetries}

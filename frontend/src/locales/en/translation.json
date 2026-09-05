@@ -399,5 +399,6 @@
   "geo_online.feedback_opponent_locked": "Opponent locked in. You can keep reading the map.",
   "geo_online.feedback_error": "Action failed. Please try again.",
   "geo_online.feedback_image_error": "Satellite image sync failed. It will retry shortly.",
-  "geo_online.already_in_room": "You're still in another room. Leave it before matchmaking."
+  "geo_online.already_in_room": "You're still in another room. Leave it before matchmaking.",
+  "footprint.displayed": "{{count}} places shown"
 }

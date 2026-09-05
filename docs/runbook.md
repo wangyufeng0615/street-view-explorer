@@ -91,7 +91,7 @@ file /tmp/atlas-frame.jpg
 
 The response should be a non-empty `640x480` JPEG or PNG. Text description requests accept the same view parameters and an optional `scene_pano_id` when the user has moved to a linked panorama.
 
-For the streaming text path, add `stream=1`; a healthy response uses `text/event-stream`, emits one or more `delta` events, and finishes with `done`. A terminal `error` event means the response failed validation, including the fail-closed check that OpenRouter actually executed web search and the check that its prose matches the requested UI language. Repeating the same location, language, detail mode, panorama, and camera view within 30 minutes should hit the in-memory description cache and complete almost immediately.
+For the streaming text path, add `stream=1`; a healthy response uses `text/event-stream`, emits `delta` events, and finishes with `done`. A terminal `error` event means validation or generation failed; final language validation also applies after visible streaming has begun. `research_status=verified` means the provider reported at least one search request. `unverified` means the provider did not confirm execution; the UI explicitly shows that uncertainty. A required tool choice is a request, not execution evidence. Atlas letter bodies are never cached: repeated requests generate fresh researched prose. Only location metadata and Street View frames have bounded TTL caches.
 
 End-to-end local smoke:
 
@@ -150,8 +150,8 @@ Expected during `countdown`: `409`. Expected after the phase becomes `playing`: 
 ```bash
 make deploy
 docker compose ps
-curl -s http://127.0.0.1:3000/nginx_status
-curl -s http://127.0.0.1:3000/health
+docker compose exec -T nginx wget -qO- http://127.0.0.1:3000/nginx_status
+docker compose exec -T backend /app/main health
 curl -s -o /dev/null -w '%{http_code}\n' \
   'http://127.0.0.1:3000/api/v1/geo/satellite?lat=0&lng=0&zoom=21'
 ```
@@ -174,8 +174,8 @@ make deploy-remote REMOTE_BRANCH="$(git branch --show-current)"
 Defaults:
 
 ```bash
-REMOTE_HOST=kr
-REMOTE_DIR=/root/street-view-explorer
+REMOTE_HOST=sg
+REMOTE_DIR=/opt/street-view-explorer
 REMOTE_BRANCH=main
 LOCAL_GIT_REMOTE=origin
 REMOTE_GIT_REMOTE=origin
@@ -298,3 +298,23 @@ Use `--skip-proxy-check` only when the proxy health check itself is unreliable b
 - `/api/v1/realtime/voice-config` has a per-IP limit of 120 requests per minute.
 - `/api/v1/preferences/exploration` has tighter per-IP and per-session limits.
 - Set `RATE_LIMIT_ENABLED=false` only for local debugging.
+
+## Reliability and deployment controls
+
+- SQLite uses modernc `_pragma` connection options: WAL, 5-second busy timeout, NORMAL synchronous mode, and foreign keys. Regression tests read them back on replacement connections. Back up with SQLite's online backup API (including while WAL is active), never copy just a live `.db` file.
+- `/health` checks database connectivity; `/app/main health` checks HTTP status and the JSON health contract within 2.5 seconds without an outbound proxy. Docker health checks use this command.
+- Set `TRUSTED_PROXY_CIDRS` to the actual trusted proxy hop ranges; the default trusts no forwarding headers. The public edge must preserve the real client address while rejecting arbitrary client-supplied forwarding chains. Never use `0.0.0.0/0` or `::/0`.
+- Realtime WebSockets allow at most 16 simultaneous connections process-wide, 2 per client IP, 4 MiB per message, 15 minutes per session, 90 seconds read inactivity, and a 10-second write deadline. Reconnect after the session limit. These bounds supplement the per-minute HTTP limiter; they do not apply to direct WebRTC sessions.
+- Online duel preparation has a 45-second budget and is cancelled when a player leaves. Guess and zoom requests reject expired deadlines even before a timer changes phase.
+- `/api/v1/visits?source=random&distinct=1` paginates unique panoramas. The footprints page requests at most 5000 places, states the loaded count separately from the total, and clusters markers by map zoom.
+- The source checkout may be owned by the SSH login user while Docker requires sudo. Use `REMOTE_SUDO=1`; the deploy script trusts only the selected checkout for that process. It requires actual health checks, a missing-panorama 404, and invalid-zoom 400. It never prints raw production logs on failure.
+
+### SG production target (verified 2026-09-05)
+
+The active target is `sg:/opt/street-view-explorer` (SSH user `ubuntu`, sudo for Docker), behind Caddy on `earth.wangyufeng.org`. KR's Docker service is inactive. The original archive matched commit `106364f` before its Git metadata was restored; local `.env` files and the existing `street-view-explorer_sqlite_data` volume are retained.
+
+```bash
+make deploy-remote REMOTE_HOST=sg REMOTE_DIR=/opt/street-view-explorer REMOTE_BRANCH=main REMOTE_SUDO=1
+```
+
+Before changing a release, record its commit and container image IDs and create an online SQLite backup plus a protected source/config archive under `/var/backups/streetview/`. For rollback, use the recorded prior image IDs for both services, retain the same Compose project and data volume, and repeat health and API checks. Do not run `make clean`: it deletes the data volume. A database restore requires stopping the backend and separately confirming data retention; application rollback alone does not restore an older database.

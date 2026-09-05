@@ -15,6 +15,7 @@ const Sidebar = memo(function Sidebar({
   streetViewView,
   description,
   descriptionCitations,
+  descriptionResearchStatus,
   isLoadingDesc,
   descError,
   descRetries,
@@ -149,6 +150,7 @@ const Sidebar = memo(function Sidebar({
               error={descError}
               description={description}
               citations={descriptionCitations}
+              researchStatus={descriptionResearchStatus}
               retries={descRetries}
               panoId={location?.pano_id}
               heading={heading}

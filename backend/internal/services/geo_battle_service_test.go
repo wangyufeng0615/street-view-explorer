@@ -1,12 +1,53 @@
 package services
 
 import (
+	"context"
 	"math"
 	"testing"
 	"time"
 
 	"github.com/my-streetview-project/backend/internal/models"
 )
+
+func TestGeoBattleRejectsLateActionsBeforeTimerRuns(t *testing.T) {
+	for _, action := range []string{"guess", "zoom"} {
+		t.Run(action, func(t *testing.T) {
+			svc, room := newTestGeoBattleServiceWithPlayingRoom()
+			expired := time.Now().Add(-time.Second)
+			room.PhaseDeadlineAt = &expired
+			var err error
+			if action == "guess" {
+				lat, lng := 1.0, 2.0
+				_, err = svc.SubmitGuess(room.ID, "player-a", &lat, &lng, false)
+			} else {
+				_, err = svc.ZoomOut(room.ID, "player-a")
+			}
+			if err != ErrGeoBattleInvalidPhase {
+				t.Fatalf("late action error=%v", err)
+			}
+			if len(room.Rounds[0].Guesses) != 0 || room.Players[0].CurrentSteps != 0 {
+				t.Fatal("late action mutated round")
+			}
+		})
+	}
+}
+
+func TestGeoBattleLeaveCancelsPreparation(t *testing.T) {
+	svc, room := newTestGeoBattleServiceWithPlayingRoom()
+	svc.mu.Lock()
+	svc.enterPreparingLocked(room, 1)
+	ctx := room.PrepareContext
+	svc.mu.Unlock()
+	if err := svc.LeaveRoom(room.ID, "player-a"); err != nil {
+		t.Fatal(err)
+	}
+	if ctx.Err() != context.Canceled {
+		t.Fatalf("preparation error=%v", ctx.Err())
+	}
+	if _, err := svc.generateRounds(ctx); err != context.Canceled {
+		t.Fatalf("generation did not stop: %v", err)
+	}
+}
 
 func TestGeoBattleCalculateScoreMatchesSinglePlayerFormula(t *testing.T) {
 	got := geoBattleCalculateScore(3, 200)

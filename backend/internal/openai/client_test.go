@@ -581,8 +581,9 @@ func TestGenerateLocationDescriptionAcceptsResponseWhenSearchUsageMetadataIsMiss
 		endpoint:   server.URL,
 	}
 	var visibleDeltas []string
+	var researchStatus string
 	desc, _, err := c.StreamLocationDescription(
-		context.Background(),
+		WithResearchObserver(context.Background(), func(status string) { researchStatus = status }),
 		1,
 		2,
 		map[string]string{},
@@ -601,6 +602,9 @@ func TestGenerateLocationDescriptionAcceptsResponseWhenSearchUsageMetadataIsMiss
 	}
 	if got := strings.Join(visibleDeltas, ""); got != desc {
 		t.Fatalf("visible stream = %q, final description = %q", got, desc)
+	}
+	if researchStatus != "unverified" {
+		t.Fatalf("missing usage status=%s", researchStatus)
 	}
 }
 

@@ -2,6 +2,7 @@
 
 import { getOrCreateSessionId } from "../utils/session";
 import i18n from "../i18n";
+import { fetchWithTimeout } from "../utils/fetchWithTimeout";
 
 const API_V1 = "/api/v1";
 const DEFAULT_TIMEOUT = 25000; // 25 seconds (AI generation can take longer)
@@ -242,44 +243,6 @@ export function streamLocationDetailedDescription(
     onDelta,
     35000,
   );
-}
-
-// 带超时的 fetch
-async function fetchWithTimeout(url, options, timeout = DEFAULT_TIMEOUT) {
-  const externalSignal =
-    options.signal instanceof AbortSignal ? options.signal : null;
-  if (externalSignal?.aborted) {
-    const abortError = new DOMException(
-      "The operation was aborted.",
-      "AbortError",
-    );
-    throw abortError;
-  }
-
-  const controller = new AbortController();
-  let timeoutId = null;
-  let abortFromExternal = null;
-
-  if (externalSignal) {
-    abortFromExternal = () => controller.abort();
-    externalSignal.addEventListener("abort", abortFromExternal, { once: true });
-  }
-  if (timeout > 0) {
-    timeoutId = setTimeout(() => controller.abort(), timeout);
-  }
-
-  try {
-    const response = await fetch(url, {
-      ...options,
-      signal: controller.signal,
-    });
-    return response;
-  } finally {
-    if (timeoutId) clearTimeout(timeoutId);
-    if (externalSignal && abortFromExternal) {
-      externalSignal.removeEventListener("abort", abortFromExternal);
-    }
-  }
 }
 
 // 获取随机位置
@@ -545,13 +508,14 @@ export async function deleteExplorationPreference(language = null) {
 }
 
 // 获取全站共享访问历史
-export async function getVisitHistory(limit = 1000, offset = 0, source = null) {
+export async function getVisitHistory(limit = 1000, offset = 0, source = null, distinct = false) {
   try {
     const params = new URLSearchParams({
       limit: String(limit),
       offset: String(offset),
     });
     if (source) params.set("source", source);
+    if (distinct) params.set("distinct", "1");
     const resp = await fetchWithTimeout(
       `${API_V1}/visits?${params.toString()}`,
       {

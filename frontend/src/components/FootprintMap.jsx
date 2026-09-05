@@ -8,6 +8,12 @@ import React, {
 import { useTranslation } from "react-i18next";
 import { loadGoogleMapsScript } from "../utils/googleMaps";
 import { getVisitHistory } from "../services/api";
+import { clusterFootprints } from "../utils/footprintClusters";
+
+function removeMarker(marker) {
+  if (marker.setMap) marker.setMap(null);
+  else marker.map = null;
+}
 
 function getUniqueVisits(visits) {
   const seen = new Map();
@@ -50,7 +56,7 @@ export default function FootprintMap({ onClose }) {
     async function fetchVisits() {
       // Atlas footprints represent random exploration. Shared links, manual
       // searches, and map picks are useful history but not Atlas travel.
-      const resp = await getVisitHistory(5000, 0, "random");
+      const resp = await getVisitHistory(5000, 0, "random", true);
       if (cancelled) return;
 
       if (resp.success && resp.data) {
@@ -83,10 +89,11 @@ export default function FootprintMap({ onClose }) {
       if (!mapRef.current) return;
 
       markersRef.current.forEach((marker) => {
-        marker.map = null;
+        removeMarker(marker);
       });
       markersRef.current = [];
 
+      if (mapInstanceRef.current) maps.event.clearInstanceListeners(mapInstanceRef.current);
       const map = new maps.Map(mapRef.current, {
         mapId: import.meta.env.VITE_GOOGLE_MAPS_MAP_ID,
         center: GLOBAL_VIEW.center,
@@ -111,68 +118,37 @@ export default function FootprintMap({ onClose }) {
         setMapLoading(false);
       });
 
-      // Add markers
-      if (maps.marker?.AdvancedMarkerElement) {
-        const bounds = new maps.LatLngBounds();
-        let validMarkerCount = 0;
-        let lastValidPosition = null;
-
-        for (const visit of uniqueVisits) {
-          const lat = parseFloat(visit.latitude);
-          const lng = parseFloat(visit.longitude);
-          if (isNaN(lat) || isNaN(lng)) continue;
-          validMarkerCount += 1;
-          lastValidPosition = { lat, lng };
-
-          const dot = document.createElement("div");
-          dot.style.width = "10px";
-          dot.style.height = "10px";
-          dot.style.borderRadius = "50%";
-          dot.style.backgroundColor = "#FFD54F";
-          dot.style.border = "2px solid rgba(255, 255, 255, 0.9)";
-          dot.style.boxShadow = "0 0 6px rgba(255, 213, 79, 0.6)";
-          dot.style.cursor = "pointer";
-          dot.style.transition = "transform 0.2s ease";
-
-          const marker = new maps.marker.AdvancedMarkerElement({
-            map,
-            position: { lat, lng },
-            content: dot,
-            title: visit.formatted_address || visit.country || "",
-          });
-
-          // Hover effect
-          dot.addEventListener("mouseenter", () => {
-            dot.style.transform = "scale(1.8)";
-            dot.style.boxShadow = "0 0 12px rgba(255, 213, 79, 0.9)";
-          });
-          dot.addEventListener("mouseleave", () => {
-            dot.style.transform = "scale(1)";
-            dot.style.boxShadow = "0 0 6px rgba(255, 213, 79, 0.6)";
-          });
-
-          // Click → open street view in new tab via our app
-          dot.addEventListener("click", () => {
-            openVisitInNewTab(lat, lng);
-          });
-
+      const renderMarkers = () => {
+        markersRef.current.forEach(removeMarker);
+        markersRef.current = [];
+        for (const group of clusterFootprints(uniqueVisits, map.getZoom() || 2)) {
+          const position = { lat: group.lat, lng: group.lng };
+          const count = group.visits.length;
+          const title = count > 1 ? `${count}` : group.visits[0].formatted_address || '';
+          let marker;
+          const onClick = () => {
+            if (count === 1) openVisitInNewTab(group.lat, group.lng);
+            else { map.setCenter(position); map.setZoom(Math.min(21, (map.getZoom() || 2) + 3)); }
+          };
+          if (maps.marker?.AdvancedMarkerElement && import.meta.env.VITE_GOOGLE_MAPS_MAP_ID) {
+            const dot = document.createElement('button');
+            dot.type = 'button';
+            dot.textContent = count > 1 ? String(count) : '';
+            dot.setAttribute('aria-label', title);
+            Object.assign(dot.style, { minWidth: count > 1 ? '28px' : '12px', height: count > 1 ? '28px' : '12px',
+              borderRadius: '50%', background: '#FFD54F', color: '#222', border: '2px solid white', cursor: 'pointer' });
+            dot.addEventListener('click', onClick);
+            marker = new maps.marker.AdvancedMarkerElement({ map, position, content: dot, title });
+          } else {
+            marker = new maps.Marker({ map, position, title, label: count > 1 ? String(count) : undefined });
+            marker.addListener('click', onClick);
+          }
           markersRef.current.push(marker);
-          bounds.extend({ lat, lng });
         }
+      };
+      renderMarkers();
+      map.addListener('zoom_changed', renderMarkers);
 
-        // Fit map to show all markers
-        if (validMarkerCount > 1) {
-          map.fitBounds(bounds, {
-            top: 80,
-            bottom: 60,
-            left: 40,
-            right: 40,
-          });
-        } else if (validMarkerCount === 1 && lastValidPosition) {
-          map.setCenter(lastValidPosition);
-          map.setZoom(5);
-        }
-      }
     } catch (err) {
       console.error("FootprintMap init error:", err);
       setError(t("error.mapLoadFailed"));
@@ -187,9 +163,10 @@ export default function FootprintMap({ onClose }) {
 
     return () => {
       markersRef.current.forEach((m) => {
-        m.map = null;
+        removeMarker(m);
       });
       markersRef.current = [];
+      if (mapInstanceRef.current && window.google?.maps?.event) window.google.maps.event.clearInstanceListeners(mapInstanceRef.current);
       mapInstanceRef.current = null;
     };
   }, [loading, uniqueVisits.length, initMap]);
@@ -230,7 +207,7 @@ export default function FootprintMap({ onClose }) {
         <span style={styles.statsText}>
           {loading
             ? t("footprint.loading")
-            : t("footprint.total", { count: uniquePlaceCount })}
+            : `${t("footprint.total", { count: uniquePlaceCount })} · ${t("footprint.displayed", { count: uniqueVisits.length })}`}
         </span>
       </div>
 
@@ -302,6 +279,8 @@ const styles = {
     position: "absolute",
     top: "16px",
     left: "16px",
+    maxWidth: "calc(100% - 96px)",
+    boxSizing: "border-box",
     zIndex: 2001,
     display: "flex",
     alignItems: "center",
@@ -368,7 +347,7 @@ const styles = {
   resetViewButton: {
     position: "absolute",
     bottom: "24px",
-    right: "16px",
+    left: "16px",
     zIndex: 2001,
     padding: "8px 16px",
     borderRadius: "20px",

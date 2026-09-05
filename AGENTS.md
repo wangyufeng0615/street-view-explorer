@@ -232,3 +232,12 @@ backend/
 - `README.md` - 面向新人和外部读者的入口。
 - `docs/architecture.md` - 当前架构、数据流和状态机。
 - `docs/runbook.md` - 安装、冒烟、部署和故障排查。
+
+## 可靠性修复（2026-09-05）
+
+- 实际生产入口是 SG `/opt/street-view-explorer`，部署用 `make deploy-remote REMOTE_HOST=sg REMOTE_DIR=/opt/street-view-explorer REMOTE_BRANCH=main REMOTE_SUDO=1`；使用前核对运行状态，不沿用 KR 默认值。
+- SQLite 连接参数使用 modernc `_pragma`；限流提交失败必须返回错误并清理连接上的事务。
+- `TRUSTED_PROXY_CIDRS` 只填写真实代理跳的 CIDR，空值不信任转发头。
+- 来信正文不缓存。`research_status` 区分上游确认过搜索的 `verified` 和没有执行证据的 `unverified`；后者在 UI 明示，不能根据 tool_choice 推断已执行。
+- 足迹 `distinct=1` 按 panorama 分页，展示加载数量和全站总数；低缩放级别聚合图钉。
+- WebSocket、备题预算、备份和回滚流程以 `docs/runbook.md` 为准。

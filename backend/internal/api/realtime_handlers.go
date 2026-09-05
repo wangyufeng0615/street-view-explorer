@@ -28,8 +28,11 @@ const (
 )
 
 type RealtimeHandlers struct {
-	httpClient      *http.Client
-	doubaoTTSClient *http.Client
+	httpClient        *http.Client
+	doubaoTTSClient   *http.Client
+	connectionsMu     sync.Mutex
+	connections       map[string]int
+	activeConnections int
 }
 
 var realtimeWSUpgrader = websocket.Upgrader{
@@ -281,6 +284,12 @@ func (h *RealtimeHandlers) ConnectWebSocket(c *gin.Context) {
 		})
 		return
 	}
+	release, allowed := h.reserveRealtimeConnection(c.ClientIP())
+	if !allowed {
+		c.JSON(http.StatusTooManyRequests, gin.H{"success": false, "error": "Voice connection limit reached; close an existing session and retry"})
+		return
+	}
+	defer release()
 
 	startedAt := time.Now()
 	vadConfig := realtimeTurnDetectionConfig()
@@ -324,6 +333,8 @@ func (h *RealtimeHandlers) ConnectWebSocket(c *gin.Context) {
 		return
 	}
 	defer upstreamConn.Close()
+	clientConn.SetReadLimit(realtimeMaxMessageBytes)
+	upstreamConn.SetReadLimit(realtimeMaxMessageBytes)
 
 	status := ""
 	if resp != nil {
@@ -335,7 +346,17 @@ func (h *RealtimeHandlers) ConnectWebSocket(c *gin.Context) {
 	errCh := make(chan realtimeRelayResult, 2)
 	go relayRealtimeWS("browser_to_openai", upstreamConn, clientConn, errCh, trace)
 	go relayRealtimeWS("openai_to_browser", clientConn, upstreamConn, errCh, trace)
-	result := <-errCh
+	timer := time.NewTimer(realtimeMaxSessionDuration)
+	defer timer.Stop()
+	var result realtimeRelayResult
+	select {
+	case result = <-errCh:
+	case <-timer.C:
+		result = realtimeRelayResult{Direction: "session_limit", Err: fmt.Errorf("voice session duration limit reached")}
+		_ = clientConn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, "Voice session time limit; reconnect to continue"), time.Now().Add(time.Second))
+	case <-c.Request.Context().Done():
+		result = realtimeRelayResult{Direction: "request_cancelled", Err: c.Request.Context().Err()}
+	}
 	log.Printf(
 		"[ATLAS_VOICE] ws_closed direction=%s duration=%s err=%v",
 		result.Direction,
@@ -351,12 +372,14 @@ type realtimeRelayResult struct {
 
 func relayRealtimeWS(direction string, dst, src *websocket.Conn, errCh chan<- realtimeRelayResult, trace *realtimeWSTrace) {
 	for {
+		_ = src.SetReadDeadline(time.Now().Add(realtimeIdleTimeout))
 		messageType, payload, err := src.ReadMessage()
 		if err != nil {
 			errCh <- realtimeRelayResult{Direction: direction, Err: err}
 			return
 		}
 		trace.observe(direction, payload)
+		_ = dst.SetWriteDeadline(time.Now().Add(realtimeWriteTimeout))
 		if err := dst.WriteMessage(messageType, payload); err != nil {
 			errCh <- realtimeRelayResult{Direction: direction, Err: err}
 			return

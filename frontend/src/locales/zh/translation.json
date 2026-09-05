@@ -399,5 +399,6 @@
   "geo_online.feedback_opponent_locked": "对手已锁定；你还可以继续判断。",
   "geo_online.feedback_error": "操作失败，请重试。",
   "geo_online.feedback_image_error": "卫星图同步失败，稍后会自动重试。",
-  "geo_online.already_in_room": "你仍在另一个房间里，先离开再匹配。"
+  "geo_online.already_in_room": "你仍在另一个房间里，先离开再匹配。",
+  "footprint.displayed": "地图显示 {{count}} 个地点"
 }

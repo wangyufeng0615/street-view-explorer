@@ -5,6 +5,7 @@ export default function useLocationDescription() {
     // 从Zustand store获取状态和actions
     const description = useStore(state => state.description);
     const descriptionCitations = useStore(state => state.descriptionCitations);
+    const descriptionResearchStatus = useStore(state => state.descriptionResearchStatus);
     const isLoadingDesc = useStore(state => state.isDescriptionLoading);
     const descError = useStore(state => state.descriptionError);
     const descRetries = useStore(state => state.descriptionRetries);
@@ -112,6 +113,7 @@ export default function useLocationDescription() {
     return {
         description,
         descriptionCitations,
+        descriptionResearchStatus,
         setDescription,
         isLoadingDesc,
         setIsLoadingDesc,

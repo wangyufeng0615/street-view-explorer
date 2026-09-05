@@ -1252,44 +1252,52 @@ export default function AtlasVoicePanel() {
           }
 
           const reader = response.body.getReader();
-          const decoder = new TextDecoder();
-          let buffer = "";
+          const cancelReader = () => { reader.cancel().catch(() => {}); };
+          controller.signal.addEventListener("abort", cancelReader, { once: true });
+          if (controller.signal.aborted) cancelReader();
+          try {
+            const decoder = new TextDecoder();
+            let buffer = "";
 
-          const handleLine = (line) => {
-            if (!line.trim() || doubaoSpeechIdRef.current !== generation)
-              return;
-            let event;
-            try {
-              event = JSON.parse(line);
-            } catch (err) {
-              return;
+            const handleLine = (line) => {
+              if (!line.trim() || doubaoSpeechIdRef.current !== generation)
+                return;
+              let event;
+              try {
+                event = JSON.parse(line);
+              } catch (err) {
+                return;
+              }
+
+              if (event.type === "audio_delta" && event.delta) {
+                setStatus("speaking");
+                playAudioDelta({
+                  delta: event.delta,
+                  item_id: `doubao-${queuedSpeech.id}`,
+                  content_index: 0,
+                  sample_rate: event.sample_rate,
+                });
+              } else if (event.type === "error") {
+                throw new Error(event.error || copy.ttsError);
+              }
+            };
+
+            for (;;) {
+              const { value, done } = await reader.read();
+              if (done) break;
+              buffer += decoder.decode(value, { stream: true });
+              const lines = buffer.split("\n");
+              buffer = lines.pop() || "";
+              lines.forEach(handleLine);
             }
 
-            if (event.type === "audio_delta" && event.delta) {
-              setStatus("speaking");
-              playAudioDelta({
-                delta: event.delta,
-                item_id: `doubao-${queuedSpeech.id}`,
-                content_index: 0,
-                sample_rate: event.sample_rate,
-              });
-            } else if (event.type === "error") {
-              throw new Error(event.error || copy.ttsError);
+            buffer += decoder.decode();
+            if (buffer) {
+              handleLine(buffer);
             }
-          };
-
-          for (;;) {
-            const { value, done } = await reader.read();
-            if (done) break;
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split("\n");
-            buffer = lines.pop() || "";
-            lines.forEach(handleLine);
-          }
-
-          buffer += decoder.decode();
-          if (buffer) {
-            handleLine(buffer);
+          } finally {
+            controller.signal.removeEventListener("abort", cancelReader);
+            await reader.cancel().catch(() => {});
           }
         } catch (err) {
           if (
@@ -1308,8 +1316,10 @@ export default function AtlasVoicePanel() {
         }
       }
     } finally {
-      doubaoSpeechActiveRef.current = false;
-      scheduleSpeechIdleCheck();
+      if (doubaoSpeechIdRef.current === generation) {
+        doubaoSpeechActiveRef.current = false;
+        scheduleSpeechIdleCheck();
+      }
     }
   }, [
     copy.ttsError,

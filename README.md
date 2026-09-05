@@ -2,7 +2,7 @@
 
 [![Live Demo](https://img.shields.io/badge/Live-earth.wangyufeng.org-blue)](https://earth.wangyufeng.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Go Version](https://img.shields.io/badge/Go-1.22-00ADD8?logo=go)](https://go.dev/)
+[![Go Version](https://img.shields.io/badge/Go-1.25-00ADD8?logo=go)](https://go.dev/)
 [![React Version](https://img.shields.io/badge/React-18.2-61DAFB?logo=react)](https://react.dev/)
 [![Vite](https://img.shields.io/badge/Vite-7.1-646CFF?logo=vite)](https://vitejs.dev/)
 
@@ -11,7 +11,7 @@ An interactive map application for exploring random Google Street View locations
 ## Features
 
 - Coverage-aware global exploration with broad/fair/frontier country lanes, bounded Street View snapping, and session-level repeat avoidance.
-- Streamed Atlas letters and detailed follow-ups through OpenRouter, grounded in the Street View frame the user is currently facing and verified against server-side web search.
+- Streamed Atlas letters and detailed follow-ups through OpenRouter, grounded in the Street View frame the user is currently facing and requesting server-side web search, with explicit verification status when provider evidence is unavailable.
 - Visit history, a shared site-wide Atlas random-exploration footprint map, and regional or custom exploration preferences.
 - Bilingual UI in English and Chinese.
 - Atlas Voice on the home route, with the latest Street View frame as Realtime visual context, interruptible spoken turns, concrete place search, nearby wandering, and optional Doubao TTS output.
@@ -24,8 +24,8 @@ An interactive map application for exploring random Google Street View locations
 
 ### Prerequisites
 
-- Node.js 20+ and Yarn.
-- Go 1.22.2+.
+- Node.js 20.19+ (or 22.12+) and Yarn.
+- Go 1.25.0+.
 - Google Maps API key with Maps JavaScript API, Places API, Geocoding API, Street View API, and Static Maps API enabled.
 - OpenRouter API key for AI descriptions and AI satellite guesses.
 - Docker and Docker Compose for production-like deployment.
@@ -88,7 +88,7 @@ go run cmd/server/main.go --openai-proxy http://127.0.0.1:10086 --maps-proxy htt
 
 ```bash
 make deploy       # docker compose build + up -d
-make deploy-remote # ssh to REMOTE_HOST=kr, pull REMOTE_BRANCH (default main), deploy, and verify
+make deploy-remote # ssh to REMOTE_HOST=sg (sudo), pull REMOTE_BRANCH (default main), deploy, and verify
 make clean        # destructive: stop Compose and remove the SQLite data volume
 ```
 
@@ -143,6 +143,7 @@ Backend variables live in `backend/.env`.
 | `SENTRY_DSN` | No | Backend Sentry DSN. |
 | `GO_ENV` | No | Backend runtime environment and Sentry environment label, default `development`. |
 | `SENTRY_ENABLED` | No | Set to `false` to disable backend Sentry initialization. |
+| `TRUSTED_PROXY_CIDRS` | No | Comma-separated CIDRs for the actual reverse proxy hops. Empty trusts no forwarding headers. |
 | `RATE_LIMIT_ENABLED` | No | Enables SQLite-backed rate limiting, default `true`. |
 | `RATE_LIMIT_MAX_REQUESTS` | No | Default rate-limit ceiling. Some handlers override per endpoint. |
 | `RATE_LIMIT_WINDOW_SECONDS` | No | Default rate-limit window. |

@@ -268,7 +268,7 @@ func (ls *LocationService) recentRandomVisits(sessionID string) ([]models.VisitR
 	if sessionID == "" || ls.repo == nil {
 		return nil, nil
 	}
-	visits, _, _, err := ls.repo.GetVisitHistory(sessionID, randomRecentQueryLimit, 0)
+	visits, err := ls.repo.GetRecentVisits(sessionID, "", randomRecentQueryLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -304,7 +304,7 @@ func (ls *LocationService) verifiedReservoirFallback(recent []models.VisitRecord
 	if ls.repo == nil {
 		return models.Location{}, false
 	}
-	visits, _, _, err := ls.repo.GetGlobalVisitHistory(randomReservoirQueryLimit, 0, models.VisitSourceRandom)
+	visits, err := ls.repo.GetRecentVisits("", models.VisitSourceRandom, randomReservoirQueryLimit)
 	if err != nil {
 		return models.Location{}, false
 	}
@@ -621,6 +621,10 @@ func (ls *LocationService) GetVisitHistory(sessionID string, limit, offset int) 
 // GetGlobalVisitHistory 获取所有用户共享的访问历史
 func (ls *LocationService) GetGlobalVisitHistory(limit, offset int, sources ...string) ([]models.VisitRecord, int64, int64, error) {
 	return ls.repo.GetGlobalVisitHistory(limit, offset, sources...)
+}
+
+func (ls *LocationService) GetFootprints(limit, offset int, source string) ([]models.VisitRecord, int64, int64, error) {
+	return ls.repo.GetFootprints(limit, offset, source)
 }
 
 // DeleteExplorationPreference 删除用户的探索偏好

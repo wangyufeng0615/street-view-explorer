@@ -746,7 +746,7 @@ func validateDescriptionLanguage(text, language string, partial bool) error {
 	if partial {
 		minimumLatin = 6
 	}
-	if latin < minimumLatin && han+kana > latin*2 {
+	if (latin < minimumLatin && han+kana > latin*2) || (han+kana >= 12 && han+kana > latin) {
 		return fmt.Errorf("AI returned the description in the wrong language")
 	}
 	return nil
@@ -1093,6 +1093,7 @@ func (c *client) StreamLocationDescription(parent context.Context, latitude, lon
 		return "", nil, fmt.Errorf("AI未返回任何结果")
 	}
 	webSearchRequests := chatResp.Usage.webSearchRequests()
+	reportResearch(ctx, webSearchRequests)
 	if webSearchRequests < 1 {
 		log.Printf("[AI_WARN] action=web_search_usage_unreported function=GenerateLocationDescription duration=%v", time.Since(startTime))
 	}
@@ -1103,11 +1104,7 @@ func (c *client) StreamLocationDescription(parent context.Context, latitude, lon
 	)
 	desc = limitDescriptionLength(desc, standardDescriptionEmergencyMaxRunes)
 	if err := validateDescriptionLanguage(desc, language, false); err != nil {
-		if !streamGate.released {
-			log.Printf("[AI_ERROR] action=language_mismatch function=GenerateLocationDescription duration=%v", time.Since(startTime))
-			return "", nil, err
-		}
-		log.Printf("[AI_WARN] action=late_language_mismatch_ignored function=GenerateLocationDescription duration=%v", time.Since(startTime))
+		return "", nil, err
 	}
 	if err := streamGate.Finish(desc); err != nil {
 		return "", nil, err
@@ -1257,6 +1254,7 @@ func (c *client) StreamDetailedLocationDescription(parent context.Context, latit
 		return "", nil, fmt.Errorf("AI未返回任何结果")
 	}
 	webSearchRequests := chatResp.Usage.webSearchRequests()
+	reportResearch(ctx, webSearchRequests)
 	if webSearchRequests < 1 {
 		log.Printf("[AI_WARN] action=web_search_usage_unreported function=GenerateDetailedLocationDescription duration=%v", time.Since(startTime))
 	}
@@ -1267,11 +1265,7 @@ func (c *client) StreamDetailedLocationDescription(parent context.Context, latit
 	)
 	result = limitDescriptionLength(result, detailedDescriptionEmergencyMaxRunes)
 	if err := validateDescriptionLanguage(result, language, false); err != nil {
-		if !streamGate.released {
-			log.Printf("[AI_ERROR] action=language_mismatch function=GenerateDetailedLocationDescription duration=%v", time.Since(startTime))
-			return "", nil, err
-		}
-		log.Printf("[AI_WARN] action=late_language_mismatch_ignored function=GenerateDetailedLocationDescription duration=%v", time.Since(startTime))
+		return "", nil, err
 	}
 	if err := streamGate.Finish(result); err != nil {
 		return "", nil, err

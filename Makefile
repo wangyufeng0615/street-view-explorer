@@ -14,12 +14,13 @@ LOCAL_PROXY_URL ?= http://127.0.0.1:10086
 LOCAL_NO_PROXY ?= 127.0.0.1,localhost,::1
 DEV_PROXY_ENV := HTTP_PROXY=$(LOCAL_PROXY_URL) HTTPS_PROXY=$(LOCAL_PROXY_URL) ALL_PROXY=$(LOCAL_PROXY_URL) http_proxy=$(LOCAL_PROXY_URL) https_proxy=$(LOCAL_PROXY_URL) all_proxy=$(LOCAL_PROXY_URL) PROXY_URL=$(LOCAL_PROXY_URL) AI_PROXY_URL=$(LOCAL_PROXY_URL) MAPS_PROXY_URL=$(LOCAL_PROXY_URL) NO_PROXY=$(LOCAL_NO_PROXY) no_proxy=$(LOCAL_NO_PROXY)
 FRONTEND_DEV_ENV := $(DEV_PROXY_ENV) VITE_API_PROXY_TARGET=http://$(LOCAL_BACKEND_ADDRESS)
-REMOTE_HOST ?= kr
-REMOTE_DIR ?= /root/street-view-explorer
+REMOTE_HOST ?= sg
+REMOTE_DIR ?= /opt/street-view-explorer
 REMOTE_BRANCH ?= main
 LOCAL_GIT_REMOTE ?= origin
 REMOTE_GIT_REMOTE ?= origin
 HEALTH_TIMEOUT ?= 240
+REMOTE_SUDO ?= 1
 
 .PHONY: check-config deploy deploy-remote clean dev dev-start dev-stop dev-open backend-dev frontend-dev
 
@@ -52,6 +53,7 @@ deploy-remote:
 	REMOTE_BRANCH="$(REMOTE_BRANCH)" \
 	LOCAL_GIT_REMOTE="$(LOCAL_GIT_REMOTE)" \
 	REMOTE_GIT_REMOTE="$(REMOTE_GIT_REMOTE)" \
+	REMOTE_SUDO="$(REMOTE_SUDO)" \
 	HEALTH_TIMEOUT="$(HEALTH_TIMEOUT)" \
 	scripts/remote_deploy.sh
 

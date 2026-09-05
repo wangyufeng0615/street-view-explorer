@@ -376,7 +376,9 @@ func (h *Handlers) GetLocationDescription(c *gin.Context) {
 	startTime := time.Now()
 	logger := utils.APILogger()
 
-	desc, citations, err := svc.AIService.GetDescriptionForLocationContext(c.Request.Context(), *loc, language, view)
+	researchStatus := "unverified"
+	ctx := openai.WithResearchObserver(c.Request.Context(), func(status string) { researchStatus = status })
+	desc, citations, err := svc.AIService.GetDescriptionForLocationContext(ctx, *loc, language, view)
 	if err != nil {
 		duration := time.Since(startTime)
 		statusCode := http.StatusInternalServerError
@@ -429,10 +431,11 @@ func (h *Handlers) GetLocationDescription(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data": gin.H{
-			"description": cleanDesc,
-			"citations":   citations,
-			"language":    language,
-			"duration":    time.Since(startTime).String(),
+			"description":     cleanDesc,
+			"citations":       citations,
+			"research_status": researchStatus,
+			"language":        language,
+			"duration":        time.Since(startTime).String(),
 		},
 	})
 }
@@ -489,7 +492,9 @@ func (h *Handlers) GetLocationDetailedDescription(c *gin.Context) {
 	startTime := time.Now()
 	logger := utils.APILogger()
 
-	desc, citations, err := svc.AIService.GetDetailedDescriptionForLocationContext(c.Request.Context(), *loc, language, view)
+	researchStatus := "unverified"
+	ctx := openai.WithResearchObserver(c.Request.Context(), func(status string) { researchStatus = status })
+	desc, citations, err := svc.AIService.GetDetailedDescriptionForLocationContext(ctx, *loc, language, view)
 	if err != nil {
 		duration := time.Since(startTime)
 		statusCode := http.StatusInternalServerError
@@ -543,16 +548,19 @@ func (h *Handlers) GetLocationDetailedDescription(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data": gin.H{
-			"description": cleanDesc,
-			"citations":   citations,
-			"language":    language,
-			"duration":    time.Since(startTime).String(),
+			"description":     cleanDesc,
+			"citations":       citations,
+			"research_status": researchStatus,
+			"language":        language,
+			"duration":        time.Since(startTime).String(),
 		},
 	})
 }
 
 func (h *Handlers) streamDescription(c *gin.Context, aiService *services.AIService, loc models.Location, language string, view services.StreetViewView, detailed bool) {
 	startTime := time.Now()
+	researchStatus := "unverified"
+	ctx := openai.WithResearchObserver(c.Request.Context(), func(status string) { researchStatus = status })
 	c.Header("Content-Type", "text/event-stream; charset=utf-8")
 	c.Header("Cache-Control", "no-cache, no-transform")
 	c.Header("Connection", "keep-alive")
@@ -572,9 +580,9 @@ func (h *Handlers) streamDescription(c *gin.Context, aiService *services.AIServi
 		err       error
 	)
 	if detailed {
-		desc, citations, err = aiService.StreamDetailedDescriptionForLocation(c.Request.Context(), loc, language, view, onDelta)
+		desc, citations, err = aiService.StreamDetailedDescriptionForLocation(ctx, loc, language, view, onDelta)
 	} else {
-		desc, citations, err = aiService.StreamDescriptionForLocation(c.Request.Context(), loc, language, view, onDelta)
+		desc, citations, err = aiService.StreamDescriptionForLocation(ctx, loc, language, view, onDelta)
 	}
 	if err != nil {
 		CaptureHandlerError(c, err, http.StatusInternalServerError, map[string]interface{}{
@@ -594,10 +602,11 @@ func (h *Handlers) streamDescription(c *gin.Context, aiService *services.AIServi
 		return
 	}
 	_ = writeDescriptionSSE(c, "done", gin.H{
-		"description": cleanDesc,
-		"citations":   citations,
-		"language":    language,
-		"duration":    time.Since(startTime).String(),
+		"description":     cleanDesc,
+		"citations":       citations,
+		"research_status": researchStatus,
+		"language":        language,
+		"duration":        time.Since(startTime).String(),
 	})
 }
 
@@ -961,7 +970,17 @@ func (h *Handlers) GetVisitHistory(c *gin.Context) {
 		return
 	}
 
-	visits, totalVisits, uniquePlaces, err := svc.LocationService.GetGlobalVisitHistory(limit, offset, source)
+	var visits []models.VisitRecord
+	var totalVisits, uniquePlaces int64
+	var err error
+	if c.Query("distinct") == "1" {
+		if source == "" {
+			source = models.VisitSourceRandom
+		}
+		visits, totalVisits, uniquePlaces, err = svc.LocationService.GetFootprints(limit, offset, source)
+	} else {
+		visits, totalVisits, uniquePlaces, err = svc.LocationService.GetGlobalVisitHistory(limit, offset, source)
+	}
 	if err != nil {
 		CaptureHandlerError(c, err, http.StatusInternalServerError, map[string]interface{}{
 			"operation": "get_visit_history",

@@ -1,9 +1,13 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
+	"net"
+	"net/http"
 	"os"
 	"time"
 
@@ -21,6 +25,10 @@ import (
 func main() {
 	// 检查是否是健康检查命令（需要在flag.Parse之前）
 	if len(os.Args) > 1 && os.Args[1] == "health" {
+		if err := checkHealth(); err != nil {
+			log.Print(err)
+			os.Exit(1)
+		}
 		os.Exit(0)
 	}
 
@@ -157,6 +165,9 @@ func main() {
 		gin.SetMode(gin.ReleaseMode)
 	}
 	r := gin.New()
+	if err := api.ConfigureTrustedProxies(r, os.Getenv("TRUSTED_PROXY_CIDRS")); err != nil {
+		log.Fatalf("Invalid trusted proxy configuration: %v", err)
+	}
 
 	// 添加中间件
 	r.Use(gin.Recovery())
@@ -178,6 +189,12 @@ func main() {
 
 	// 添加健康检查接口
 	r.GET("/health", func(c *gin.Context) {
+		ctx, cancel := context.WithTimeout(c.Request.Context(), time.Second)
+		defer cancel()
+		if err := repo.Ping(ctx); err != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"status": "unhealthy"})
+			return
+		}
 		proxyStatus := "disabled"
 		if cfg.ProxyURL() != "" {
 			if !cfg.SkipProxyCheck() {
@@ -238,4 +255,34 @@ func main() {
 		})
 		log.Fatalf("服务器运行失败: %v", err)
 	}
+}
+
+func checkHealth() error {
+	addr := os.Getenv("SERVER_ADDRESS")
+	if addr == "" {
+		addr = ":8080"
+	}
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return err
+	}
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		host = "127.0.0.1"
+	}
+	client := &http.Client{Timeout: 2500 * time.Millisecond, Transport: &http.Transport{Proxy: nil}}
+	resp, err := client.Get("http://" + net.JoinHostPort(host, port) + "/health")
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	var body struct {
+		Status string `json:"status"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return err
+	}
+	if resp.StatusCode != http.StatusOK || body.Status != "ok" {
+		return fmt.Errorf("backend health check failed: HTTP %d", resp.StatusCode)
+	}
+	return nil
 }

@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-REMOTE_HOST="${REMOTE_HOST:-kr}"
-REMOTE_DIR="${REMOTE_DIR:-/root/street-view-explorer}"
+REMOTE_HOST="${REMOTE_HOST:-sg}"
+REMOTE_DIR="${REMOTE_DIR:-/opt/street-view-explorer}"
 REMOTE_BRANCH="${REMOTE_BRANCH:-main}"
 LOCAL_GIT_REMOTE="${LOCAL_GIT_REMOTE:-${GIT_REMOTE:-origin}}"
 REMOTE_GIT_REMOTE="${REMOTE_GIT_REMOTE:-origin}"
 HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-240}"
+REMOTE_SUDO="${REMOTE_SUDO:-1}"
 PANO_SMOKE_ID="${PANO_SMOKE_ID:-does.not.exist.}"
 
 timestamp() {
@@ -52,8 +53,11 @@ fi
 
 log "deploying $LOCAL_GIT_REMOTE/$REMOTE_BRANCH@$expected_commit to $REMOTE_HOST:$REMOTE_DIR"
 
+remote_prefix=""
+if [[ "$REMOTE_SUDO" == "1" ]]; then remote_prefix="sudo -n env "; fi
+
 ssh "$REMOTE_HOST" \
-  "REMOTE_DIR=$(quote "$REMOTE_DIR") REMOTE_BRANCH=$(quote "$REMOTE_BRANCH") REMOTE_GIT_REMOTE=$(quote "$REMOTE_GIT_REMOTE") EXPECTED_COMMIT=$(quote "$expected_commit") HEALTH_TIMEOUT=$(quote "$HEALTH_TIMEOUT") PANO_SMOKE_ID=$(quote "$PANO_SMOKE_ID") bash -s" <<'REMOTE_SCRIPT'
+  "${remote_prefix}REMOTE_DIR=$(quote "$REMOTE_DIR") REMOTE_BRANCH=$(quote "$REMOTE_BRANCH") REMOTE_GIT_REMOTE=$(quote "$REMOTE_GIT_REMOTE") EXPECTED_COMMIT=$(quote "$expected_commit") HEALTH_TIMEOUT=$(quote "$HEALTH_TIMEOUT") PANO_SMOKE_ID=$(quote "$PANO_SMOKE_ID") bash -s" <<'REMOTE_SCRIPT'
 set -Eeuo pipefail
 
 timestamp() {
@@ -75,13 +79,18 @@ show_failure_context() {
   if command -v docker >/dev/null 2>&1 && [[ -d "${REMOTE_DIR:-}" ]]; then
     cd "$REMOTE_DIR" || return "$exit_code"
     docker compose ps || true
-    docker compose logs --tail=80 backend nginx || true
+    # Logs may contain provider credentials from older releases. Inspect them
+    # separately with redaction instead of printing raw production logs.
   fi
   return "$exit_code"
 }
 trap show_failure_context ERR
 
 cd "$REMOTE_DIR"
+
+# sudo deployments may operate a checkout owned by the login user. Trust only
+# this checkout, for this process, instead of changing global Git settings.
+export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0="$REMOTE_DIR"
 
 if [[ -n "$(git status --short --untracked-files=no)" ]]; then
   log "remote tracked files are dirty; refusing to deploy"
@@ -168,7 +177,7 @@ docker compose ps
 
 # docker compose exec inherits stdin; redirect it so it cannot consume the SSH here-doc.
 log "checking backend /health from inside backend container"
-docker compose exec -T backend sh -lc 'wget -qO- http://127.0.0.1:8080/health' </dev/null
+docker compose exec -T backend /app/main health </dev/null
 printf '\n'
 
 log "checking nginx status from inside nginx container"
@@ -184,6 +193,14 @@ if [[ "$pano_code" == "400" ]] && grep -q "无效的位置ID格式" /tmp/streetv
   log "pano id with dot is still rejected by input validation"
   exit 1
 fi
+if [[ "$pano_code" != "404" ]]; then
+  log "expected missing-panorama 404, got $pano_code"
+  exit 1
+fi
+
+log "checking satellite zoom validation through nginx"
+zoom_code="$(curl -sS --max-time 8 -o /dev/null -w '%{http_code}' 'http://127.0.0.1:3000/api/v1/geo/satellite?lat=0&lng=0&zoom=21')"
+[[ "$zoom_code" == "400" ]] || { log "invalid zoom returned $zoom_code instead of 400"; exit 1; }
 
 log "deployment summary"
 printf '  commit: %s -> %s\n' "$before_commit" "$after_commit"

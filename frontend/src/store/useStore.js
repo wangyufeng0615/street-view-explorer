@@ -14,6 +14,7 @@ const EXPLORATION_MODE_KEY = 'exploration_mode';
 const EXPLORATION_INTEREST_KEY = 'exploration_interest';
 let activeDescriptionRequest = null;
 let toastHideTimer = null;
+let preferenceInitialization = null;
 
 function getActiveLanguage() {
     const language = i18n.resolvedLanguage || i18n.language || 'en';
@@ -38,6 +39,7 @@ const useStore = create(
             // ===== Description相关状态 =====
             description: null,
             descriptionCitations: null,
+            descriptionResearchStatus: null,
             descriptionError: null,
             isDescriptionLoading: false,
             descriptionRetries: 0,
@@ -66,6 +68,10 @@ const useStore = create(
 
             // Location Actions
             loadRandomLocation: async (skipRateLimit = false) => {
+                if (!get().isExplorationInitialized) {
+                    await get().initializeExplorationMode();
+                    if (!get().isExplorationInitialized) return;
+                }
                 const state = get();
 
                 // 检查限流
@@ -330,6 +336,7 @@ const useStore = create(
                             set({
                                 description: resp.data.description,
                                 descriptionCitations: resp.data.citations || null,
+                                descriptionResearchStatus: resp.data.research_status || 'unverified',
                                 descriptionError: null,
                             });
                         } else if (!controller.signal.aborted) {
@@ -387,47 +394,54 @@ const useStore = create(
 
             // Exploration Mode Actions
             initializeExplorationMode: () => {
-                const savedMode = localStorage.getItem(EXPLORATION_MODE_KEY);
-                const savedInterest = localStorage.getItem(EXPLORATION_INTEREST_KEY) || '';
-
-                if (savedMode === EXPLORATION_MODES.CUSTOM && savedInterest) {
-                    set({
-                        explorationMode: EXPLORATION_MODES.CUSTOM,
-                        explorationInterest: savedInterest,
-                        isExplorationInitialized: true,
-                    });
-                    // 确保后端也有这个偏好
-                    setExplorationPreference(savedInterest).catch(console.error);
-                } else {
-                    set({
-                        explorationMode: EXPLORATION_MODES.RANDOM,
-                        explorationInterest: '',
-                        isExplorationInitialized: true,
-                    });
-                    localStorage.removeItem(EXPLORATION_MODE_KEY);
-                    localStorage.removeItem(EXPLORATION_INTEREST_KEY);
-                }
+                if (preferenceInitialization) return preferenceInitialization;
+                set({ isSavingPreference: true, preferenceError: null });
+                preferenceInitialization = (async () => {
+                    try {
+                        const savedMode = localStorage.getItem(EXPLORATION_MODE_KEY);
+                        const savedInterest = localStorage.getItem(EXPLORATION_INTEREST_KEY) || '';
+                        const custom = savedMode === EXPLORATION_MODES.CUSTOM && Boolean(savedInterest);
+                        const response = custom
+                            ? await setExplorationPreference(savedInterest)
+                            : await deleteExplorationPreference();
+                        if (!response.success) throw new Error(response.error || '同步探索偏好失败');
+                        set({
+                            explorationMode: custom ? EXPLORATION_MODES.CUSTOM : EXPLORATION_MODES.RANDOM,
+                            explorationInterest: custom ? savedInterest : '',
+                            isExplorationInitialized: true,
+                            locationError: null,
+                        });
+                    } catch (error) {
+                        set({ preferenceError: error.message, locationError: error.message, isLocationLoading: false });
+                    } finally {
+                        set({ isSavingPreference: false });
+                        preferenceInitialization = null;
+                    }
+                })();
+                return preferenceInitialization;
             },
 
             handleModeChange: async (mode) => {
+                if (get().isSavingPreference || get().isLoadingLocation) return;
                 if (mode === EXPLORATION_MODES.RANDOM) {
-                    localStorage.setItem(EXPLORATION_MODE_KEY, EXPLORATION_MODES.RANDOM);
-                    localStorage.removeItem(EXPLORATION_INTEREST_KEY);
-
-                    set({
-                        explorationMode: EXPLORATION_MODES.RANDOM,
-                        explorationInterest: '',
-                        preferenceError: null,
-                    });
-
+                    set({ isSavingPreference: true, preferenceError: null });
                     try {
-                        await deleteExplorationPreference();
+                        const response = await deleteExplorationPreference();
+                        if (!response.success) throw new Error(response.error || '删除探索偏好失败');
+                        localStorage.setItem(EXPLORATION_MODE_KEY, EXPLORATION_MODES.RANDOM);
+                        localStorage.removeItem(EXPLORATION_INTEREST_KEY);
+                        set({
+                            explorationMode: EXPLORATION_MODES.RANDOM,
+                            explorationInterest: '',
+                            isExplorationInitialized: true,
+                        });
+                        await get().loadRandomLocation(true);
                     } catch (error) {
-                        console.error('删除探索偏好失败:', error);
+                        set({ preferenceError: error.message });
+                        get().showToastMessage(error.message);
+                    } finally {
+                        set({ isSavingPreference: false });
                     }
-
-                    // 刷新位置
-                    get().loadRandomLocation();
                 } else if (mode === EXPLORATION_MODES.CUSTOM) {
                     set({ explorationMode: EXPLORATION_MODES.CUSTOM });
                 }

@@ -242,6 +242,7 @@ func CORSMiddleware() gin.HandlerFunc {
 func InputValidationMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// 验证请求大小
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 1024*1024)
 		if c.Request.ContentLength > 1024*1024 { // 1MB
 			c.JSON(http.StatusRequestEntityTooLarge, gin.H{
 				"success": false,

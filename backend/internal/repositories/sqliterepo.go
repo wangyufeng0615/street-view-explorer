@@ -1,7 +1,9 @@
 package repositories
 
 import (
+	"context"
 	"database/sql"
+	"database/sql/driver"
 	"fmt"
 	"sync"
 	"time"
@@ -33,7 +35,7 @@ func NewSQLiteRepository(cfg SQLiteConfig) (*SQLiteRepository, error) {
 	}
 
 	// WAL 模式 + 合理的连接参数
-	dsn := fmt.Sprintf("%s?_journal_mode=WAL&_busy_timeout=5000&_synchronous=NORMAL&_foreign_keys=ON", dbPath)
+	dsn := fmt.Sprintf("%s?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=synchronous(NORMAL)&_pragma=foreign_keys(ON)", dbPath)
 
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
@@ -125,6 +127,7 @@ func (r *SQLiteRepository) migrate() error {
 	CREATE INDEX IF NOT EXISTS idx_visit_history_session_pano ON visit_history(session_id, pano_id);
 	CREATE INDEX IF NOT EXISTS idx_visit_history_session_visited_at ON visit_history(session_id, visited_at DESC, id DESC);
 	CREATE INDEX IF NOT EXISTS idx_visit_history_source_visited_at ON visit_history(source, visited_at DESC, id DESC);
+	CREATE INDEX IF NOT EXISTS idx_visit_history_source_pano_id ON visit_history(source, pano_id, id DESC);
 
 	CREATE TABLE IF NOT EXISTS agent_journeys (
 		id TEXT PRIMARY KEY,
@@ -242,6 +245,11 @@ func (r *SQLiteRepository) Close() error {
 		r.closeErr = r.db.Close()
 	})
 	return r.closeErr
+}
+
+// Ping checks the actual database connection with the caller's deadline.
+func (r *SQLiteRepository) Ping(ctx context.Context) error {
+	return r.db.PingContext(ctx)
 }
 
 // ==================== 位置相关方法 ====================
@@ -376,14 +384,34 @@ func (r *SQLiteRepository) CheckAndIncrement(key string, maxRequests int, window
 	defer r.mu.Unlock()
 
 	// 先清理过期记录，再查询/插入，在同一个事务中
-	tx, err := r.db.Begin()
+	ctx := context.Background()
+	conn, err := r.db.Conn(ctx)
 	if err != nil {
-		return true, 0, err
+		return false, 0, err
+	}
+	defer conn.Close()
+	tx, err := conn.BeginTx(ctx, nil)
+	if err != nil {
+		return false, 0, err
 	}
 	defer tx.Rollback()
+	commit := func() error {
+		if err := tx.Commit(); err != nil {
+			// SQLite can leave a transaction open after COMMIT fails (e.g. a
+			// deferred constraint). sql.Tx is already done, so explicitly roll
+			// back on the leased connection before returning it to the pool.
+			if _, rollbackErr := conn.ExecContext(ctx, "ROLLBACK"); rollbackErr != nil {
+				_ = conn.Raw(func(any) error { return driver.ErrBadConn })
+			}
+			return err
+		}
+		return nil
+	}
 
 	// 删除此 key 的过期记录
-	tx.Exec("DELETE FROM rate_limits WHERE key = ? AND expires_at < ?", key, now)
+	if _, err := tx.Exec("DELETE FROM rate_limits WHERE key = ? AND expires_at < ?", key, now); err != nil {
+		return false, 0, err
+	}
 
 	// 尝试插入或更新
 	var count int
@@ -392,23 +420,27 @@ func (r *SQLiteRepository) CheckAndIncrement(key string, maxRequests int, window
 		// 新记录
 		_, err = tx.Exec("INSERT INTO rate_limits (key, count, expires_at) VALUES (?, 1, ?)", key, expiresAt)
 		if err != nil {
-			return true, 0, err
+			return false, 0, err
 		}
-		tx.Commit()
+		if err := commit(); err != nil {
+			return false, 0, err
+		}
 		return true, maxRequests - 1, nil
 	}
 	if err != nil {
-		return true, 0, err
+		return false, 0, err
 	}
 
 	// 更新计数
 	count++
 	_, err = tx.Exec("UPDATE rate_limits SET count = ? WHERE key = ?", count, key)
 	if err != nil {
-		return true, 0, err
+		return false, 0, err
 	}
 
-	tx.Commit()
+	if err := commit(); err != nil {
+		return false, 0, err
+	}
 
 	remaining := maxRequests - count
 	if remaining < 0 {

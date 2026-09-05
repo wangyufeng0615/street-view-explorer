@@ -33,6 +33,13 @@ describe("AiDescription thinking states", () => {
     languageState.current = "zh";
   });
 
+  it('discloses missing research confirmation after generation', () => {
+    const { rerender } = render(<AiDescription isLoading={false} description="眼前是一条山路。" panoId="pano" researchStatus="unverified" />);
+    expect(screen.getByRole('note')).toHaveTextContent('本次检索状态未获上游确认');
+    rerender(<AiDescription isLoading={false} description="眼前是一条山路。" panoId="pano" researchStatus="verified" />);
+    expect(screen.queryByRole('note')).not.toBeInTheDocument();
+  });
+
   it("renders an accessible, prominent status while the first description loads", () => {
     render(
       <AiDescription
