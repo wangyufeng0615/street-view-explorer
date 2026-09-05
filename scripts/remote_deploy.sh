@@ -88,6 +88,14 @@ trap show_failure_context ERR
 
 cd "$REMOTE_DIR"
 
+# Fail before changing the checkout or release configuration if the host is not
+# ready to build and verify a release.
+for dependency in git make docker curl; do
+  command -v "$dependency" >/dev/null 2>&1 || { log "missing remote dependency: $dependency"; exit 127; }
+done
+docker compose version >/dev/null
+docker info >/dev/null
+
 # sudo deployments may operate a checkout owned by the login user. Trust only
 # this checkout, for this process, instead of changing global Git settings.
 export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0="$REMOTE_DIR"
