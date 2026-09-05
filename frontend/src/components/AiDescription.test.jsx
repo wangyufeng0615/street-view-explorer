@@ -28,6 +28,11 @@ vi.mock("react-i18next", () => ({
 }));
 
 describe("AiDescription thinking states", () => {
+  it('does not announce failure while coordinates are still resolving and there is no pano yet', () => {
+    render(<AiDescription isLoading description={null} panoId={null} />);
+    expect(screen.getByRole('status')).toBeInTheDocument();
+    expect(screen.queryByText('ai.cannotGetStreetView')).not.toBeInTheDocument();
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     languageState.current = "zh";

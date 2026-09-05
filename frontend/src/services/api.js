@@ -223,7 +223,7 @@ export function streamLocationDescription(
     signal,
     view,
     onDelta,
-    30000,
+    45000, // Include frame/geocoding preparation before the 25s model budget.
   );
 }
 
@@ -241,7 +241,7 @@ export function streamLocationDetailedDescription(
     signal,
     view,
     onDelta,
-    35000,
+    75000, // Include preparation and transport beyond the 60s model budget.
   );
 }
 

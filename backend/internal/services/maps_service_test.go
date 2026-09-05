@@ -60,6 +60,20 @@ func TestLocationInfoUsesHumanAddressAfterPlusCodeResult(t *testing.T) {
 	}
 }
 
+func TestLocationInfoDoesNotMixNeighbouringLocalities(t *testing.T) {
+	info := locationInfoFromGeocodingResults([]maps.GeocodingResult{
+		{FormattedAddress: "Plus code, Vaipouli", Types: []string{"plus_code"}, AddressComponents: []maps.AddressComponent{{LongName: "Vaipouli", Types: []string{"locality"}}}},
+		{FormattedAddress: "Unnamed Road, Paia, Samoa", Types: []string{"route"}, AddressComponents: []maps.AddressComponent{
+			{LongName: "Paia", Types: []string{"locality"}},
+			{LongName: "Samoa", ShortName: "WS", Types: []string{"country"}},
+		}},
+		{FormattedAddress: "Vaipouli College", Types: []string{"school"}, AddressComponents: []maps.AddressComponent{{LongName: "Vaipouli College", Types: []string{"school"}}}},
+	})
+	if info["city"] != "Paia" || info["locality"] != "Paia" || info["school"] != "" || info["country_code"] != "WS" {
+		t.Fatalf("mixed address candidates: %#v", info)
+	}
+}
+
 func TestGetStreetViewFrameUsesNormalizedViewAndImageResponse(t *testing.T) {
 	requests := 0
 	service := &MapsService{

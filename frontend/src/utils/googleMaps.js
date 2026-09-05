@@ -2,7 +2,6 @@ import i18n from '../i18n';
 
 // 全局状态管理
 let googleMapsPromise = null;
-let lastLoadedLanguage = null;
 let isLoadingScript = false;
 let isApiLoaded = false;
 let deferredLoadResolvers = [];
@@ -60,20 +59,15 @@ export function loadGoogleMapsScript() {
         window.performance.mark('googleMapsLoadStart');
     }
     
-    // If API already loaded with same language, return immediately
-    if (isApiLoaded && isGoogleMapsLoaded() && lastLoadedLanguage === currentLanguage) {
+    // Maps registers custom elements globally; removing its script/global does
+    // not unload them. Keep one SDK per document, even when app language changes.
+    if (isApiLoaded && isGoogleMapsLoaded()) {
         return Promise.resolve(window.google.maps);
-    }
-    
-    // If language changed, need to reload
-    if (lastLoadedLanguage !== null && lastLoadedLanguage !== currentLanguage) {
-        hardResetGoogleMapsPromise();
     }
     
     // 防止多次加载尝试
     if (loadAttemptCount > 0 && isGoogleMapsLoaded()) {
         isApiLoaded = true;
-        lastLoadedLanguage = currentLanguage;
         return Promise.resolve(window.google.maps);
     }
     
@@ -91,7 +85,6 @@ export function loadGoogleMapsScript() {
     
     // Start new loading process
     isLoadingScript = true;
-    lastLoadedLanguage = currentLanguage;
     loadAttemptCount++;
     
     googleMapsPromise = new Promise((resolve, reject) => {
@@ -231,32 +224,6 @@ export function loadGoogleMapsWhenVisible(element) {
         
         observer.observe(element);
     });
-}
-
-/**
- * Hard reset Google Maps promise
- */
-export function hardResetGoogleMapsPromise() {
-    // Reset all flags
-    googleMapsPromise = null;
-    isLoadingScript = false;
-    isApiLoaded = false;
-    lastLoadedLanguage = null;
-    
-    // Clean up scripts
-    cleanupExistingScripts();
-    
-    // Clean up Google Maps global
-    if (window.google && window.google.maps) {
-        // Try to clean up Google Maps objects
-        try {
-            delete window.google.maps;
-            delete window.google;
-        } catch (e) {
-            // Some browsers don't allow deleting window properties
-            window.google = undefined;
-        }
-    }
 }
 
 // Already exported above, no need to re-export

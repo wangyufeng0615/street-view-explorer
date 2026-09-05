@@ -570,11 +570,24 @@ func cloneStreetViewFrame(frame *StreetViewFrame) *StreetViewFrame {
 }
 
 func locationInfoFromGeocodingResults(resp []maps.GeocodingResult) map[string]string {
-	// Reverse geocoding may return an exact Plus Code first and a much more
-	// useful human-readable street/locality result afterwards. Merge all
-	// candidates while preserving the most specific value found first.
+	// Address components must belong to the SAME candidate as the address.
+	// A Plus Code or a neighbouring locality must not contaminate a street result.
 	result := make(map[string]string)
-	for _, geocodingResult := range resp {
+	selected := -1
+	for index, candidate := range resp {
+		setLocationInfoIfEmpty(result, "plus_code_global", candidate.PlusCode.GlobalCode)
+		setLocationInfoIfEmpty(result, "plus_code_compound", candidate.PlusCode.CompoundCode)
+		if selected < 0 && !geocodingResultHasType(candidate, "plus_code") && strings.TrimSpace(candidate.FormattedAddress) != "" {
+			selected = index
+		}
+	}
+	if selected < 0 && len(resp) > 0 {
+		selected = 0
+	}
+	for index, geocodingResult := range resp {
+		if index != selected {
+			continue
+		}
 		if result["formatted_address"] == "" &&
 			!geocodingResultHasType(geocodingResult, "plus_code") &&
 			strings.TrimSpace(geocodingResult.FormattedAddress) != "" {

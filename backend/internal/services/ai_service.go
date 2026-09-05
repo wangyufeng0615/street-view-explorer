@@ -162,7 +162,11 @@ func (ai *AIService) prepareDescriptionContext(ctx context.Context, loc models.L
 	if sceneResult.err != nil {
 		return nil, nil, utils.SafeError(utils.ErrorTypeExternal, "获取街景画面失败", sceneResult.err)
 	}
-	return locationResult.info, sceneResult.scene, nil
+	info := cloneLocationInfo(locationResult.info)
+	// Preserve the address the visitor actually sees, even for an older saved
+	// panorama whose newly geocoded locality has changed.
+	info["streetview_address"] = loc.FormattedAddress
+	return info, sceneResult.scene, nil
 }
 
 func (ai *AIService) GetStreetViewFrame(ctx context.Context, panoID string, view StreetViewView) (*StreetViewFrame, error) {

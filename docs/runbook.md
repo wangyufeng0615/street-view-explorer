@@ -249,13 +249,18 @@ Use `--skip-proxy-check` only when the proxy health check itself is unreliable b
 
 ### AI descriptions or AI guesses fail
 
+- Reverse geocoding uses one non-Plus-Code address candidate for locality fields; it does not combine a road address with a nearby school's locality. Description prompts also retain the visitor's Street View address as an anchor. Conflicting locality evidence must be qualified, and changing statistics require a matching geographic scope and year. These are grounding constraints, not a guarantee that generated facts are correct.
+- Chinese descriptions reject embedded English prose such as `把Back往` before that sentence is streamed. Parenthesized original names and uppercase acronyms remain allowed. A rejected generation uses the existing error/retry flow.
+
 - Verify `AI_API_KEY`.
 - In proxy-restricted networks, set `AI_PROXY_URL` or shared `PROXY_URL`. A direct OpenRouter response like `This model is not available in your region` means the key and model can be valid while the current egress region is blocked.
 - Atlas descriptions fetch the current Street View frame in parallel with reverse geocoding and send it to `OPENROUTER_SCENE_MODEL` (default `deepseek/deepseek-v4-flash-vision-exp`). A frame-fetch failure is visible and stops generation so Atlas cannot pretend to see a missing image. Text-only interest-region generation remains on `OPENROUTER_MODEL` / `AI_MODEL` (default `deepseek/deepseek-v4-flash`). Geo Guess uses `OPENROUTER_VISION_MODEL` (default `deepseek/deepseek-v4-flash-vision-exp`), disables model reasoning, and caps output at 480 tokens to stay within its 30-second request budget. `CN_AI_MODEL` is used only when no AI/shared proxy is configured.
 - Geo Guess prefers vision providers sorted by latency. Description requests leave provider sorting unset so OpenRouter Auto Exacto can prioritize web-tool reliability. Set `OPENROUTER_PROVIDER_SORT=throughput`, `price`, or `off` to change the Geo Guess policy.
-- AI endpoints can take longer than normal JSON calls; the streaming frontend timeout is 30 seconds for the first Atlas letter and 35 seconds for the detailed follow-up. The backend retries transient OpenRouter statuses (`408`, `429`, and `5xx`) before streaming begins. OpenRouter usage logs should show at least one web-search request for either description path.
+- AI endpoints can take longer than normal JSON calls; the streaming frontend timeout is 45 seconds for the first Atlas letter and 75 seconds for the detailed follow-up. These include frame/geocoding preparation and transport in addition to the model budgets (25 and 60 seconds). The backend retries transient OpenRouter statuses (`408`, `429`, and `5xx`) before streaming begins. OpenRouter usage logs should show at least one web-search request for either description path.
 
 ### Street View is black while its controls remain visible
+
+- Load the Google Maps JavaScript SDK once per page. App language changes update app text, the country suffix (when an ISO country code is available), and AI text; Google's own map labels and controls retain the SDK's initial language until a reload. Do not delete Maps globals, scripts, or every `.gm-style` element to switch language. Street View cleanup hides and unbinds the old panorama and removes its owned DOM before replacement.
 
 - First compare the same pano through `GET /api/v1/locations/:panoId/streetview-frame` or Google Maps. If that image works while the JavaScript panorama is black, inspect the document CSP before discarding the pano.
 - Community-contributed Photo Spheres can load tiles from `https://*.googleusercontent.com`, while Google-owned panoramas commonly use `https://*.googleapis.com`. Both must remain in the Nginx `img-src` directive. Maps render workers also require `worker-src blob:`; keep this policy aligned with Google's [Maps JavaScript API CSP guide](https://developers.google.com/maps/documentation/javascript/content-security-policy).

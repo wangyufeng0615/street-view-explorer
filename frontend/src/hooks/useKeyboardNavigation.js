@@ -5,7 +5,8 @@ export default function useKeyboardNavigation(loadRandomLocation, isLoading, loa
     useEffect(() => {
         const handleKeyPress = (event) => {
             // 如果当前焦点在输入框或文本框上，不触发空格键探索
-            if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA') {
+            if (event.defaultPrevented || document.querySelector('[role="dialog"][aria-modal="true"]') ||
+                event.target.closest?.('input, textarea, select, button, a, [contenteditable="true"], [role="button"]')) {
                 return;
             }
             
@@ -18,4 +19,4 @@ export default function useKeyboardNavigation(loadRandomLocation, isLoading, loa
         window.addEventListener('keydown', handleKeyPress);
         return () => window.removeEventListener('keydown', handleKeyPress);
     }, [isLoading, loadRandomLocation, loadingRef]);
-} 
+}

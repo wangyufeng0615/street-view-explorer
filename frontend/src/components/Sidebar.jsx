@@ -17,6 +17,7 @@ const Sidebar = memo(function Sidebar({
   descriptionCitations,
   descriptionResearchStatus,
   isLoadingDesc,
+  isLocationLoading,
   descError,
   descRetries,
   onRetryDescription,
@@ -146,7 +147,7 @@ const Sidebar = memo(function Sidebar({
           <div style={styles.aiContainer} className="sidebar-ai-container">
             <AiDescription
               voiceControl={<AtlasVoicePanel />}
-              isLoading={isLoadingDesc}
+              isLoading={isLoadingDesc || isLocationLoading}
               error={descError}
               description={description}
               citations={descriptionCitations}

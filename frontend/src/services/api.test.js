@@ -13,6 +13,7 @@ import {
   getAgentJourneys,
   getVisitHistory,
   streamLocationDescription,
+  streamLocationDetailedDescription,
 } from "./api";
 
 function streamingResponse(chunks) {
@@ -35,6 +36,35 @@ function streamingResponse(chunks) {
 describe("description SSE client", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it("allows a slow detailed stream but still aborts a stalled request", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.spyOn(globalThis, "fetch").mockImplementation((_url, { signal }) =>
+        new Promise((resolve, reject) => {
+          const timer = setTimeout(() => resolve(streamingResponse([
+            'event: done\ndata: {"description":"完成","citations":[]}\n\n',
+          ])), 40000);
+          signal.addEventListener('abort', () => {
+            clearTimeout(timer);
+            reject(new DOMException('Aborted', 'AbortError'));
+          }, { once: true });
+        }),
+      );
+      const slow = streamLocationDetailedDescription('slow-pano');
+      await vi.advanceTimersByTimeAsync(40000);
+      expect((await slow).success).toBe(true);
+      globalThis.fetch.mockImplementation((_url, { signal }) => new Promise((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true });
+      }));
+      const stalled = streamLocationDetailedDescription('stalled-pano');
+      await vi.advanceTimersByTimeAsync(75000);
+      expect(await stalled).toMatchObject({success: false, aborted: true});
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("forwards deltas and resolves with the sanitized final payload", async () => {

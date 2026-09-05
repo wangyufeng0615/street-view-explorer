@@ -406,7 +406,9 @@ export default function StreetView({
                 if (!panoramaRef.current) return;
 
                 // 创建街景实例
-                panorama = new maps.StreetViewPanorama(panoramaRef.current, {
+                const panoramaContainer = panoramaRef.current;
+                panoramaContainer.replaceChildren();
+                panorama = new maps.StreetViewPanorama(panoramaContainer, {
                     position: { lat, lng },
                     pov: {
                         heading: normalizeHeading(latestHeadingRef.current),
@@ -518,6 +520,10 @@ export default function StreetView({
 
                 // 清理函数
                 cleanup = () => {
+                    panorama.setVisible?.(false);
+                    panorama.unbindAll?.();
+                    maps.event?.clearInstanceListeners?.(panorama);
+                    panoramaContainer.replaceChildren();
                     // 清理Google Maps监听器
                     listeners.forEach(listener => {
                         if (listener && listener.remove) {

@@ -8,7 +8,6 @@ import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { formatAddress } from "../utils/addressUtils";
 import { EXPLORATION_MODES } from "../hooks/useExplorationMode";
-import { hardResetGoogleMapsPromise } from "../utils/googleMaps";
 
 const CONTACT_EMAIL = "alanwang424@gmail.com";
 const WECHAT_ID = "807103724";
@@ -31,6 +30,30 @@ const TopBar = memo(function TopBar({
   const [showInterestModal, setShowInterestModal] = useState(false);
   const [tempInterest, setTempInterest] = useState(explorationInterest || "");
   const topBarRef = useRef(null);
+  const modalRef = useRef(null);
+
+  useEffect(() => {
+    if (!showInterestModal) return undefined;
+    const previousFocus = topBarRef.current?.querySelector('[data-interest-trigger]');
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        event.stopPropagation();
+        setShowInterestModal(false);
+        setTempInterest(explorationInterest || '');
+      } else if (event.key === 'Tab') {
+        const controls = [...modalRef.current.querySelectorAll('input:not(:disabled), button:not(:disabled)')];
+        const first = controls[0], last = controls[controls.length - 1];
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+        if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown, true);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown, true);
+      previousFocus?.focus();
+    };
+  }, [showInterestModal, explorationInterest]);
 
   useEffect(() => {
     const topBar = topBarRef.current;
@@ -76,20 +99,8 @@ const TopBar = memo(function TopBar({
 
   const changeLanguage = (lng) => {
     if ((i18n.resolvedLanguage || i18n.language) === lng) return;
-    hardResetGoogleMapsPromise();
     window.localStorage?.setItem("i18nextLng", lng);
-    i18n.changeLanguage(lng).then(() => {
-      // 清理地图元素
-      const mapElements = document.querySelectorAll(".gm-style");
-      mapElements.forEach((elem) => {
-        if (elem.parentNode) {
-          elem.parentNode.removeChild(elem);
-        }
-      });
-      setTimeout(() => {
-        window.dispatchEvent(new Event("resize"));
-      }, 300);
-    });
+    i18n.changeLanguage(lng);
     setShowDropdown(false);
   };
 
@@ -134,7 +145,7 @@ const TopBar = memo(function TopBar({
           <div style={styles.addressContainer} className="address-container">
             {location ? (
               <span style={styles.address} className="address">
-                📍 {formatAddress(location)}
+                📍 {formatAddress(location, i18n.resolvedLanguage || i18n.language)}
               </span>
             ) : (
               <span style={styles.addressPlaceholder}>
@@ -169,6 +180,7 @@ const TopBar = memo(function TopBar({
               }}
               className="hover-scale mode-button"
               onClick={() => handleModeClick(EXPLORATION_MODES.CUSTOM)}
+              data-interest-trigger
             >
               🎯 {explorationInterest || t("custom_mode")}
             </button>
@@ -294,8 +306,8 @@ const TopBar = memo(function TopBar({
       {/* 兴趣输入模态窗口 */}
       {showInterestModal && (
         <div style={styles.modalOverlay} onClick={handleInterestCancel}>
-          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
-            <h3 style={styles.modalTitle}>🎯 {t("set_interest_title")}</h3>
+          <div ref={modalRef} role="dialog" aria-modal="true" aria-labelledby="interest-title" style={styles.modal} onClick={(e) => e.stopPropagation()}>
+            <h3 id="interest-title" style={styles.modalTitle}>🎯 {t("set_interest_title")}</h3>
             <p style={styles.modalDescription}>
               {t("set_interest_description")}
             </p>

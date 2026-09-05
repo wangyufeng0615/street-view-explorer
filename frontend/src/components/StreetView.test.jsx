@@ -18,6 +18,10 @@ vi.mock('react-i18next', () => ({
 
 class MockStreetViewPanorama {
     constructor(_element, options) {
+        const node = document.createElement('div');
+        node.dataset.testid = 'mock-panorama';
+        _element.appendChild(node);
+        this.setVisible = vi.fn();
         this.pov = { ...options.pov };
         this.listeners = new Map();
         this.setPovCalls = 0;
@@ -81,6 +85,15 @@ async function advanceTimers(ms) {
 }
 
 describe('StreetView auto-rotation', () => {
+    it('removes the old panorama DOM and hides its instance when location changes', async () => {
+        const {rerender, container}=render(<StreetView latitude={1} longitude={2}/>);
+        await advanceTimers(250);
+        const old=MockStreetViewPanorama.instances[0];
+        rerender(<StreetView latitude={3} longitude={4}/>);
+        await advanceTimers(250);
+        expect(old.setVisible).toHaveBeenCalledWith(false);
+        expect(container.querySelectorAll('[data-testid="mock-panorama"]')).toHaveLength(1);
+    });
     beforeEach(() => {
         vi.useFakeTimers();
         MockStreetViewPanorama.instances = [];

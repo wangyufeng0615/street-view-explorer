@@ -730,6 +730,9 @@ func stripResearchNarration(text, language string) string {
 }
 
 func validateDescriptionLanguage(text, language string, partial bool) error {
+	if err := validateDescriptionMixedScript(text, language); err != nil {
+		return err
+	}
 	han, kana, latin := countDescriptionScripts(text)
 	if isChineseLanguage(language) {
 		minimumHan := 12
@@ -824,6 +827,7 @@ func limitDescriptionLength(text string, maxRunes int) string {
 }
 
 type descriptionStreamLimiter struct {
+	language   string
 	downstream func(string) error
 	maxRunes   int
 	pending    strings.Builder
@@ -843,6 +847,9 @@ func (l *descriptionStreamLimiter) Write(delta string) error {
 	if safePrefix == "" || safePrefix == l.emitted || !strings.HasPrefix(safePrefix, l.emitted) {
 		return nil
 	}
+	if err := validateDescriptionMixedScript(safePrefix, l.language); err != nil {
+		return err
+	}
 	if err := l.downstream(safePrefix[len(l.emitted):]); err != nil {
 		return err
 	}
@@ -855,6 +862,9 @@ func (l *descriptionStreamLimiter) Finish(finalText string) error {
 		return nil
 	}
 	bounded := limitDescriptionLength(finalText, l.maxRunes)
+	if err := validateDescriptionMixedScript(bounded, l.language); err != nil {
+		return err
+	}
 	if bounded == "" || bounded == l.emitted || !strings.HasPrefix(bounded, l.emitted) {
 		return nil
 	}
@@ -922,10 +932,13 @@ func (c *client) StreamLocationDescription(parent context.Context, latitude, lon
 
 	log.Printf("[AI] action=request_start function=GenerateLocationDescription coords=(%.6f,%.6f) language=%s model=%s scene_attached=%t timeout=%s", latitude, longitude, language, descriptionModel, scene != nil && strings.TrimSpace(scene.Base64) != "", descTimeout)
 
-	outputFormat := descriptionLanguageInstruction(language)
+	outputFormat := descriptionLanguageInstruction(language) + "\n\n" + descriptionGroundingRules
 
 	// 构建详细的地理信息字符串
 	var geoDetails strings.Builder
+	if address := locationInfo["streetview_address"]; address != "" {
+		geoDetails.WriteString(fmt.Sprintf("Visitor's Street View address (location anchor): %s\n", address))
+	}
 	geoDetails.WriteString(fmt.Sprintf("Complete Address: %s\n", locationInfo["formatted_address"]))
 	geoDetails.WriteString(fmt.Sprintf("Coordinates: (%.6f, %.6f)\n\n", latitude, longitude))
 
@@ -1033,6 +1046,7 @@ func (c *client) StreamLocationDescription(parent context.Context, latitude, lon
 		}
 	}
 	streamLimiter := newDescriptionStreamLimiter(standardDescriptionEmergencyMaxRunes, visibleOnDelta)
+	streamLimiter.language = language
 	streamGate := newDescriptionStreamGate(language, streamLimiter.Write)
 	reqBody := visionChatRequest{
 		Model:     descriptionModel,
@@ -1124,7 +1138,7 @@ func (c *client) GenerateDetailedLocationDescription(latitude, longitude float64
 
 func (c *client) StreamDetailedLocationDescription(parent context.Context, latitude, longitude float64, locationInfo map[string]string, scene *SceneImage, language string, onDelta func(string) error) (string, []Citation, error) {
 	startTime := time.Now()
-	detailedTimeout := 35 * time.Second
+	detailedTimeout := 60 * time.Second
 	descriptionModel := c.modelName
 	systemPrompt := atlas.TextSystemPrompt(language)
 	if scene != nil && strings.TrimSpace(scene.Base64) != "" {
@@ -1149,7 +1163,7 @@ func (c *client) StreamDetailedLocationDescription(parent context.Context, latit
 		locationText = fmt.Sprintf("Coordinates: %.6f, %.6f", latitude, longitude)
 	}
 
-	outputFormat := descriptionLanguageInstruction(language)
+	outputFormat := descriptionLanguageInstruction(language) + "\n\n" + descriptionGroundingRules
 
 	sceneInstruction := "No image is provided. Base the description only on location metadata and web research; do not claim to see specific current-scene details."
 	if scene != nil && strings.TrimSpace(scene.Base64) != "" {
@@ -1201,6 +1215,7 @@ func (c *client) StreamDetailedLocationDescription(parent context.Context, latit
 		}
 	}
 	streamLimiter := newDescriptionStreamLimiter(detailedDescriptionEmergencyMaxRunes, visibleOnDelta)
+	streamLimiter.language = language
 	streamGate := newDescriptionStreamGate(language, streamLimiter.Write)
 	reqBody := visionChatRequest{
 		Model:     descriptionModel,

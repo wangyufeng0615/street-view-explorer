@@ -413,6 +413,7 @@ export default function HomePage({ showFootprintFromRoute = false }) {
           descriptionCitations={descriptionCitations}
           descriptionResearchStatus={descriptionResearchStatus}
           isLoadingDesc={isLoadingDesc}
+          isLocationLoading={isLoading}
           descError={descError}
           descRetries={descRetries}
           onRetryDescription={handleRetryDescription}
