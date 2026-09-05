@@ -66,13 +66,16 @@ type webSearchTool struct {
 
 type webSearchParameters struct {
 	Engine          string `json:"engine,omitempty"`
+	Mode            string `json:"mode,omitempty"`
 	MaxResults      int    `json:"max_results,omitempty"`
 	MaxTotalResults int    `json:"max_total_results,omitempty"`
 	MaxCharacters   int    `json:"max_characters,omitempty"`
 }
 
 type providerPreferences struct {
-	Sort string `json:"sort,omitempty"`
+	Sort           string   `json:"sort,omitempty"`
+	Order          []string `json:"order,omitempty"`
+	AllowFallbacks *bool    `json:"allow_fallbacks,omitempty"`
 }
 
 type reasoningConfig struct {
@@ -136,7 +139,9 @@ type annotation struct {
 }
 
 type chatResponse struct {
-	Choices []struct {
+	ID       string `json:"id,omitempty"`
+	Provider string `json:"provider,omitempty"`
+	Choices  []struct {
 		Message struct {
 			Content     string       `json:"content"`
 			Annotations []annotation `json:"annotations,omitempty"`
@@ -150,7 +155,9 @@ type chatResponse struct {
 }
 
 type chatStreamChunk struct {
-	Choices []struct {
+	ID       string `json:"id,omitempty"`
+	Provider string `json:"provider,omitempty"`
+	Choices  []struct {
 		Delta struct {
 			Content     string       `json:"content"`
 			Annotations []annotation `json:"annotations,omitempty"`
@@ -516,6 +523,7 @@ func (c *client) doStreamingChatCompletion(ctx context.Context, functionName str
 			log.Printf("[AI_ERROR] action=stream_failed function=%s duration=%v error=%v", functionName, time.Since(startTime), streamErr)
 			return chatResponse{}, streamErr
 		}
+		log.Printf("[AI] action=upstream_identity function=%s generation_id=%q reported_provider=%q", functionName, truncateString(result.ID, 128), truncateString(result.Provider, 80))
 		return result, nil
 	}
 
@@ -529,6 +537,7 @@ func readChatCompletionStream(body io.Reader, onDelta func(string) error) (chatR
 	var content strings.Builder
 	var annotations []annotation
 	var usage completionUsage
+	var generationID, provider string
 
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -545,6 +554,12 @@ func readChatCompletionStream(body io.Reader, onDelta func(string) error) (chatR
 		}
 		if chunk.Error != nil {
 			return chatResponse{}, fmt.Errorf("AI API错误: %s", chunk.Error.Message)
+		}
+		if chunk.ID != "" {
+			generationID = chunk.ID
+		}
+		if chunk.Provider != "" {
+			provider = chunk.Provider
 		}
 		if chunk.Usage.webSearchRequests() > 0 {
 			usage = chunk.Usage
@@ -571,6 +586,7 @@ func readChatCompletionStream(body io.Reader, onDelta func(string) error) (chatR
 	}
 
 	var result chatResponse
+	result.ID, result.Provider = generationID, provider
 	result.Choices = append(result.Choices, struct {
 		Message struct {
 			Content     string       `json:"content"`
@@ -1050,6 +1066,7 @@ func (c *client) StreamLocationDescription(parent context.Context, latitude, lon
 	streamGate := newDescriptionStreamGate(language, streamLimiter.Write)
 	reqBody := visionChatRequest{
 		Model:     descriptionModel,
+		Provider:  descriptionProviderPreferences(descriptionModel),
 		MaxTokens: 640,
 		Reasoning: &reasoningConfig{Enabled: false},
 		Messages: []visionMessage{
@@ -1063,13 +1080,8 @@ func (c *client) StreamLocationDescription(parent context.Context, latitude, lon
 			},
 		},
 		Tools: []webSearchTool{{
-			Type: "openrouter:web_search",
-			Parameters: webSearchParameters{
-				Engine:          "auto",
-				MaxResults:      4,
-				MaxTotalResults: 4,
-				MaxCharacters:   3000,
-			},
+			Type:       "openrouter:web_search",
+			Parameters: descriptionSearchParameters(false),
 		}},
 		ToolChoice:        "required",
 		ParallelToolCalls: &parallelToolCalls,
@@ -1219,6 +1231,7 @@ func (c *client) StreamDetailedLocationDescription(parent context.Context, latit
 	streamGate := newDescriptionStreamGate(language, streamLimiter.Write)
 	reqBody := visionChatRequest{
 		Model:     descriptionModel,
+		Provider:  descriptionProviderPreferences(descriptionModel),
 		MaxTokens: 850,
 		Reasoning: &reasoningConfig{Enabled: false},
 		Messages: []visionMessage{
@@ -1226,13 +1239,8 @@ func (c *client) StreamDetailedLocationDescription(parent context.Context, latit
 			{Role: "user", Content: userContent},
 		},
 		Tools: []webSearchTool{{
-			Type: "openrouter:web_search",
-			Parameters: webSearchParameters{
-				Engine:          "auto",
-				MaxResults:      6,
-				MaxTotalResults: 6,
-				MaxCharacters:   2500,
-			},
+			Type:       "openrouter:web_search",
+			Parameters: descriptionSearchParameters(true),
 		}},
 		ToolChoice:        "required",
 		ParallelToolCalls: &parallelToolCalls,

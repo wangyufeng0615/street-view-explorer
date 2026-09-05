@@ -169,8 +169,8 @@ func TestGenerateLocationDescriptionUsesSceneModelAndImageWithoutPlusCodeMetadat
 	if !strings.Contains(body, `"type":"openrouter:web_search"`) {
 		t.Fatalf("request did not include OpenRouter web-search server tool: %s", body)
 	}
-	if !strings.Contains(body, `"engine":"auto"`) {
-		t.Fatalf("request did not use OpenRouter's model-aware search routing: %s", body)
+	if !strings.Contains(body, `"engine":"exa"`) || !strings.Contains(body, `"mode":"fast"`) {
+		t.Fatalf("request did not use the bounded fast-search policy: %s", body)
 	}
 	if strings.Contains(body, `"provider"`) {
 		t.Fatalf("description request overrode OpenRouter Auto Exacto provider routing: %s", body)

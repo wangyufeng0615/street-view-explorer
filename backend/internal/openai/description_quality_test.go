@@ -40,6 +40,8 @@ func TestMalformedSentenceIsRejectedBeforeStreamingToVisitor(t *testing.T) {
 }
 
 func TestBothDescriptionPromptsCarryGroundingContract(t *testing.T) {
+	t.Setenv("OPENROUTER_DESCRIPTION_SEARCH", "")
+	t.Setenv("OPENROUTER_DESCRIPTION_PROVIDER_SORT", "")
 	requests := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]any
@@ -47,13 +49,14 @@ func TestBothDescriptionPromptsCarryGroundingContract(t *testing.T) {
 			t.Error(err)
 		}
 		data, _ := json.Marshal(body)
-		for _, phrase := range []string{"streetview_address", "Paia", "same geographic scope", "neighbouring village"} {
-			// Standard prompt uses a display label, detailed uses the field key.
-			if phrase == "streetview_address" {
-				continue
-			}
+		for _, phrase := range []string{"Paia", "same geographic scope", "neighbouring village"} {
 			if !strings.Contains(string(data), phrase) {
 				t.Errorf("missing grounding %q", phrase)
+			}
+		}
+		for _, wire := range []string{`"order":["fireworks"]`, `"allow_fallbacks":true`, `"engine":"exa"`, `"mode":"fast"`, `"tool_choice":"required"`} {
+			if !strings.Contains(string(data), wire) {
+				t.Errorf("missing production policy %s", wire)
 			}
 		}
 		requests++
@@ -62,7 +65,7 @@ func TestBothDescriptionPromptsCarryGroundingContract(t *testing.T) {
 		fmt.Fprintf(w, "data: %s\n\ndata: [DONE]\n\n", chunk)
 	}))
 	defer server.Close()
-	c := &client{apiKey: "test", modelName: "test", endpoint: server.URL, httpClient: server.Client()}
+	c := &client{apiKey: "test", modelName: defaultSceneModel, endpoint: server.URL, httpClient: server.Client()}
 	info := map[string]string{"streetview_address": "Unnamed Road, Paia, Samoa"}
 	if _, _, err := c.StreamLocationDescription(context.Background(), 1, 2, info, nil, "en", nil); err != nil {
 		t.Fatal(err)
