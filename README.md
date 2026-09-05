@@ -67,9 +67,10 @@ yarn dev          # Vite dev server, defaulting to port 3100 through VITE_DEV_PO
 yarn build        # production build into frontend/build
 yarn preview      # preview production build
 yarn test         # Vitest test run
-yarn typecheck    # TypeScript no-emit check
+yarn typecheck    # TypeScript + opted-in JS/JSX + compile-only contract checks
 yarn lint         # ESLint
-yarn format       # Prettier for src ts/tsx/css/md files
+yarn format       # Prettier for src js/jsx/ts/tsx/css/json/md files
+yarn format:check # Read-only formatting check, also required by CI
 ```
 
 ### Backend
@@ -89,7 +90,9 @@ go run cmd/server/main.go --openai-proxy http://127.0.0.1:10086 --maps-proxy htt
 ```bash
 make deploy       # docker compose build + up -d
 make deploy-remote # ssh to REMOTE_HOST=sg (sudo), pull REMOTE_BRANCH (default main), deploy, and verify
-make clean        # destructive: stop Compose and remove the SQLite data volume
+make check        # backend tests, frontend lint/typecheck/tests/build, nginx CSP
+make check-cleanup # real Docker cleanup test using an isolated disposable volume
+make clean        # stop/remove Compose containers and networks; retain SQLite
 ```
 
 For branch releases, push first and deploy the same branch so the local and VPS trees stay aligned:
@@ -104,7 +107,7 @@ Docker Compose exposes Nginx on `127.0.0.1:3000`; the backend is only exposed to
 Deployment and data boundaries:
 
 - `make deploy` changes the local Docker Compose runtime; `make deploy-remote` changes the configured remote host. Neither is a read-only verification command.
-- `make clean` runs `docker compose down -v`, deleting the Compose-managed SQLite volume. Back up data first when it matters.
+- `make clean` preserves the Compose-managed SQLite volume. Only `make destroy-data CONFIRM_DELETE_DATA=yes` deletes it; back up data first.
 - `VITE_GOOGLE_MAPS_API_KEY` is delivered to the browser by design. Restrict it by allowed web origins and enabled APIs; never put server-only AI or Realtime credentials in `VITE_*` variables.
 - Atlas footprints are derived from shared site-wide random-visit history. Session IDs are anonymous identifiers, but SQLite, logs, and public letters can still contain usage or user-authored content and should be handled accordingly.
 

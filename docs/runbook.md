@@ -44,6 +44,14 @@ make dev-stop
 
 ## Verification Commands
 
+After installing frontend dependencies with `cd frontend && yarn install --frozen-lockfile`, run `make check` from the repository root. It runs the nginx CSP check, all backend tests, and frontend lint, typecheck, tests and production build. GitHub Actions runs the same command for main pushes and pull requests with Go from `backend/go.mod`, Node 24 and Yarn 1.22.22. No production credentials are supplied; paid Atlas latency tests remain opt-in and are disabled in CI.
+
+`yarn typecheck` checks TypeScript and explicitly opted-in JavaScript (`// @ts-check`), including single-player state and result JSX, voice audio/navigation/memory, battle snapshot ordering and fetch cancellation. `geoGameTypes.ts` defines state, action and result contracts; `type-tests/contracts.ts` verifies incorrect coordinates, actions, audio and JSX props are rejected. This is incremental coverage, not repository-wide JS/JSX typing. The no-emit TypeScript target is ES2020 to support the typed-array iteration already used at runtime; Vite still controls the emitted browser target.
+
+`yarn format` includes JS/JSX and JSON as well as TS/TSX/CSS/Markdown. Existing source formatting has been normalized; `yarn format:check` is a required part of `make check` and CI.
+
+`make check-cleanup` requires a running Docker daemon and tests the real cleanup targets in a uniquely named disposable Compose project using `scripts/fixtures/cleanup-compose.yml`. It verifies missing-confirmation refusal, container removal, volume retention, restart readback and explicit deletion. It never uses the application Compose file or production volume. CI runs it after `make check`; its test volume is deleted on exit.
+
 Backend:
 
 ```bash
@@ -158,7 +166,7 @@ curl -s -o /dev/null -w '%{http_code}\n' \
 
 `docker-compose.yml` maps only `127.0.0.1:3000:3000`. Put a public reverse proxy in front of it if exposing the service.
 
-Backend data lives in the `sqlite_data` Docker volume. `make clean` removes that volume.
+Backend data lives in the `sqlite_data` Docker volume. `make clean` stops and removes containers and networks but preserves the volume. Restart with `docker compose up -d`. To deliberately delete the current Compose project's volumes, back up first and run `make destroy-data CONFIRM_DELETE_DATA=yes`. This is irreversible without a backup; the command refuses to run without the explicit flag.
 
 The invalid geo satellite request above should return `400`; it verifies that the backend serving production traffic enforces the 2-14 zoom range.
 
@@ -326,4 +334,4 @@ The host requires Git, GNU Make, curl, and Docker with Compose v2 and a running 
 make deploy-remote REMOTE_HOST=sg REMOTE_DIR=/opt/street-view-explorer REMOTE_BRANCH=main REMOTE_SUDO=1
 ```
 
-Before changing a release, record its commit and container image IDs and create an online SQLite backup plus a protected source/config archive under `/var/backups/streetview/`. For rollback, use the recorded prior image IDs for both services, retain the same Compose project and data volume, and repeat health and API checks. Do not run `make clean`: it deletes the data volume. A database restore requires stopping the backend and separately confirming data retention; application rollback alone does not restore an older database.
+Before changing a release, record its commit and container image IDs and create an online SQLite backup plus a protected source/config archive under `/var/backups/streetview/`. For rollback, use the recorded prior image IDs for both services, retain the same Compose project and data volume, and repeat health and API checks. `make clean` now retains volumes but still stops services; never use `make destroy-data` during rollback. A database restore requires stopping the backend and separately confirming data retention; application rollback alone does not restore an older database.

@@ -1,0 +1,8 @@
+services:
+  sentinel:
+    image: alpine:3.22
+    command: ["sleep", "300"]
+    volumes:
+      - sqlite_data:/data
+volumes:
+  sqlite_data:

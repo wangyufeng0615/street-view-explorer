@@ -21,8 +21,20 @@ LOCAL_GIT_REMOTE ?= origin
 REMOTE_GIT_REMOTE ?= origin
 HEALTH_TIMEOUT ?= 240
 REMOTE_SUDO ?= 1
+COMPOSE ?= docker compose
 
-.PHONY: check-config deploy deploy-remote clean dev dev-start dev-stop dev-open backend-dev frontend-dev
+.PHONY: check check-backend check-frontend check-config check-cleanup deploy deploy-remote clean destroy-data dev dev-start dev-stop dev-open backend-dev frontend-dev
+
+check: check-config check-backend check-frontend
+
+check-backend:
+	cd backend && go test ./...
+
+check-frontend:
+	cd frontend && yarn format:check && yarn lint && yarn typecheck && yarn test && yarn build
+
+check-cleanup:
+	bash scripts/test_compose_cleanup.sh
 
 # 前台启动开发环境（Ctrl+C 同时停止）
 dev:
@@ -57,10 +69,14 @@ deploy-remote:
 	HEALTH_TIMEOUT="$(HEALTH_TIMEOUT)" \
 	scripts/remote_deploy.sh
 
-# 破坏性清理：-v 会一并删除承载 SQLite 数据的 Compose volume。
+# 停止并移除容器和网络，保留 SQLite volume。
 clean:
-	docker compose down -v
-	docker compose rm -f
+	$(COMPOSE) down
+
+# 显式删除当前 Compose 项目的数据；调用前必须备份。
+destroy-data:
+	@test "$(CONFIRM_DELETE_DATA)" = "yes" || { echo "拒绝删除数据。备份后使用 make destroy-data CONFIRM_DELETE_DATA=yes" >&2; exit 1; }
+	$(COMPOSE) down -v
 
 # 启动本地开发环境（backend + frontend）
 dev-start:

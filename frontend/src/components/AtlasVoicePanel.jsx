@@ -1,3 +1,22 @@
+import { TOOL_DEFINITIONS } from "../utils/atlasVoiceTools";
+import {
+  loadVoiceMemory,
+  saveVoiceMemory,
+  appendVoiceMemory,
+} from "../utils/atlasVoiceMemory";
+import {
+  normalizeHeading,
+  headingFromDirection,
+  destinationPoint,
+  clampNumber,
+  nearbyBearing,
+} from "../utils/atlasVoiceNavigation";
+import {
+  floatTo16BitPCM,
+  resampleAudio,
+  bytesToBase64,
+  base64ToFloat32PCM,
+} from "../utils/atlasVoiceAudio";
 import React, {
   useCallback,
   useEffect,
@@ -66,30 +85,13 @@ const VOICE_PROVIDER_OVERRIDE =
   import.meta.env.VITE_ATLAS_VOICE_PROVIDER ||
   import.meta.env.VITE_REALTIME_AUDIO_PROVIDER ||
   "";
-const VOICE_MEMORY_KEY = "atlasVoiceMemory";
-const MAX_MEMORY_LINES = 16;
-const MAX_MEMORY_CHARS = 1600;
+
 const DEFAULT_VOICE_CONFIG = Object.freeze({
   provider: "openai",
   doubao_configured: false,
   doubao_format: "pcm",
   doubao_sample_rate: REALTIME_AUDIO_SAMPLE_RATE,
 });
-
-const directionWords = {
-  north: 0,
-  northeast: 45,
-  east: 90,
-  southeast: 135,
-  south: 180,
-  southwest: 225,
-  west: 270,
-  northwest: 315,
-  forward: 0,
-  left: -90,
-  right: 90,
-  back: 180,
-};
 
 const SCENE_CHANGING_ACTIONS = new Set([
   "loaded_random_location",
@@ -172,110 +174,6 @@ const StopGlyph = () => (
   </svg>
 );
 
-export const TOOL_DEFINITIONS = [
-  {
-    type: "function",
-    name: "navigate",
-    description:
-      "Perform exactly one location-changing action. Pick one mode: random for a fresh surprise, theme for a broad kind of place, place for a concrete named target, coordinates for exact latitude/longitude, or nearby for a short walk from the current scene. Never retry with another mode in the same user turn.",
-    parameters: {
-      type: "object",
-      properties: {
-        mode: {
-          type: "string",
-          enum: ["random", "theme", "place", "coordinates", "nearby"],
-          description: "The single navigation intent for this turn.",
-        },
-        query: {
-          type: "string",
-          description:
-            "For theme mode, the broad exploration theme. For place mode, the concrete landmark, business, address, or place name to search.",
-        },
-        lat: {
-          type: "number",
-          description:
-            "Required for coordinates mode; latitude between -90 and 90.",
-        },
-        lng: {
-          type: "number",
-          description:
-            "Required for coordinates mode; longitude between -180 and 180.",
-        },
-        direction: {
-          type: "string",
-          enum: [
-            "north",
-            "northeast",
-            "east",
-            "southeast",
-            "south",
-            "southwest",
-            "west",
-            "northwest",
-            "forward",
-            "left",
-            "right",
-            "back",
-          ],
-          description:
-            "Optional direction to walk. Use forward for a vague nearby walk.",
-        },
-        distance_meters: {
-          type: "number",
-          description:
-            "Approximate distance to move. Keep it small for walking, usually 120-450.",
-        },
-      },
-      required: ["mode"],
-    },
-  },
-  {
-    type: "function",
-    name: "look_direction",
-    description:
-      "Turn the Street View camera toward a cardinal direction, relative direction, or absolute heading.",
-    parameters: {
-      type: "object",
-      properties: {
-        direction: {
-          type: "string",
-          enum: [
-            "north",
-            "northeast",
-            "east",
-            "southeast",
-            "south",
-            "southwest",
-            "west",
-            "northwest",
-            "forward",
-            "left",
-            "right",
-            "back",
-          ],
-          description:
-            "Direction to look. Use left/right/back relative to the current heading.",
-        },
-        heading: {
-          type: "number",
-          description:
-            "Absolute heading in degrees, where 0 is north and 90 is east.",
-        },
-      },
-    },
-  },
-  {
-    type: "function",
-    name: "read_current_place",
-    description:
-      "Get the current Street View location, current heading, and visible Atlas description.",
-    parameters: {
-      type: "object",
-      properties: {},
-    },
-  },
-];
-
 function getLocale(language) {
   return (language || "en").startsWith("zh") ? "zh" : "en";
 }
@@ -300,129 +198,6 @@ function normalizeVoiceConfig(config) {
   };
 }
 
-function normalizeHeading(heading) {
-  return ((Number(heading) % 360) + 360) % 360;
-}
-
-function headingFromDirection(direction, currentHeading) {
-  const normalized = String(direction || "")
-    .toLowerCase()
-    .replace(/[\s_-]/g, "");
-  const absoluteDirections = {
-    north: 0,
-    northeast: 45,
-    east: 90,
-    southeast: 135,
-    south: 180,
-    southwest: 225,
-    west: 270,
-    northwest: 315,
-  };
-
-  if (Object.prototype.hasOwnProperty.call(absoluteDirections, normalized)) {
-    return absoluteDirections[normalized];
-  }
-
-  const relativeTurns = {
-    forward: 0,
-    left: -90,
-    right: 90,
-    back: 180,
-  };
-
-  if (Object.prototype.hasOwnProperty.call(relativeTurns, normalized)) {
-    return normalizeHeading(
-      Number(currentHeading || 0) + relativeTurns[normalized],
-    );
-  }
-
-  return null;
-}
-
-function loadVoiceMemory() {
-  try {
-    return window.sessionStorage?.getItem(VOICE_MEMORY_KEY) || "";
-  } catch (err) {
-    return "";
-  }
-}
-
-function saveVoiceMemory(memory) {
-  try {
-    window.sessionStorage?.setItem(VOICE_MEMORY_KEY, memory);
-  } catch (err) {
-    // Session memory is helpful but nonessential.
-  }
-}
-
-function appendVoiceMemory(memory, speaker, text) {
-  const cleanText = truncateAtlasText(
-    String(text || "").replace(/\s+/g, " "),
-    260,
-  );
-  if (!cleanText) return memory || "";
-
-  const nextLines = [
-    ...(memory || "")
-      .split("\n")
-      .map((line) => line.trim())
-      .filter(Boolean),
-    `${speaker}: ${cleanText}`,
-  ].slice(-MAX_MEMORY_LINES);
-
-  let nextMemory = nextLines.join("\n");
-  if (nextMemory.length > MAX_MEMORY_CHARS) {
-    nextMemory = nextMemory.slice(nextMemory.length - MAX_MEMORY_CHARS);
-    nextMemory = nextMemory.replace(/^[^\n]*\n?/, "");
-  }
-  return nextMemory;
-}
-
-function destinationPoint(lat, lng, bearingDeg, distanceMeters) {
-  const radiusMeters = 6371000;
-  const angularDistance = distanceMeters / radiusMeters;
-  const bearing = (bearingDeg * Math.PI) / 180;
-  const lat1 = (lat * Math.PI) / 180;
-  const lng1 = (lng * Math.PI) / 180;
-
-  const lat2 = Math.asin(
-    Math.sin(lat1) * Math.cos(angularDistance) +
-      Math.cos(lat1) * Math.sin(angularDistance) * Math.cos(bearing),
-  );
-  const lng2 =
-    lng1 +
-    Math.atan2(
-      Math.sin(bearing) * Math.sin(angularDistance) * Math.cos(lat1),
-      Math.cos(angularDistance) - Math.sin(lat1) * Math.sin(lat2),
-    );
-
-  return {
-    lat: (lat2 * 180) / Math.PI,
-    lng: (((lng2 * 180) / Math.PI + 540) % 360) - 180,
-  };
-}
-
-function clampNumber(value, min, max, fallback) {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) return fallback;
-  return Math.max(min, Math.min(max, numeric));
-}
-
-function nearbyBearing(direction, currentHeading) {
-  const normalized = String(direction || "forward")
-    .toLowerCase()
-    .replace(/[\s_-]/g, "");
-  const baseHeading = Number(currentHeading || 0);
-  if (Object.prototype.hasOwnProperty.call(directionWords, normalized)) {
-    const value = directionWords[normalized];
-    const isRelative = ["forward", "left", "right", "back"].includes(
-      normalized,
-    );
-    return normalizeHeading((isRelative ? baseHeading : 0) + value);
-  }
-  return normalizeHeading(baseHeading + (Math.random() * 90 - 45));
-}
-
 function extractAssistantText(item) {
   if (item?.type !== "message") return "";
   return (item.content || [])
@@ -441,55 +216,6 @@ function extractToken(payload) {
 function realtimeWebSocketURL(locale) {
   const protocol = window.location.protocol === "https:" ? "wss" : "ws";
   return `${protocol}://${window.location.host}${REALTIME_WS_PATH}?lang=${encodeURIComponent(locale)}`;
-}
-
-function floatTo16BitPCM(samples) {
-  const buffer = new ArrayBuffer(samples.length * 2);
-  const view = new DataView(buffer);
-  for (let i = 0; i < samples.length; i += 1) {
-    const sample = Math.max(-1, Math.min(1, samples[i]));
-    view.setInt16(i * 2, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
-  }
-  return new Uint8Array(buffer);
-}
-
-function resampleAudio(input, inputSampleRate, outputSampleRate) {
-  if (inputSampleRate === outputSampleRate) return input;
-  const ratio = inputSampleRate / outputSampleRate;
-  const outputLength = Math.max(1, Math.round(input.length / ratio));
-  const output = new Float32Array(outputLength);
-  for (let i = 0; i < outputLength; i += 1) {
-    const index = i * ratio;
-    const before = Math.floor(index);
-    const after = Math.min(before + 1, input.length - 1);
-    const weight = index - before;
-    output[i] = input[before] * (1 - weight) + input[after] * weight;
-  }
-  return output;
-}
-
-function bytesToBase64(bytes) {
-  let binary = "";
-  const chunkSize = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
-  }
-  return btoa(binary);
-}
-
-function base64ToFloat32PCM(base64) {
-  const binary = atob(base64);
-  const buffer = new ArrayBuffer(binary.length);
-  const bytes = new Uint8Array(buffer);
-  for (let i = 0; i < binary.length; i += 1) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-  const view = new DataView(buffer);
-  const output = new Float32Array(binary.length / 2);
-  for (let i = 0; i < output.length; i += 1) {
-    output[i] = view.getInt16(i * 2, true) / 0x8000;
-  }
-  return output;
 }
 
 export default function AtlasVoicePanel() {
@@ -1252,8 +978,12 @@ export default function AtlasVoicePanel() {
           }
 
           const reader = response.body.getReader();
-          const cancelReader = () => { reader.cancel().catch(() => {}); };
-          controller.signal.addEventListener("abort", cancelReader, { once: true });
+          const cancelReader = () => {
+            reader.cancel().catch(() => {});
+          };
+          controller.signal.addEventListener("abort", cancelReader, {
+            once: true,
+          });
           if (controller.signal.aborted) cancelReader();
           try {
             const decoder = new TextDecoder();
@@ -2037,3 +1767,5 @@ export default function AtlasVoicePanel() {
     </div>
   );
 }
+
+export { TOOL_DEFINITIONS } from "../utils/atlasVoiceTools";

@@ -26,7 +26,10 @@ cd backend && go test ./...
 # 部署
 make deploy
 make deploy-remote
-make clean
+make clean # 停止容器，保留 SQLite 数据
+
+# 统一本地/CI 检查
+make check
 ```
 
 后端代理启动参数：
@@ -178,11 +181,13 @@ backend/
 - 前端入口是 `frontend/src/components/AtlasVoicePanel.jsx`，只挂在首页；运行时工具和 VAD 配置在 `frontend/src/utils/atlasVoiceRuntime.js`，共享 persona 在 `frontend/src/utils/atlasPersona.js` 和 `backend/internal/atlas/persona.go`。
 - 默认传输是 `VITE_REALTIME_TRANSPORT=backend-ws`：浏览器连同源 `/api/v1/realtime/ws`，后端再连 OpenAI Realtime。WebRTC 兼容路径会先拿 `/client-secret`，再走 `/calls`。
 - 默认 Realtime 模型是 `gpt-realtime-2.1`，输出音色 `cedar`，转写模型 `gpt-4o-mini-transcribe`，turn detection 是 `semantic_vad` + `high`，支持被用户打断。
-- 工具集合刻意小：`explore_random`、`explore_interest`、`go_to_place`、`wander_nearby`、`look_direction`、`read_current_place`。具体地标/地址/店名要走 `go_to_place`，它会调用 `GET /api/v1/locations/search`。
+- 工具集合在 `frontend/src/utils/atlasVoiceTools.js`：`navigate`（random/theme/place/coordinates/nearby）、`look_direction`、`read_current_place`。每个用户回合只允许一次导航尝试；具体地标/地址/店名走 `navigate` 的 place 模式，调用 `GET /api/v1/locations/search`。
 - `ATLAS_VOICE_PROVIDER=doubao` 时 OpenAI Realtime 只负责听写、文本、记忆和工具调用，后端 `/doubao-tts` 负责把最终文本转成 PCM 流。前端会排队播放并用短窗口忽略豆包外放回灌。
 - 后端 Realtime WebSocket origin 校验允许同源、本地 `localhost/127.0.0.1/::1`，生产额外域名用 `OPENAI_REALTIME_ALLOWED_ORIGINS` / `REALTIME_ALLOWED_ORIGINS`。
 
 ## 安全与日志注意
+
+- `make clean` 保留数据卷；只有显式 `make destroy-data CONFIRM_DELETE_DATA=yes` 才删除当前 Compose 项目的数据卷，执行前必须备份。
 
 - `RateLimitMiddleware()` 默认开启；`/api/v1/locations/search` 是每 IP 每分钟 45 次；`/api/v1/geo/ai-guess` 是每 IP 每分钟 30 次；`/api/v1/geo/satellite` 和 `/api/v1/geo/online/rooms/:roomId/image` 是每 IP 每分钟 180 次；Realtime session / WebSocket / Doubao TTS 入口是每 IP 每分钟 20 次，`/api/v1/realtime/voice-config` 是 120 次。
 - Google Static Maps 请求失败日志会隐藏 `GOOGLE_API_KEY`；不要把旧本地日志或生产日志原样外发，尤其是 2026-05-03 之前生成的地图错误日志。

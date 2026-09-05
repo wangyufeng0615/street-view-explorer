@@ -1,18 +1,27 @@
+// @ts-check
 // Keep timeout and cancellation attached until the response body is consumed.
+/**
+ * @param {RequestInfo | URL} url
+ * @param {RequestInit} options
+ * @param {number} timeout
+ */
 export async function fetchWithTimeout(url, options = {}, timeout = 25000) {
   const controller = new AbortController();
   const externalSignal = options.signal;
   const abort = () => controller.abort();
   if (externalSignal?.aborted) abort();
-  externalSignal?.addEventListener('abort', abort, { once: true });
+  externalSignal?.addEventListener("abort", abort, { once: true });
   const timer = timeout > 0 ? setTimeout(abort, timeout) : null;
   const cleanup = () => {
     if (timer !== null) clearTimeout(timer);
-    externalSignal?.removeEventListener('abort', abort);
+    externalSignal?.removeEventListener("abort", abort);
   };
 
   try {
-    const response = await fetch(url, { ...options, signal: controller.signal });
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
     if (!response.body) {
       cleanup();
       return response;
