@@ -1,612 +1,615 @@
 /* Atlas 解读 —— 旅行手记风格：暖纸、墨色衬线、脚注式出处 */
 
 .ai-description {
-    --atlas-paper-hi: #fdfaf2;
-    --atlas-paper-lo: #f6efe0;
-    --atlas-ink: #352a1b;
-    --atlas-ink-soft: #84715a;
-    --atlas-accent: #a8502a;
-    --atlas-accent-deep: #8c3f1f;
-    --atlas-rule: rgba(163, 131, 84, 0.36);
-    --atlas-rule-soft: rgba(163, 131, 84, 0.22);
+  --atlas-paper-hi: #fdfaf2;
+  --atlas-paper-lo: #f6efe0;
+  --atlas-ink: #352a1b;
+  --atlas-ink-soft: #84715a;
+  --atlas-accent: #a8502a;
+  --atlas-accent-deep: #8c3f1f;
+  --atlas-rule: rgba(163, 131, 84, 0.36);
+  --atlas-rule-soft: rgba(163, 131, 84, 0.22);
 
-    position: relative;
-    padding: 0;
-    margin: 0;
-    background:
-        radial-gradient(at 16% 0%, rgba(212, 174, 116, 0.12), transparent 54%),
-        radial-gradient(at 100% 100%, rgba(168, 80, 42, 0.06), transparent 46%),
-        linear-gradient(180deg, var(--atlas-paper-hi), var(--atlas-paper-lo));
-    border: 1px solid var(--atlas-rule);
-    border-radius: 6px;
-    box-shadow:
-        0 1px 2px rgba(92, 64, 22, 0.07),
-        0 10px 24px rgba(92, 64, 22, 0.06);
-    overflow: hidden;
-    transition:
-        border-color 0.18s ease,
-        box-shadow 0.18s ease;
+  position: relative;
+  padding: 0;
+  margin: 0;
+  background:
+    radial-gradient(at 16% 0%, rgba(212, 174, 116, 0.12), transparent 54%),
+    radial-gradient(at 100% 100%, rgba(168, 80, 42, 0.06), transparent 46%),
+    linear-gradient(180deg, var(--atlas-paper-hi), var(--atlas-paper-lo));
+  border: 1px solid var(--atlas-rule);
+  border-radius: 6px;
+  box-shadow:
+    0 1px 2px rgba(92, 64, 22, 0.07),
+    0 10px 24px rgba(92, 64, 22, 0.06);
+  overflow: hidden;
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease;
 }
 
 /* 纸面颗粒 */
 .ai-description::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.045'/%3E%3C/svg%3E");
-    pointer-events: none;
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.045'/%3E%3C/svg%3E");
+  pointer-events: none;
 }
 
 .ai-description:hover {
-    border-color: rgba(140, 105, 56, 0.5);
-    box-shadow:
-        0 1px 2px rgba(92, 64, 22, 0.08),
-        0 12px 28px rgba(92, 64, 22, 0.08);
+  border-color: rgba(140, 105, 56, 0.5);
+  box-shadow:
+    0 1px 2px rgba(92, 64, 22, 0.08),
+    0 12px 28px rgba(92, 64, 22, 0.08);
 }
 
 /* —— 卡头 —— */
 
 .ai-description-header {
-    position: relative;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    min-height: 38px;
-    padding: 8px 14px 7px;
-    border-bottom: 1px solid var(--atlas-rule);
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 38px;
+  padding: 8px 14px 7px;
+  border-bottom: 1px solid var(--atlas-rule);
 }
 
 .ai-description-title {
-    display: flex;
-    align-items: center;
-    gap: 7px;
-    flex-shrink: 0;
-    white-space: nowrap;
-    color: var(--atlas-ink);
-    font-size: 13px;
-    font-weight: 700;
-    line-height: 1.2;
-    letter-spacing: 0.05em;
-    font-family:
-        "Source Han Serif SC",
-        "Songti SC",
-        Georgia,
-        "PingFang SC",
-        serif;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+  white-space: nowrap;
+  color: var(--atlas-ink);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: 0.05em;
+  font-family:
+    "Source Han Serif SC", "Songti SC", Georgia, "PingFang SC", serif;
 }
 
 .ai-description-glyph {
-    flex-shrink: 0;
-    color: var(--atlas-accent);
+  flex-shrink: 0;
+  color: var(--atlas-accent);
 }
 
 .ai-description-voice {
-    flex: 0 1 auto;
-    min-width: 0;
+  flex: 0 1 auto;
+  min-width: 0;
 }
 
 .ai-description-body {
-    padding: 12px 14px 13px;
+  padding: 12px 14px 13px;
 }
 
 /* —— 正文 —— */
 
 .ai-content {
-    margin: 0;
-    padding: 0;
-    color: var(--atlas-ink);
-    font-size: 13.5px;
-    font-weight: 400;
-    line-height: 1.66;
-    letter-spacing: 0.01em;
-    text-align: left;
-    font-family:
-        "Source Han Serif SC",
-        "Songti SC",
-        Georgia,
-        "PingFang SC",
-        "Hiragino Sans GB",
-        "Microsoft YaHei",
-        serif;
-    text-rendering: optimizeLegibility;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
+  margin: 0;
+  padding: 0;
+  color: var(--atlas-ink);
+  font-size: 13.5px;
+  font-weight: 400;
+  line-height: 1.66;
+  letter-spacing: 0.01em;
+  text-align: left;
+  font-family:
+    "Source Han Serif SC", "Songti SC", Georgia, "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", serif;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 .ai-content:lang(zh) {
-    line-height: 1.72;
-    text-align: justify;
+  line-height: 1.72;
+  text-align: justify;
 }
 
 .ai-content:lang(en) {
-    line-height: 1.62;
+  line-height: 1.62;
 }
 
 .ai-paragraph {
-    margin: 0 0 8px;
+  margin: 0 0 8px;
 }
 
 .ai-paragraph:last-of-type {
-    margin-bottom: 0;
+  margin-bottom: 0;
 }
 
 /* 首段首字：行内轻微放大提色 */
 .ai-content > .ai-paragraph:first-of-type::first-letter {
-    font-size: 1.45em;
-    line-height: 1;
-    font-weight: 600;
-    color: var(--atlas-accent-deep);
+  font-size: 1.45em;
+  line-height: 1;
+  font-weight: 600;
+  color: var(--atlas-accent-deep);
 }
 
 /* [场景白描/心理活动]：旁注式斜体，可出现在文中任意位置 */
 .ai-scene-note {
-    margin: 0 0 10px;
-    padding-left: 10px;
-    border-left: 2px solid rgba(168, 80, 42, 0.4);
-    color: var(--atlas-ink-soft);
-    font-style: italic;
-    font-size: 12.5px;
-    line-height: 1.6;
+  margin: 0 0 10px;
+  padding-left: 10px;
+  border-left: 2px solid rgba(168, 80, 42, 0.4);
+  color: var(--atlas-ink-soft);
+  font-style: italic;
+  font-size: 12.5px;
+  line-height: 1.6;
 }
 
 .ai-paragraph + .ai-scene-note {
-    margin-top: 10px;
+  margin-top: 10px;
 }
 
 /* —— 加载 / 错误 / 空态 —— */
 
 .atlas-thinking-indicator {
-    display: flex;
-    align-items: center;
-    gap: 9px;
-    min-height: 54px;
-    padding: 10px 2px;
-    color: var(--atlas-ink);
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 54px;
+  padding: 10px 2px;
+  color: var(--atlas-ink);
 }
 
 .atlas-thinking-mark {
-    width: 27px;
-    height: 27px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--atlas-accent-deep);
-    border: 1px solid rgba(168, 80, 42, 0.34);
-    border-radius: 50%;
-    flex: 0 0 auto;
-    animation: atlasThinkingBreathe 2.2s ease-in-out infinite;
+  width: 27px;
+  height: 27px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--atlas-accent-deep);
+  border: 1px solid rgba(168, 80, 42, 0.34);
+  border-radius: 50%;
+  flex: 0 0 auto;
+  animation: atlasThinkingBreathe 2.2s ease-in-out infinite;
 }
 
 .atlas-thinking-mark svg {
-    width: 14px;
-    height: 14px;
+  width: 14px;
+  height: 14px;
 }
 
 /* 动画 HTML 包装层，避免直接变换 SVG path 触发布局/合成回退 */
 .compass-seek-motion {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transform-origin: center;
-    will-change: transform;
-    animation: compassSeek 2.2s ease-in-out infinite;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform-origin: center;
+  will-change: transform;
+  animation: compassSeek 2.2s ease-in-out infinite;
 }
 
 .atlas-thinking-title {
-    color: var(--atlas-ink-soft);
-    font-size: 13px;
-    font-weight: 500;
-    font-style: italic;
-    line-height: 1.4;
-    letter-spacing: 0.02em;
-    font-family:
-        "Source Han Serif SC",
-        "Songti SC",
-        Georgia,
-        "PingFang SC",
-        serif;
-    animation: atlasThinkingText 2.2s ease-in-out infinite;
+  color: var(--atlas-ink-soft);
+  font-size: 13px;
+  font-weight: 500;
+  font-style: italic;
+  line-height: 1.4;
+  letter-spacing: 0.02em;
+  font-family:
+    "Source Han Serif SC", "Songti SC", Georgia, "PingFang SC", serif;
+  animation: atlasThinkingText 2.2s ease-in-out infinite;
 }
 
 .atlas-thinking-trail {
-    display: grid;
-    gap: 6px;
-    width: min(72%, 250px);
+  display: grid;
+  gap: 6px;
+  width: min(72%, 250px);
 }
 
 .atlas-thinking-trail span {
-    display: block;
-    height: 2px;
-    border-radius: 999px;
-    background: linear-gradient(
-        90deg,
-        rgba(168, 80, 42, 0.12),
-        rgba(168, 80, 42, 0.36),
-        rgba(168, 80, 42, 0.12)
-    );
-    background-size: 180% 100%;
-    animation: atlasThinkingTrail 2.2s ease-in-out infinite;
+  display: block;
+  height: 2px;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    rgba(168, 80, 42, 0.12),
+    rgba(168, 80, 42, 0.36),
+    rgba(168, 80, 42, 0.12)
+  );
+  background-size: 180% 100%;
+  animation: atlasThinkingTrail 2.2s ease-in-out infinite;
 }
 
 .atlas-thinking-trail span:nth-child(2) {
-    width: 82%;
-    animation-delay: 0.14s;
+  width: 82%;
+  animation-delay: 0.14s;
 }
 
 .atlas-thinking-trail span:nth-child(3) {
-    width: 58%;
-    animation-delay: 0.28s;
+  width: 58%;
+  animation-delay: 0.28s;
 }
 
 .atlas-thinking-indicator--detailed {
-    min-height: 48px;
-    margin-top: 10px;
-    padding: 9px 2px 4px;
-    border-top: 1px solid var(--atlas-rule-soft);
-    scroll-margin-block: 12px;
+  min-height: 48px;
+  margin-top: 10px;
+  padding: 9px 2px 4px;
+  border-top: 1px solid var(--atlas-rule-soft);
+  scroll-margin-block: 12px;
 }
 
 @keyframes compassSeek {
-    0%, 100% { transform: rotate(-32deg); }
-    50% { transform: rotate(46deg); }
+  0%,
+  100% {
+    transform: rotate(-32deg);
+  }
+  50% {
+    transform: rotate(46deg);
+  }
 }
 
 @keyframes atlasThinkingBreathe {
-    0%, 100% { opacity: 0.55; transform: scale(0.96); }
-    50% { opacity: 1; transform: scale(1); }
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(0.96);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 @keyframes atlasThinkingText {
-    0%, 100% { opacity: 0.58; }
-    50% { opacity: 0.92; }
+  0%,
+  100% {
+    opacity: 0.58;
+  }
+  50% {
+    opacity: 0.92;
+  }
 }
 
 @keyframes atlasThinkingTrail {
-    0%, 100% { opacity: 0.42; background-position: 100% 0; }
-    50% { opacity: 0.9; background-position: 0 0; }
+  0%,
+  100% {
+    opacity: 0.42;
+    background-position: 100% 0;
+  }
+  50% {
+    opacity: 0.9;
+    background-position: 0 0;
+  }
 }
 
 .ai-error {
-    padding: 9px 11px;
-    background: rgba(190, 70, 44, 0.06);
-    border: 1px dashed rgba(190, 70, 44, 0.4);
-    border-radius: 4px;
+  padding: 9px 11px;
+  background: rgba(190, 70, 44, 0.06);
+  border: 1px dashed rgba(190, 70, 44, 0.4);
+  border-radius: 4px;
 }
 
 .ai-error-message {
-    color: #a03c22;
-    font-size: 13px;
-    font-weight: 500;
-    line-height: 1.5;
-    margin-bottom: 8px;
+  color: #a03c22;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.5;
+  margin-bottom: 8px;
 }
 
 .ai-retry-button {
-    background: var(--atlas-accent);
-    color: #fdfaf2;
-    border: none;
-    padding: 5px 12px;
-    border-radius: 3px;
-    font-size: 12px;
-    font-weight: 600;
-    letter-spacing: 0.03em;
-    cursor: pointer;
-    font-family: inherit;
-    transition: background 0.16s ease;
+  background: var(--atlas-accent);
+  color: #fdfaf2;
+  border: none;
+  padding: 5px 12px;
+  border-radius: 3px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.16s ease;
 }
 
 .ai-retry-button:hover {
-    background: var(--atlas-accent-deep);
+  background: var(--atlas-accent-deep);
 }
 
 .ai-no-data {
-    color: var(--atlas-ink-soft);
-    font-size: 13px;
-    font-style: italic;
-    line-height: 1.45;
-    text-align: center;
-    padding: 4px 0;
-    opacity: 0.85;
+  color: var(--atlas-ink-soft);
+  font-size: 13px;
+  font-style: italic;
+  line-height: 1.45;
+  text-align: center;
+  padding: 4px 0;
+  opacity: 0.85;
 }
 
 .ai-content-container {
-    display: flex;
-    flex-direction: column;
-    gap: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
 }
 
 /* —— "再多讲讲"：邮戳风 —— */
 
 .tell-me-more-container {
-    margin-top: 10px;
-    display: flex;
-    justify-content: flex-start;
-    align-items: center;
+  margin-top: 10px;
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
 }
 
 .tell-me-more-button {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 5px 13px 5px 10px;
-    background: transparent;
-    border: 1px dashed rgba(168, 80, 42, 0.55);
-    border-radius: 3px;
-    color: var(--atlas-accent);
-    font-size: 12px;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    cursor: pointer;
-    font-family:
-        "Source Han Serif SC",
-        "Songti SC",
-        Georgia,
-        "PingFang SC",
-        serif;
-    transition:
-        background 0.16s ease,
-        border-color 0.16s ease,
-        color 0.16s ease,
-        transform 0.16s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 13px 5px 10px;
+  background: transparent;
+  border: 1px dashed rgba(168, 80, 42, 0.55);
+  border-radius: 3px;
+  color: var(--atlas-accent);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  font-family:
+    "Source Han Serif SC", "Songti SC", Georgia, "PingFang SC", serif;
+  transition:
+    background 0.16s ease,
+    border-color 0.16s ease,
+    color 0.16s ease,
+    transform 0.16s ease;
 }
 
 .tell-me-more-button:hover:not(:disabled) {
-    background: rgba(168, 80, 42, 0.08);
-    border-color: rgba(168, 80, 42, 0.8);
-    color: var(--atlas-accent-deep);
-    transform: rotate(-0.6deg);
+  background: rgba(168, 80, 42, 0.08);
+  border-color: rgba(168, 80, 42, 0.8);
+  color: var(--atlas-accent-deep);
+  transform: rotate(-0.6deg);
 }
 
 .tell-me-more-button:disabled {
-    opacity: 0.55;
-    cursor: not-allowed;
-    transform: none;
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
 }
 
 .tell-me-more-button .button-icon {
-    display: flex;
-    align-items: center;
-    color: inherit;
-    opacity: 0.85;
+  display: flex;
+  align-items: center;
+  color: inherit;
+  opacity: 0.85;
 }
 
 .tell-me-more-button .button-text {
-    white-space: nowrap;
+  white-space: nowrap;
 }
 
 /* —— 深度解读 —— */
 
 .detailed-error-container {
-    margin-top: 10px;
-    padding: 8px 10px;
-    background: rgba(190, 70, 44, 0.06);
-    border: 1px dashed rgba(190, 70, 44, 0.4);
-    border-radius: 4px;
+  margin-top: 10px;
+  padding: 8px 10px;
+  background: rgba(190, 70, 44, 0.06);
+  border: 1px dashed rgba(190, 70, 44, 0.4);
+  border-radius: 4px;
 }
 
 .detailed-error-container .error-message {
-    color: #a03c22;
-    font-size: 13px;
-    margin-bottom: 8px;
-    line-height: 1.45;
+  color: #a03c22;
+  font-size: 13px;
+  margin-bottom: 8px;
+  line-height: 1.45;
 }
 
 .retry-detailed-button {
-    background: var(--atlas-accent);
-    color: #fdfaf2;
-    border: none;
-    padding: 5px 12px;
-    border-radius: 3px;
-    font-size: 12px;
-    font-weight: 600;
-    letter-spacing: 0.03em;
-    cursor: pointer;
-    transition: background 0.16s ease;
-    font-family: inherit;
+  background: var(--atlas-accent);
+  color: #fdfaf2;
+  border: none;
+  padding: 5px 12px;
+  border-radius: 3px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  transition: background 0.16s ease;
+  font-family: inherit;
 }
 
 .retry-detailed-button:hover:not(:disabled) {
-    background: var(--atlas-accent-deep);
+  background: var(--atlas-accent-deep);
 }
 
 .retry-detailed-button:disabled {
-    opacity: 0.55;
-    cursor: not-allowed;
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .detailed-description {
-    margin-top: 14px;
+  margin-top: 14px;
 }
 
 /* 书籍式分节线：—— 标题 —— */
 .detailed-title {
-    display: flex;
-    align-items: center;
-    gap: 9px;
-    margin-bottom: 9px;
-    color: var(--atlas-accent-deep);
-    font-size: 12px;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    white-space: nowrap;
-    font-family:
-        "Source Han Serif SC",
-        "Songti SC",
-        Georgia,
-        "PingFang SC",
-        serif;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 9px;
+  color: var(--atlas-accent-deep);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  font-family:
+    "Source Han Serif SC", "Songti SC", Georgia, "PingFang SC", serif;
 }
 
 .detailed-title::before,
 .detailed-title::after {
-    content: "";
-    height: 1px;
-    flex: 1;
-    background: var(--atlas-rule-soft);
+  content: "";
+  height: 1px;
+  flex: 1;
+  background: var(--atlas-rule-soft);
 }
 
 /* 深度解读正文不再重复首字放大 */
 .detailed-description .ai-paragraph:first-of-type::first-letter {
-    font-size: inherit;
-    line-height: inherit;
-    font-weight: inherit;
-    color: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  font-weight: inherit;
+  color: inherit;
 }
 
 /* —— 出处脚注 —— */
 
 .citations-container {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    column-gap: 12px;
-    row-gap: 3px;
-    margin-top: 10px;
-    padding-top: 7px;
-    border-top: 1px dashed var(--atlas-rule);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 12px;
+  row-gap: 3px;
+  margin-top: 10px;
+  padding-top: 7px;
+  border-top: 1px dashed var(--atlas-rule);
 }
 
 .citations-label {
-    color: var(--atlas-ink-soft);
-    font-size: 10.5px;
-    font-weight: 700;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
+  color: var(--atlas-ink-soft);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
 }
 
 .citations-list {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: 3px 12px;
-    margin: 0;
-    padding: 0;
-    list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 3px 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
 .citation-item {
-    display: inline-flex;
-    min-width: 0;
+  display: inline-flex;
+  min-width: 0;
 }
 
 .citation-link {
-    display: inline-flex;
-    align-items: baseline;
-    gap: 3px;
-    color: #7c5c38;
-    font-size: 11.5px;
-    line-height: 1.5;
-    text-decoration: underline dotted rgba(124, 92, 56, 0.5);
-    text-underline-offset: 2.5px;
-    max-width: 180px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    transition: color 0.15s ease;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  color: #7c5c38;
+  font-size: 11.5px;
+  line-height: 1.5;
+  text-decoration: underline dotted rgba(124, 92, 56, 0.5);
+  text-underline-offset: 2.5px;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: color 0.15s ease;
 }
 
 .citation-index {
-    flex: 0 0 auto;
-    color: var(--atlas-accent);
-    font-size: 9px;
-    font-weight: 700;
+  flex: 0 0 auto;
+  color: var(--atlas-accent);
+  font-size: 9px;
+  font-weight: 700;
 }
 
 .citation-title {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .citation-link:hover {
-    color: var(--atlas-accent-deep);
-    text-decoration-style: solid;
+  color: var(--atlas-accent-deep);
+  text-decoration-style: solid;
 }
 
 /* —— 移动端 —— */
 
 @media (max-width: 768px) {
-    .ai-description {
-        border-radius: 5px;
-    }
+  .ai-description {
+    border-radius: 5px;
+  }
 
-    .ai-description-header {
-        min-height: 30px;
-        padding: 7px 11px 6px;
-        gap: 8px;
-    }
+  .ai-description-header {
+    min-height: 30px;
+    padding: 7px 11px 6px;
+    gap: 8px;
+  }
 
-    .ai-description-header::after {
-        left: 11px;
-        right: 11px;
-    }
+  .ai-description-header::after {
+    left: 11px;
+    right: 11px;
+  }
 
-    .ai-description-body {
-        padding: 10px 11px 11px;
-    }
+  .ai-description-body {
+    padding: 10px 11px 11px;
+  }
 
-    .atlas-thinking-indicator {
-        min-height: 46px;
-        padding: 8px 1px;
-    }
+  .atlas-thinking-indicator {
+    min-height: 46px;
+    padding: 8px 1px;
+  }
 
-    .atlas-thinking-title {
-        font-size: 12.5px;
-    }
+  .atlas-thinking-title {
+    font-size: 12.5px;
+  }
 
-    .atlas-thinking-trail {
-        width: min(74%, 210px);
-    }
+  .atlas-thinking-trail {
+    width: min(74%, 210px);
+  }
 
-    .atlas-thinking-indicator--detailed {
-        min-height: 44px;
-        padding-bottom: 2px;
-    }
+  .atlas-thinking-indicator--detailed {
+    min-height: 44px;
+    padding-bottom: 2px;
+  }
 
-    .ai-content {
-        font-size: 13px;
-    }
+  .ai-content {
+    font-size: 13px;
+  }
 
-    .ai-content:lang(zh) {
-        line-height: 1.66;
-    }
+  .ai-content:lang(zh) {
+    line-height: 1.66;
+  }
 
-    .ai-scene-note {
-        font-size: 12px;
-        margin-bottom: 8px;
-    }
+  .ai-scene-note {
+    font-size: 12px;
+    margin-bottom: 8px;
+  }
 
-    .tell-me-more-button {
-        padding: 5px 10px;
-        font-size: 12px;
-    }
+  .tell-me-more-button {
+    padding: 5px 10px;
+    font-size: 12px;
+  }
 
-    .detailed-title {
-        font-size: 11.5px;
-    }
+  .detailed-title {
+    font-size: 11.5px;
+  }
 
-    .citations-container {
-        column-gap: 10px;
-    }
+  .citations-container {
+    column-gap: 10px;
+  }
 
-    .citations-list {
-        column-gap: 10px;
-    }
+  .citations-list {
+    column-gap: 10px;
+  }
 
-    .citation-link {
-        font-size: 11px;
-        max-width: 150px;
-    }
+  .citation-link {
+    font-size: 11px;
+    max-width: 150px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .atlas-thinking-mark,
-    .atlas-thinking-title,
-    .compass-needle {
-        animation: none !important;
-    }
+  .atlas-thinking-mark,
+  .atlas-thinking-title,
+  .compass-needle {
+    animation: none !important;
+  }
 }
 .research-status {
   font-size: 12px;

@@ -8,12 +8,14 @@ let sentryLoadPromise = null;
 let Sentry = null;
 let errorHandlersInitialized = false;
 
-const sensitiveParamRegex = /(\b(?:key|api[_-]?key|apikey|token|access[_-]?token|secret|client[_-]?secret|password|dsn|authorization|app[_-]?id|appid|access[_-]?key)=)([^&\s"'<>]+)/gi;
-const sensitiveAuthorizationRegex = /(authorization[:=]\s*(?:bearer\s+)?)([^&\s"'<>]+)/gi;
+const sensitiveParamRegex =
+  /(\b(?:key|api[_-]?key|apikey|token|access[_-]?token|secret|client[_-]?secret|password|dsn|authorization|app[_-]?id|appid|access[_-]?key)=)([^&\s"'<>]+)/gi;
+const sensitiveAuthorizationRegex =
+  /(authorization[:=]\s*(?:bearer\s+)?)([^&\s"'<>]+)/gi;
 
 function getTracesSampleRate() {
   const raw = import.meta.env.VITE_SENTRY_TRACES_SAMPLE_RATE;
-  if (raw !== undefined && raw !== '') {
+  if (raw !== undefined && raw !== "") {
     const parsed = Number(raw);
     if (!Number.isNaN(parsed)) {
       return parsed;
@@ -23,40 +25,50 @@ function getTracesSampleRate() {
 }
 
 function isSensitiveKey(key) {
-  const normalized = String(key).toLowerCase().replace(/[-\s]/g, '_');
-  return ['authorization', 'cookie', 'key', 'password', 'secret', 'session', 'token', 'dsn']
-    .some((part) => normalized.includes(part));
+  const normalized = String(key).toLowerCase().replace(/[-\s]/g, "_");
+  return [
+    "authorization",
+    "cookie",
+    "key",
+    "password",
+    "secret",
+    "session",
+    "token",
+    "dsn",
+  ].some((part) => normalized.includes(part));
 }
 
 function redactSensitiveString(value) {
-  if (typeof value !== 'string' || value === '') {
+  if (typeof value !== "string" || value === "") {
     return value;
   }
 
-  let redacted = value.replace(sensitiveAuthorizationRegex, '$1[redacted]');
-  redacted = redacted.replace(sensitiveParamRegex, '$1[redacted]');
+  let redacted = value.replace(sensitiveAuthorizationRegex, "$1[redacted]");
+  redacted = redacted.replace(sensitiveParamRegex, "$1[redacted]");
   [
     import.meta.env.VITE_GOOGLE_MAPS_API_KEY,
     import.meta.env.VITE_SENTRY_DSN,
   ].forEach((secret) => {
     if (secret && secret.length >= 6) {
-      redacted = redacted.split(secret).join('[redacted]');
+      redacted = redacted.split(secret).join("[redacted]");
     }
   });
   return redacted;
 }
 
 function redactSensitiveValue(value) {
-  if (typeof value === 'string') {
+  if (typeof value === "string") {
     return redactSensitiveString(value);
   }
   if (Array.isArray(value)) {
     return value.map(redactSensitiveValue);
   }
-  if (value && typeof value === 'object') {
+  if (value && typeof value === "object") {
     const redacted = {};
     Object.entries(value).forEach(([key, item]) => {
-      redacted[key] = isSensitiveKey(key) ? '[redacted]' : redactSensitiveValue(item);
+      redacted[key] = isSensitiveKey(key)
+        ? "[redacted]"
+        : redactSensitiveValue(item);
     });
     return redacted;
   }
@@ -67,7 +79,7 @@ function redactSensitiveValue(value) {
 const sentryConfig = {
   dsn: import.meta.env.VITE_SENTRY_DSN,
   environment: import.meta.env.VITE_SENTRY_ENVIRONMENT || import.meta.env.MODE,
-  release: `my-streetview-project@${import.meta.env.VITE_VERSION || 'unknown'}`,
+  release: `my-streetview-project@${import.meta.env.VITE_VERSION || "unknown"}`,
   tracesSampleRate: getTracesSampleRate(),
   sendDefaultPii: false,
   _experiments: {
@@ -87,40 +99,42 @@ async function loadSentry() {
     return sentryLoadPromise;
   }
 
-  sentryLoadPromise = import('@sentry/react').then((SentryModule) => {
-    Sentry = SentryModule;
-    
-    // Initialize Sentry with stored config
-    Sentry.init({
-      ...sentryConfig,
-      integrations: [
-        // Console logging integration
-        Sentry.consoleLoggingIntegration({ levels: ["error", "warn"] }),
-      ],
-      beforeSend: function(event) {
-        const sanitizedEvent = redactSensitiveValue(event);
-        // Add frontend metadata
-        if (!sanitizedEvent.contexts) {
-          sanitizedEvent.contexts = {};
-        }
-        sanitizedEvent.contexts.app = {
-          name: "streetview-frontend",
-          version: import.meta.env.VITE_VERSION || 'unknown',
-          type: "react-spa"
-        };
-        
-        return sanitizedEvent;
-      },
+  sentryLoadPromise = import("@sentry/react")
+    .then((SentryModule) => {
+      Sentry = SentryModule;
+
+      // Initialize Sentry with stored config
+      Sentry.init({
+        ...sentryConfig,
+        integrations: [
+          // Console logging integration
+          Sentry.consoleLoggingIntegration({ levels: ["error", "warn"] }),
+        ],
+        beforeSend: function (event) {
+          const sanitizedEvent = redactSensitiveValue(event);
+          // Add frontend metadata
+          if (!sanitizedEvent.contexts) {
+            sanitizedEvent.contexts = {};
+          }
+          sanitizedEvent.contexts.app = {
+            name: "streetview-frontend",
+            version: import.meta.env.VITE_VERSION || "unknown",
+            type: "react-spa",
+          };
+
+          return sanitizedEvent;
+        },
+      });
+
+      sentryLoaded = true;
+
+      return Sentry;
+    })
+    .catch((error) => {
+      console.error("Failed to load Sentry:", error);
+      sentryLoadPromise = null;
+      throw error;
     });
-
-    sentryLoaded = true;
-
-    return Sentry;
-  }).catch((error) => {
-    console.error('Failed to load Sentry:', error);
-    sentryLoadPromise = null;
-    throw error;
-  });
 
   return sentryLoadPromise;
 }
@@ -131,7 +145,7 @@ async function loadSentry() {
 export async function captureException(error, context) {
   // Skip in development unless explicitly enabled
   if (import.meta.env.DEV && !import.meta.env.VITE_SENTRY_DSN) {
-    console.error('Error captured (Sentry disabled in dev):', error);
+    console.error("Error captured (Sentry disabled in dev):", error);
     return null;
   }
 
@@ -140,7 +154,7 @@ export async function captureException(error, context) {
       const loadedSentry = await loadSentry();
       return loadedSentry.captureException(error, context);
     } catch (loadError) {
-      console.error('Failed to load Sentry for error reporting:', loadError);
+      console.error("Failed to load Sentry for error reporting:", loadError);
       return null;
     }
   }
@@ -151,10 +165,10 @@ export async function captureException(error, context) {
 /**
  * Capture a message
  */
-export async function captureMessage(message, level = 'info') {
+export async function captureMessage(message, level = "info") {
   // Skip in development unless explicitly enabled
   if (import.meta.env.DEV && !import.meta.env.VITE_SENTRY_DSN) {
-    console.log('Message captured (Sentry disabled in dev):', message);
+    console.log("Message captured (Sentry disabled in dev):", message);
     return null;
   }
 
@@ -163,7 +177,7 @@ export async function captureMessage(message, level = 'info') {
       const loadedSentry = await loadSentry();
       return loadedSentry.captureMessage(message, level);
     } catch (loadError) {
-      console.error('Failed to load Sentry for message reporting:', loadError);
+      console.error("Failed to load Sentry for message reporting:", loadError);
       return null;
     }
   }
@@ -196,7 +210,7 @@ export function withErrorBoundary(Component, fallback) {
           return fallback(this.state.error);
         }
         return (
-          <div style={{ padding: '20px', textAlign: 'center' }}>
+          <div style={{ padding: "20px", textAlign: "center" }}>
             <h2>Something went wrong</h2>
             <p>The error has been reported. Please refresh the page.</p>
           </div>
@@ -212,18 +226,18 @@ export function withErrorBoundary(Component, fallback) {
  * Test Sentry integration
  */
 export async function testSentry() {
-  console.log('Running Sentry lazy load test...');
-  
+  console.log("Running Sentry lazy load test...");
+
   // This will trigger Sentry to load
-  await captureMessage('Sentry lazy load test: Manual trigger', 'info');
-  
+  await captureMessage("Sentry lazy load test: Manual trigger", "info");
+
   try {
-    throw new Error('Sentry lazy load test: Test exception');
+    throw new Error("Sentry lazy load test: Test exception");
   } catch (error) {
     await captureException(error);
   }
-  
-  console.log('Sentry test completed. Check your dashboard for events.');
+
+  console.log("Sentry test completed. Check your dashboard for events.");
 }
 
 /**
@@ -236,9 +250,9 @@ export function initErrorHandlers() {
   errorHandlersInitialized = true;
 
   // Global error handler
-  window.addEventListener('error', (event) => {
+  window.addEventListener("error", (event) => {
     captureException(event.error || new Error(event.message), {
-      source: 'window.onerror',
+      source: "window.onerror",
       lineno: event.lineno,
       colno: event.colno,
       filename: event.filename,
@@ -246,16 +260,17 @@ export function initErrorHandlers() {
   });
 
   // Unhandled promise rejection handler
-  window.addEventListener('unhandledrejection', (event) => {
-    const rejectionError = event.reason instanceof Error
-      ? event.reason
-      : new Error(String(event.reason || 'Unhandled Promise Rejection'));
+  window.addEventListener("unhandledrejection", (event) => {
+    const rejectionError =
+      event.reason instanceof Error
+        ? event.reason
+        : new Error(String(event.reason || "Unhandled Promise Rejection"));
     captureException(rejectionError, {
-      source: 'unhandledrejection',
+      source: "unhandledrejection",
       promise: event.promise,
     });
   });
 }
 
 // React import for error boundary
-import React from 'react';
+import React from "react";

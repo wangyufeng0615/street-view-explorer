@@ -160,8 +160,7 @@
   transform-origin: center center;
   will-change: transform, filter;
   opacity: 1;
-  animation: geoSatelliteZoomReveal 760ms cubic-bezier(0.16, 1, 0.3, 1)
-    forwards;
+  animation: geoSatelliteZoomReveal 760ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 @keyframes geoSatelliteZoomReveal {

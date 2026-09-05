@@ -183,8 +183,7 @@ export function getGuessToleranceKm(zoomSteps = 0) {
   const steps = normalizeZoomSteps(zoomSteps);
   return Math.min(
     MAX_GUESS_TOLERANCE_KM,
-    PERFECT_GUESS_DISTANCE_KM *
-      GUESS_TOLERANCE_GROWTH_PER_ZOOM_OUT ** steps,
+    PERFECT_GUESS_DISTANCE_KM * GUESS_TOLERANCE_GROWTH_PER_ZOOM_OUT ** steps,
   );
 }
 
@@ -233,7 +232,9 @@ export function isRoundTargetDuplicate(
 
 export function hasSamePanoTarget(candidate, usedTargets = []) {
   if (!candidate || !Array.isArray(usedTargets)) return false;
-  const candidatePanoId = normalizePanoId(candidate.panoId || candidate.pano_id);
+  const candidatePanoId = normalizePanoId(
+    candidate.panoId || candidate.pano_id,
+  );
   if (!candidatePanoId) return false;
   return usedTargets.some(
     (target) =>
@@ -250,7 +251,10 @@ export function hasSamePanoTarget(candidate, usedTargets = []) {
  *
  * Returns: Array<{ source: 'database', entry: {...} } | { source: 'random' }>
  */
-export function generateRoundPlan(totalRounds = TOTAL_ROUNDS, countryCode = "") {
+export function generateRoundPlan(
+  totalRounds = TOTAL_ROUNDS,
+  countryCode = "",
+) {
   // Pick 2 or 3 database entries (avg 50%), clamped to totalRounds
   const normalizedCountryCode = normalizeCountryCode(countryCode);
   const rawCount = Math.random() < 0.5 ? 2 : 3;
@@ -339,11 +343,15 @@ function canPickDatabaseEntry(
 
 function getDatabasePool(countryCode) {
   if (!countryCode) return GEO_DATABASE;
-  return GEO_DATABASE.filter((entry) => getEntryCountryCode(entry) === countryCode);
+  return GEO_DATABASE.filter(
+    (entry) => getEntryCountryCode(entry) === countryCode,
+  );
 }
 
 export function getEntryCountryCode(entry) {
-  return normalizeCountryCode(entry?.countryCode || COUNTRY_CODE_BY_NAME[entry?.country]);
+  return normalizeCountryCode(
+    entry?.countryCode || COUNTRY_CODE_BY_NAME[entry?.country],
+  );
 }
 
 function normalizeCountryCode(countryCode) {

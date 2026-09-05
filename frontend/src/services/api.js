@@ -508,7 +508,12 @@ export async function deleteExplorationPreference(language = null) {
 }
 
 // 获取全站共享访问历史
-export async function getVisitHistory(limit = 1000, offset = 0, source = null, distinct = false) {
+export async function getVisitHistory(
+  limit = 1000,
+  offset = 0,
+  source = null,
+  distinct = false,
+) {
   try {
     const params = new URLSearchParams({
       limit: String(limit),

@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { buildAtlasVoiceInstructions, formatAtlasLocation } from "./atlasPersona";
+import {
+  buildAtlasVoiceInstructions,
+  formatAtlasLocation,
+} from "./atlasPersona";
 
 describe("buildAtlasVoiceInstructions", () => {
   it("uses the last known location while a new location is loading", () => {

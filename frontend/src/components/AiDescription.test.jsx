@@ -28,21 +28,39 @@ vi.mock("react-i18next", () => ({
 }));
 
 describe("AiDescription thinking states", () => {
-  it('does not announce failure while coordinates are still resolving and there is no pano yet', () => {
+  it("does not announce failure while coordinates are still resolving and there is no pano yet", () => {
     render(<AiDescription isLoading description={null} panoId={null} />);
-    expect(screen.getByRole('status')).toBeInTheDocument();
-    expect(screen.queryByText('ai.cannotGetStreetView')).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toBeInTheDocument();
+    expect(
+      screen.queryByText("ai.cannotGetStreetView"),
+    ).not.toBeInTheDocument();
   });
   beforeEach(() => {
     vi.clearAllMocks();
     languageState.current = "zh";
   });
 
-  it('discloses missing research confirmation after generation', () => {
-    const { rerender } = render(<AiDescription isLoading={false} description="眼前是一条山路。" panoId="pano" researchStatus="unverified" />);
-    expect(screen.getByRole('note')).toHaveTextContent('本次检索状态未获上游确认');
-    rerender(<AiDescription isLoading={false} description="眼前是一条山路。" panoId="pano" researchStatus="verified" />);
-    expect(screen.queryByRole('note')).not.toBeInTheDocument();
+  it("discloses missing research confirmation after generation", () => {
+    const { rerender } = render(
+      <AiDescription
+        isLoading={false}
+        description="眼前是一条山路。"
+        panoId="pano"
+        researchStatus="unverified"
+      />,
+    );
+    expect(screen.getByRole("note")).toHaveTextContent(
+      "本次检索状态未获上游确认",
+    );
+    rerender(
+      <AiDescription
+        isLoading={false}
+        description="眼前是一条山路。"
+        panoId="pano"
+        researchStatus="verified"
+      />,
+    );
+    expect(screen.queryByRole("note")).not.toBeInTheDocument();
   });
 
   it("renders an accessible, prominent status while the first description loads", () => {
@@ -84,9 +102,7 @@ describe("AiDescription thinking states", () => {
     fireEvent.click(screen.getByRole("button", { name: "Atlas，再多讲讲" }));
 
     expect(await screen.findByText("我再往深处找找…")).toBeInTheDocument();
-    expect(screen.getByRole("status")).toHaveAccessibleName(
-      "我再往深处找找…",
-    );
+    expect(screen.getByRole("status")).toHaveAccessibleName("我再往深处找找…");
   });
 
   it("reveals streamed prose while the first description is still loading", () => {

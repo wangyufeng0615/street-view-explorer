@@ -93,7 +93,8 @@ export default function FootprintMap({ onClose }) {
       });
       markersRef.current = [];
 
-      if (mapInstanceRef.current) maps.event.clearInstanceListeners(mapInstanceRef.current);
+      if (mapInstanceRef.current)
+        maps.event.clearInstanceListeners(mapInstanceRef.current);
       const map = new maps.Map(mapRef.current, {
         mapId: import.meta.env.VITE_GOOGLE_MAPS_MAP_ID,
         center: GLOBAL_VIEW.center,
@@ -121,34 +122,60 @@ export default function FootprintMap({ onClose }) {
       const renderMarkers = () => {
         markersRef.current.forEach(removeMarker);
         markersRef.current = [];
-        for (const group of clusterFootprints(uniqueVisits, map.getZoom() || 2)) {
+        for (const group of clusterFootprints(
+          uniqueVisits,
+          map.getZoom() || 2,
+        )) {
           const position = { lat: group.lat, lng: group.lng };
           const count = group.visits.length;
-          const title = count > 1 ? `${count}` : group.visits[0].formatted_address || '';
+          const title =
+            count > 1 ? `${count}` : group.visits[0].formatted_address || "";
           let marker;
           const onClick = () => {
             if (count === 1) openVisitInNewTab(group.lat, group.lng);
-            else { map.setCenter(position); map.setZoom(Math.min(21, (map.getZoom() || 2) + 3)); }
+            else {
+              map.setCenter(position);
+              map.setZoom(Math.min(21, (map.getZoom() || 2) + 3));
+            }
           };
-          if (maps.marker?.AdvancedMarkerElement && import.meta.env.VITE_GOOGLE_MAPS_MAP_ID) {
-            const dot = document.createElement('button');
-            dot.type = 'button';
-            dot.textContent = count > 1 ? String(count) : '';
-            dot.setAttribute('aria-label', title);
-            Object.assign(dot.style, { minWidth: count > 1 ? '28px' : '12px', height: count > 1 ? '28px' : '12px',
-              borderRadius: '50%', background: '#FFD54F', color: '#222', border: '2px solid white', cursor: 'pointer' });
-            dot.addEventListener('click', onClick);
-            marker = new maps.marker.AdvancedMarkerElement({ map, position, content: dot, title });
+          if (
+            maps.marker?.AdvancedMarkerElement &&
+            import.meta.env.VITE_GOOGLE_MAPS_MAP_ID
+          ) {
+            const dot = document.createElement("button");
+            dot.type = "button";
+            dot.textContent = count > 1 ? String(count) : "";
+            dot.setAttribute("aria-label", title);
+            Object.assign(dot.style, {
+              minWidth: count > 1 ? "28px" : "12px",
+              height: count > 1 ? "28px" : "12px",
+              borderRadius: "50%",
+              background: "#FFD54F",
+              color: "#222",
+              border: "2px solid white",
+              cursor: "pointer",
+            });
+            dot.addEventListener("click", onClick);
+            marker = new maps.marker.AdvancedMarkerElement({
+              map,
+              position,
+              content: dot,
+              title,
+            });
           } else {
-            marker = new maps.Marker({ map, position, title, label: count > 1 ? String(count) : undefined });
-            marker.addListener('click', onClick);
+            marker = new maps.Marker({
+              map,
+              position,
+              title,
+              label: count > 1 ? String(count) : undefined,
+            });
+            marker.addListener("click", onClick);
           }
           markersRef.current.push(marker);
         }
       };
       renderMarkers();
-      map.addListener('zoom_changed', renderMarkers);
-
+      map.addListener("zoom_changed", renderMarkers);
     } catch (err) {
       console.error("FootprintMap init error:", err);
       setError(t("error.mapLoadFailed"));
@@ -166,7 +193,8 @@ export default function FootprintMap({ onClose }) {
         removeMarker(m);
       });
       markersRef.current = [];
-      if (mapInstanceRef.current && window.google?.maps?.event) window.google.maps.event.clearInstanceListeners(mapInstanceRef.current);
+      if (mapInstanceRef.current && window.google?.maps?.event)
+        window.google.maps.event.clearInstanceListeners(mapInstanceRef.current);
       mapInstanceRef.current = null;
     };
   }, [loading, uniqueVisits.length, initMap]);

@@ -108,9 +108,9 @@ describe("constants", () => {
 describe("geo database", () => {
   it("contains exactly 1000 curated and supplemental entries", () => {
     expect(GEO_DATABASE).toHaveLength(1000);
-    expect(new Set(GEO_DATABASE.map((entry) => entry.country)).size).toBeGreaterThan(
-      150,
-    );
+    expect(
+      new Set(GEO_DATABASE.map((entry) => entry.country)).size,
+    ).toBeGreaterThan(150);
     expect(
       GEO_DATABASE.every(
         (entry) =>

@@ -22,35 +22,59 @@ vi.mock("../i18n", () => ({
 }));
 
 import useStore from "./useStore";
-import { deleteExplorationPreference, setExplorationPreference, getRandomLocation } from '../services/api';
+import {
+  deleteExplorationPreference,
+  setExplorationPreference,
+  getRandomLocation,
+} from "../services/api";
 
-describe('exploration preference synchronization', () => {
+describe("exploration preference synchronization", () => {
   afterEach(() => vi.unstubAllGlobals());
   beforeEach(() => {
     vi.clearAllMocks();
     const storage = new Map();
-    vi.stubGlobal('localStorage', { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value), removeItem: key => storage.delete(key) });
-    useStore.setState({ isSavingPreference: false, isLoadingLocation: false,
-      isExplorationInitialized: false, explorationMode: 'custom', explorationInterest: 'mountains' });
+    vi.stubGlobal("localStorage", {
+      getItem: (key) => storage.get(key) ?? null,
+      setItem: (key, value) => storage.set(key, value),
+      removeItem: (key) => storage.delete(key),
+    });
+    useStore.setState({
+      isSavingPreference: false,
+      isLoadingLocation: false,
+      isExplorationInitialized: false,
+      explorationMode: "custom",
+      explorationInterest: "mountains",
+    });
   });
 
-  it('preserves custom mode when deletion fails', async () => {
-    localStorage.setItem('exploration_mode', 'custom');
-    localStorage.setItem('exploration_interest', 'mountains');
-    deleteExplorationPreference.mockResolvedValue({ success: false, error: 'offline' });
-    await useStore.getState().handleModeChange('random');
-    expect(useStore.getState().explorationMode).toBe('custom');
-    expect(localStorage.getItem('exploration_interest')).toBe('mountains');
-    expect(useStore.getState().preferenceError).toBe('offline');
+  it("preserves custom mode when deletion fails", async () => {
+    localStorage.setItem("exploration_mode", "custom");
+    localStorage.setItem("exploration_interest", "mountains");
+    deleteExplorationPreference.mockResolvedValue({
+      success: false,
+      error: "offline",
+    });
+    await useStore.getState().handleModeChange("random");
+    expect(useStore.getState().explorationMode).toBe("custom");
+    expect(localStorage.getItem("exploration_interest")).toBe("mountains");
+    expect(useStore.getState().preferenceError).toBe("offline");
     expect(getRandomLocation).not.toHaveBeenCalled();
   });
 
-  it('waits for the restored preference before the first location and deduplicates initialization', async () => {
-    localStorage.setItem('exploration_mode', 'custom');
-    localStorage.setItem('exploration_interest', 'mountains');
+  it("waits for the restored preference before the first location and deduplicates initialization", async () => {
+    localStorage.setItem("exploration_mode", "custom");
+    localStorage.setItem("exploration_interest", "mountains");
     let resolve;
-    setExplorationPreference.mockImplementation(() => new Promise(r => { resolve = r; }));
-    getRandomLocation.mockResolvedValue({ success: true, data: { latitude: 1, longitude: 2 } });
+    setExplorationPreference.mockImplementation(
+      () =>
+        new Promise((r) => {
+          resolve = r;
+        }),
+    );
+    getRandomLocation.mockResolvedValue({
+      success: true,
+      data: { latitude: 1, longitude: 2 },
+    });
     const init = useStore.getState().initializeExplorationMode();
     const load = useStore.getState().loadRandomLocation(true);
     expect(useStore.getState().isExplorationInitialized).toBe(false);

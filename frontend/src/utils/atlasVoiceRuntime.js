@@ -81,7 +81,11 @@ export function buildVoiceContextSignature(context = {}) {
   });
 }
 
-export function resolveStreetViewScene({ location, streetViewView, heading = 0 } = {}) {
+export function resolveStreetViewScene({
+  location,
+  streetViewView,
+  heading = 0,
+} = {}) {
   const panoId = String(
     streetViewView?.panoId || location?.pano_id || location?.panoId || "",
   ).trim();
@@ -103,7 +107,8 @@ export function resolveStreetViewScene({ location, streetViewView, heading = 0 }
 
 export function buildStreetViewSceneSignature(scene) {
   if (!scene?.panoId) return "";
-  const quantize = (value, step) => Math.round(Number(value || 0) / step) * step;
+  const quantize = (value, step) =>
+    Math.round(Number(value || 0) / step) * step;
   return [
     scene.panoId,
     quantize(scene.heading, 5),
@@ -112,7 +117,11 @@ export function buildStreetViewSceneSignature(scene) {
   ].join(":");
 }
 
-export function buildRealtimeSceneContextEvent({ itemId, imageDataUrl, scene }) {
+export function buildRealtimeSceneContextEvent({
+  itemId,
+  imageDataUrl,
+  scene,
+}) {
   return {
     type: "conversation.item.create",
     item: {
@@ -168,8 +177,10 @@ export function shouldIgnoreAssistantEcho({
   if (provider !== "doubao") return false;
   if (hasActiveSpeech || echoTailActive) return true;
   if (!Number.isFinite(assistantSpeechStartedAtMs)) return false;
-  return nowMs - assistantSpeechStartedAtMs >= 0 &&
-    nowMs - assistantSpeechStartedAtMs < guardMs;
+  return (
+    nowMs - assistantSpeechStartedAtMs >= 0 &&
+    nowMs - assistantSpeechStartedAtMs < guardMs
+  );
 }
 
 export function nextDoubaoSpeechQueue(_currentQueue, nextSpeech) {
@@ -177,7 +188,11 @@ export function nextDoubaoSpeechQueue(_currentQueue, nextSpeech) {
 }
 
 function normalizeEagerness(value) {
-  switch (String(value || "high").trim().toLowerCase()) {
+  switch (
+    String(value || "high")
+      .trim()
+      .toLowerCase()
+  ) {
     case "low":
       return "low";
     case "medium":

@@ -1,9 +1,4 @@
-import React, {
-  memo,
-  useState,
-  useEffect,
-  useRef,
-} from "react";
+import React, { memo, useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { formatAddress } from "../utils/addressUtils";
@@ -34,23 +29,36 @@ const TopBar = memo(function TopBar({
 
   useEffect(() => {
     if (!showInterestModal) return undefined;
-    const previousFocus = topBarRef.current?.querySelector('[data-interest-trigger]');
+    const previousFocus = topBarRef.current?.querySelector(
+      "[data-interest-trigger]",
+    );
     const handleKeyDown = (event) => {
-      if (event.key === 'Escape') {
+      if (event.key === "Escape") {
         event.preventDefault();
         event.stopPropagation();
         setShowInterestModal(false);
-        setTempInterest(explorationInterest || '');
-      } else if (event.key === 'Tab') {
-        const controls = [...modalRef.current.querySelectorAll('input:not(:disabled), button:not(:disabled)')];
-        const first = controls[0], last = controls[controls.length - 1];
-        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
-        if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+        setTempInterest(explorationInterest || "");
+      } else if (event.key === "Tab") {
+        const controls = [
+          ...modalRef.current.querySelectorAll(
+            "input:not(:disabled), button:not(:disabled)",
+          ),
+        ];
+        const first = controls[0],
+          last = controls[controls.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last?.focus();
+        }
+        if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first?.focus();
+        }
       }
     };
-    document.addEventListener('keydown', handleKeyDown, true);
+    document.addEventListener("keydown", handleKeyDown, true);
     return () => {
-      document.removeEventListener('keydown', handleKeyDown, true);
+      document.removeEventListener("keydown", handleKeyDown, true);
       previousFocus?.focus();
     };
   }, [showInterestModal, explorationInterest]);
@@ -145,7 +153,11 @@ const TopBar = memo(function TopBar({
           <div style={styles.addressContainer} className="address-container">
             {location ? (
               <span style={styles.address} className="address">
-                📍 {formatAddress(location, i18n.resolvedLanguage || i18n.language)}
+                📍{" "}
+                {formatAddress(
+                  location,
+                  i18n.resolvedLanguage || i18n.language,
+                )}
               </span>
             ) : (
               <span style={styles.addressPlaceholder}>
@@ -284,11 +296,15 @@ const TopBar = memo(function TopBar({
                 <div style={styles.contactBlock} aria-label={t("contact_info")}>
                   <span style={styles.dropdownLabel}>{t("contact_info")}</span>
                   <div style={styles.contactRow}>
-                    <span style={styles.contactLabel}>{t("contact.wechat")}</span>
+                    <span style={styles.contactLabel}>
+                      {t("contact.wechat")}
+                    </span>
                     <span style={styles.contactValue}>{WECHAT_ID}</span>
                   </div>
                   <div style={styles.contactRow}>
-                    <span style={styles.contactLabel}>{t("contact.email")}</span>
+                    <span style={styles.contactLabel}>
+                      {t("contact.email")}
+                    </span>
                     <span style={styles.contactValue}>{CONTACT_EMAIL}</span>
                   </div>
                 </div>
@@ -306,8 +322,17 @@ const TopBar = memo(function TopBar({
       {/* 兴趣输入模态窗口 */}
       {showInterestModal && (
         <div style={styles.modalOverlay} onClick={handleInterestCancel}>
-          <div ref={modalRef} role="dialog" aria-modal="true" aria-labelledby="interest-title" style={styles.modal} onClick={(e) => e.stopPropagation()}>
-            <h3 id="interest-title" style={styles.modalTitle}>🎯 {t("set_interest_title")}</h3>
+          <div
+            ref={modalRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="interest-title"
+            style={styles.modal}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 id="interest-title" style={styles.modalTitle}>
+              🎯 {t("set_interest_title")}
+            </h3>
             <p style={styles.modalDescription}>
               {t("set_interest_description")}
             </p>

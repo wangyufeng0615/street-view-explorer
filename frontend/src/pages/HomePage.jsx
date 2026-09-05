@@ -261,7 +261,13 @@ export default function HomePage({ showFootprintFromRoute = false }) {
         loadLocationDescription(location.pano_id);
       }
     }
-  }, [activeLanguage, isLanguageReady, location?.pano_id, locationRef, loadLocationDescription]);
+  }, [
+    activeLanguage,
+    isLanguageReady,
+    location?.pano_id,
+    locationRef,
+    loadLocationDescription,
+  ]);
 
   // 监听网络状态变化，重新加载描述
   useEffect(() => {

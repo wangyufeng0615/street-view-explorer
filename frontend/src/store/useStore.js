@@ -1,565 +1,590 @@
-import { create } from 'zustand';
-import { devtools } from 'zustand/middleware';
+import { create } from "zustand";
+import { devtools } from "zustand/middleware";
 import {
-    getRandomLocation,
-    streamLocationDescription,
-    setExplorationPreference,
-    deleteExplorationPreference,
-    lookupLocation,
-} from '../services/api';
-import i18n from '../i18n';
+  getRandomLocation,
+  streamLocationDescription,
+  setExplorationPreference,
+  deleteExplorationPreference,
+  lookupLocation,
+} from "../services/api";
+import i18n from "../i18n";
 
 const RATE_LIMIT_MS = 1000; // 1秒限制
-const EXPLORATION_MODE_KEY = 'exploration_mode';
-const EXPLORATION_INTEREST_KEY = 'exploration_interest';
+const EXPLORATION_MODE_KEY = "exploration_mode";
+const EXPLORATION_INTEREST_KEY = "exploration_interest";
 let activeDescriptionRequest = null;
 let toastHideTimer = null;
 let preferenceInitialization = null;
 
 function getActiveLanguage() {
-    const language = i18n.resolvedLanguage || i18n.language || 'en';
-    return language.startsWith('zh') ? 'zh' : 'en';
+  const language = i18n.resolvedLanguage || i18n.language || "en";
+  return language.startsWith("zh") ? "zh" : "en";
 }
 
 export const EXPLORATION_MODES = {
-    RANDOM: 'random',
-    CUSTOM: 'custom',
+  RANDOM: "random",
+  CUSTOM: "custom",
 };
 
 const useStore = create(
-    devtools(
-        (set, get) => ({
-            // ===== Location相关状态 =====
-            location: null,
-            locationError: null,
-            isLocationLoading: true,
-            isMapLocationLoading: false,
-            lastRefreshTime: Date.now() - RATE_LIMIT_MS,
+  devtools(
+    (set, get) => ({
+      // ===== Location相关状态 =====
+      location: null,
+      locationError: null,
+      isLocationLoading: true,
+      isMapLocationLoading: false,
+      lastRefreshTime: Date.now() - RATE_LIMIT_MS,
 
-            // ===== Description相关状态 =====
-            description: null,
-            descriptionCitations: null,
-            descriptionResearchStatus: null,
-            descriptionError: null,
-            isDescriptionLoading: false,
-            descriptionRetries: 0,
-            descriptionRequestKey: null,
+      // ===== Description相关状态 =====
+      description: null,
+      descriptionCitations: null,
+      descriptionResearchStatus: null,
+      descriptionError: null,
+      isDescriptionLoading: false,
+      descriptionRetries: 0,
+      descriptionRequestKey: null,
 
-            // ===== Exploration Mode相关状态 =====
-            explorationMode: EXPLORATION_MODES.RANDOM,
-            explorationInterest: '',
-            isSavingPreference: false,
-            preferenceError: null,
-            isExplorationInitialized: false,
+      // ===== Exploration Mode相关状态 =====
+      explorationMode: EXPLORATION_MODES.RANDOM,
+      explorationInterest: "",
+      isSavingPreference: false,
+      preferenceError: null,
+      isExplorationInitialized: false,
 
-            // ===== UI相关状态 =====
-            heading: 0,
-            streetViewView: null,
-            scale: 1,
-            toastMessage: '',
-            showToast: false,
+      // ===== UI相关状态 =====
+      heading: 0,
+      streetViewView: null,
+      scale: 1,
+      toastMessage: "",
+      showToast: false,
 
-            // ===== Refs (作为状态管理) =====
+      // ===== Refs (作为状态管理) =====
+      isLoadingLocation: false,
+      currentLocationRef: null,
+      networkState: true,
+
+      // ===== Actions =====
+
+      // Location Actions
+      loadRandomLocation: async (skipRateLimit = false) => {
+        if (!get().isExplorationInitialized) {
+          await get().initializeExplorationMode();
+          if (!get().isExplorationInitialized) return;
+        }
+        const state = get();
+
+        // 检查限流
+        if (!skipRateLimit) {
+          const now = Date.now();
+          const timeSinceLastRefresh = now - state.lastRefreshTime;
+          if (timeSinceLastRefresh < RATE_LIMIT_MS) {
+            const waitTime = Math.ceil(
+              (RATE_LIMIT_MS - timeSinceLastRefresh) / 1000,
+            );
+            set({ locationError: `请等待 ${waitTime} 秒后再试` });
+            return;
+          }
+        }
+
+        // 检查是否正在加载
+        if (state.isLoadingLocation) return;
+
+        // 更新状态
+        set({
+          isLoadingLocation: true,
+          isLocationLoading: true,
+          lastRefreshTime: Date.now(),
+          location: null,
+          description: null,
+          descriptionError: null,
+          streetViewView: null,
+        });
+
+        try {
+          const currentLanguage = getActiveLanguage();
+          const resp = await getRandomLocation(currentLanguage);
+
+          // 检查是否仍在加载状态
+          if (!get().isLoadingLocation) return;
+
+          if (resp.success && resp.data) {
+            const lat = Number(resp.data.latitude);
+            const lng = Number(resp.data.longitude);
+
+            if (!isNaN(lat) && !isNaN(lng)) {
+              const locationData = {
+                ...resp.data,
+                latitude: lat,
+                longitude: lng,
+              };
+
+              set({
+                location: locationData,
+                currentLocationRef: locationData,
+                locationError: null,
+              });
+            } else {
+              throw new Error("无效的坐标数据");
+            }
+          } else {
+            throw new Error(resp.error || "获取位置失败");
+          }
+        } catch (error) {
+          console.error("加载位置失败:", error);
+          set({
+            locationError: error.message || "获取位置失败，请重试",
+          });
+        } finally {
+          set({
+            isLocationLoading: false,
             isLoadingLocation: false,
-            currentLocationRef: null,
-            networkState: true,
+          });
+        }
+      },
 
-            // ===== Actions =====
+      // URL Location Actions
+      loadLocationFromURL: async (lat, lng) => {
+        const state = get();
+        if (state.isLoadingLocation) return;
 
-            // Location Actions
-            loadRandomLocation: async (skipRateLimit = false) => {
-                if (!get().isExplorationInitialized) {
-                    await get().initializeExplorationMode();
-                    if (!get().isExplorationInitialized) return;
-                }
-                const state = get();
+        set({
+          isLoadingLocation: true,
+          isLocationLoading: true,
+          location: null,
+          description: null,
+          descriptionError: null,
+          streetViewView: null,
+        });
 
-                // 检查限流
-                if (!skipRateLimit) {
-                    const now = Date.now();
-                    const timeSinceLastRefresh = now - state.lastRefreshTime;
-                    if (timeSinceLastRefresh < RATE_LIMIT_MS) {
-                        const waitTime = Math.ceil((RATE_LIMIT_MS - timeSinceLastRefresh) / 1000);
-                        set({ locationError: `请等待 ${waitTime} 秒后再试` });
-                        return;
-                    }
-                }
+        try {
+          const currentLanguage = getActiveLanguage();
+          const resp = await lookupLocation(
+            lat,
+            lng,
+            currentLanguage,
+            "shared",
+          );
 
-                // 检查是否正在加载
-                if (state.isLoadingLocation) return;
+          if (!get().isLoadingLocation) return;
 
-                // 更新状态
-                set({
-                    isLoadingLocation: true,
-                    isLocationLoading: true,
-                    lastRefreshTime: Date.now(),
-                    location: null,
-                    description: null,
-                    descriptionError: null,
-                    streetViewView: null,
-                });
+          if (resp.success && resp.data) {
+            const locLat = Number(resp.data.latitude);
+            const locLng = Number(resp.data.longitude);
 
-                try {
-                    const currentLanguage = getActiveLanguage();
-                    const resp = await getRandomLocation(currentLanguage);
+            if (!isNaN(locLat) && !isNaN(locLng)) {
+              const locationData = {
+                ...resp.data,
+                latitude: locLat,
+                longitude: locLng,
+              };
 
-                    // 检查是否仍在加载状态
-                    if (!get().isLoadingLocation) return;
+              set({
+                location: locationData,
+                currentLocationRef: locationData,
+                locationError: null,
+              });
+            } else {
+              throw new Error("无效的坐标数据");
+            }
+          } else {
+            throw new Error(resp.error || "查找位置失败");
+          }
+        } catch (error) {
+          console.error("从URL加载位置失败:", error);
+          set({
+            locationError: error.message || "查找位置失败，请重试",
+          });
+        } finally {
+          set({
+            isLocationLoading: false,
+            isLoadingLocation: false,
+          });
+        }
+      },
 
-                    if (resp.success && resp.data) {
-                        const lat = Number(resp.data.latitude);
-                        const lng = Number(resp.data.longitude);
+      // Map pick Location Actions
+      loadLocationFromMapPick: async (lat, lng) => {
+        const state = get();
+        if (state.isLoadingLocation) {
+          return {
+            success: false,
+            error: i18n.t("mapPicker.busy"),
+          };
+        }
 
-                        if (!isNaN(lat) && !isNaN(lng)) {
-                            const locationData = {
-                                ...resp.data,
-                                latitude: lat,
-                                longitude: lng,
-                            };
+        set({
+          isLoadingLocation: true,
+          isMapLocationLoading: true,
+        });
 
-                            set({
-                                location: locationData,
-                                currentLocationRef: locationData,
-                                locationError: null,
-                            });
-                        } else {
-                            throw new Error('无效的坐标数据');
-                        }
-                    } else {
-                        throw new Error(resp.error || '获取位置失败');
-                    }
-                } catch (error) {
-                    console.error('加载位置失败:', error);
-                    set({
-                        locationError: error.message || '获取位置失败，请重试',
-                    });
-                } finally {
-                    set({
-                        isLocationLoading: false,
-                        isLoadingLocation: false,
-                    });
-                }
-            },
+        try {
+          const currentLanguage = getActiveLanguage();
+          const resp = await lookupLocation(
+            lat,
+            lng,
+            currentLanguage,
+            "map_pick",
+            "nearest",
+          );
 
-            // URL Location Actions
-            loadLocationFromURL: async (lat, lng) => {
-                const state = get();
-                if (state.isLoadingLocation) return;
+          if (resp.success && resp.data) {
+            const locLat = Number(resp.data.latitude);
+            const locLng = Number(resp.data.longitude);
 
-                set({
-                    isLoadingLocation: true,
-                    isLocationLoading: true,
-                    location: null,
-                    description: null,
-                    descriptionError: null,
-                    streetViewView: null,
-                });
+            if (!isNaN(locLat) && !isNaN(locLng)) {
+              const locationData = {
+                ...resp.data,
+                latitude: locLat,
+                longitude: locLng,
+              };
 
-                try {
-                    const currentLanguage = getActiveLanguage();
-                    const resp = await lookupLocation(lat, lng, currentLanguage, 'shared');
+              set({
+                location: locationData,
+                currentLocationRef: locationData,
+                locationError: null,
+                description: null,
+                descriptionCitations: null,
+                descriptionError: null,
+                streetViewView: null,
+              });
 
-                    if (!get().isLoadingLocation) return;
+              return {
+                success: true,
+                data: locationData,
+              };
+            }
 
-                    if (resp.success && resp.data) {
-                        const locLat = Number(resp.data.latitude);
-                        const locLng = Number(resp.data.longitude);
+            throw new Error("无效的坐标数据");
+          }
 
-                        if (!isNaN(locLat) && !isNaN(locLng)) {
-                            const locationData = {
-                                ...resp.data,
-                                latitude: locLat,
-                                longitude: locLng,
-                            };
+          throw new Error(resp.error || "查找位置失败");
+        } catch (error) {
+          console.error("从地图查找位置失败:", error);
+          return {
+            success: false,
+            error: error.message || "查找位置失败，请重试",
+          };
+        } finally {
+          set({
+            isMapLocationLoading: false,
+            isLoadingLocation: false,
+          });
+        }
+      },
 
-                            set({
-                                location: locationData,
-                                currentLocationRef: locationData,
-                                locationError: null,
-                            });
-                        } else {
-                            throw new Error('无效的坐标数据');
-                        }
-                    } else {
-                        throw new Error(resp.error || '查找位置失败');
-                    }
-                } catch (error) {
-                    console.error('从URL加载位置失败:', error);
-                    set({
-                        locationError: error.message || '查找位置失败，请重试',
-                    });
-                } finally {
-                    set({
-                        isLocationLoading: false,
-                        isLoadingLocation: false,
-                    });
-                }
-            },
+      // Description Actions
+      loadLocationDescription: (panoId, retryCount = 0) => {
+        const MAX_RETRIES = 3;
+        const currentLanguage = getActiveLanguage();
+        const currentState = get();
+        const currentView =
+          currentState.streetViewView?.panoId === panoId
+            ? currentState.streetViewView
+            : { heading: currentState.heading, pitch: 0, fov: 90 };
+        const fingerprint = [
+          panoId,
+          currentLanguage,
+          currentView?.panoId || "",
+          Math.round(Number(currentView?.heading) || 0),
+          Math.round(Number(currentView?.pitch) || 0),
+          Math.round(Number(currentView?.fov) || 90),
+          retryCount,
+        ].join(":");
 
-            // Map pick Location Actions
-            loadLocationFromMapPick: async (lat, lng) => {
-                const state = get();
-                if (state.isLoadingLocation) {
-                    return {
-                        success: false,
-                        error: i18n.t('mapPicker.busy'),
-                    };
-                }
+        if (activeDescriptionRequest?.fingerprint === fingerprint) {
+          return activeDescriptionRequest.promise;
+        }
+        activeDescriptionRequest?.controller.abort();
 
-                set({
-                    isLoadingLocation: true,
-                    isMapLocationLoading: true,
-                });
+        const controller = new AbortController();
+        const requestKey = fingerprint;
 
-                try {
-                    const currentLanguage = getActiveLanguage();
-                    const resp = await lookupLocation(
-                        lat,
-                        lng,
-                        currentLanguage,
-                        'map_pick',
-                        'nearest',
-                    );
+        set({
+          isDescriptionLoading: true,
+          description: null,
+          descriptionCitations: null,
+          descriptionError: null,
+          descriptionRetries: retryCount,
+          descriptionRequestKey: requestKey,
+        });
 
-                    if (resp.success && resp.data) {
-                        const locLat = Number(resp.data.latitude);
-                        const locLng = Number(resp.data.longitude);
-
-                        if (!isNaN(locLat) && !isNaN(locLng)) {
-                            const locationData = {
-                                ...resp.data,
-                                latitude: locLat,
-                                longitude: locLng,
-                            };
-
-                            set({
-                                location: locationData,
-                                currentLocationRef: locationData,
-                                locationError: null,
-                                description: null,
-                                descriptionCitations: null,
-                                descriptionError: null,
-                                streetViewView: null,
-                            });
-
-                            return {
-                                success: true,
-                                data: locationData,
-                            };
-                        }
-
-                        throw new Error('无效的坐标数据');
-                    }
-
-                    throw new Error(resp.error || '查找位置失败');
-                } catch (error) {
-                    console.error('从地图查找位置失败:', error);
-                    return {
-                        success: false,
-                        error: error.message || '查找位置失败，请重试',
-                    };
-                } finally {
-                    set({
-                        isMapLocationLoading: false,
-                        isLoadingLocation: false,
-                    });
-                }
-            },
-
-            // Description Actions
-            loadLocationDescription: (panoId, retryCount = 0) => {
-                const MAX_RETRIES = 3;
-                const currentLanguage = getActiveLanguage();
-                const currentState = get();
-                const currentView =
-                    currentState.streetViewView?.panoId === panoId
-                        ? currentState.streetViewView
-                        : { heading: currentState.heading, pitch: 0, fov: 90 };
-                const fingerprint = [
-                    panoId,
-                    currentLanguage,
-                    currentView?.panoId || '',
-                    Math.round(Number(currentView?.heading) || 0),
-                    Math.round(Number(currentView?.pitch) || 0),
-                    Math.round(Number(currentView?.fov) || 90),
-                    retryCount,
-                ].join(':');
-
-                if (activeDescriptionRequest?.fingerprint === fingerprint) {
-                    return activeDescriptionRequest.promise;
-                }
-                activeDescriptionRequest?.controller.abort();
-
-                const controller = new AbortController();
-                const requestKey = fingerprint;
-
-                set({
-                    isDescriptionLoading: true,
-                    description: null,
-                    descriptionCitations: null,
-                    descriptionError: null,
-                    descriptionRetries: retryCount,
-                    descriptionRequestKey: requestKey,
-                });
-
-                const promise = (async () => {
-                    try {
-                        const resp = await streamLocationDescription(
-                            panoId,
-                            currentLanguage,
-                            controller.signal,
-                            currentView,
-                            (delta) => {
-                                const latestState = get();
-                                if (
-                                    latestState.descriptionRequestKey === requestKey &&
-                                    latestState.currentLocationRef?.pano_id === panoId &&
-                                    getActiveLanguage() === currentLanguage
-                                ) {
-                                    set((state) => ({
-                                        description: `${state.description || ''}${delta}`,
-                                    }));
-                                }
-                            },
-                        );
-                        const latestState = get();
-
-                        if (
-                            latestState.descriptionRequestKey !== requestKey ||
-                            latestState.currentLocationRef?.pano_id !== panoId ||
-                            getActiveLanguage() !== currentLanguage
-                        ) {
-                            return;
-                        }
-
-                        if (resp.success && resp.data?.description) {
-                            set({
-                                description: resp.data.description,
-                                descriptionCitations: resp.data.citations || null,
-                                descriptionResearchStatus: resp.data.research_status || 'unverified',
-                                descriptionError: null,
-                            });
-                        } else if (!controller.signal.aborted) {
-                            throw new Error(resp.error || '获取描述失败');
-                        }
-                    } catch (error) {
-                        if (
-                            controller.signal.aborted ||
-                            get().descriptionRequestKey !== requestKey
-                        ) {
-                            return;
-                        }
-
-                        console.error('加载描述失败:', error);
-                        set({ description: null, descriptionCitations: null });
-
-                        if (retryCount < MAX_RETRIES && get().networkState) {
-                            const retryDelay = Math.min(1000 * Math.pow(2, retryCount), 5000);
-                            setTimeout(() => {
-                                const state = get();
-                                if (state.currentLocationRef?.pano_id === panoId) {
-                                    state.loadLocationDescription(panoId, retryCount + 1);
-                                }
-                            }, retryDelay);
-                        } else {
-                            set({ descriptionError: '获取位置描述失败' });
-                        }
-                    } finally {
-                        if (activeDescriptionRequest?.requestKey === requestKey) {
-                            activeDescriptionRequest = null;
-                        }
-                        if (get().descriptionRequestKey === requestKey) {
-                            set({ isDescriptionLoading: false });
-                        }
-                    }
-                })();
-
-                activeDescriptionRequest = {
-                    fingerprint,
-                    requestKey,
-                    controller,
-                    promise,
-                };
-                return promise;
-            },
-
-            cancelLocationDescription: () => {
-                activeDescriptionRequest?.controller.abort();
-                activeDescriptionRequest = null;
-                set({
-                    isDescriptionLoading: false,
-                    descriptionRequestKey: null,
-                });
-            },
-
-            // Exploration Mode Actions
-            initializeExplorationMode: () => {
-                if (preferenceInitialization) return preferenceInitialization;
-                set({ isSavingPreference: true, preferenceError: null });
-                preferenceInitialization = (async () => {
-                    try {
-                        const savedMode = localStorage.getItem(EXPLORATION_MODE_KEY);
-                        const savedInterest = localStorage.getItem(EXPLORATION_INTEREST_KEY) || '';
-                        const custom = savedMode === EXPLORATION_MODES.CUSTOM && Boolean(savedInterest);
-                        const response = custom
-                            ? await setExplorationPreference(savedInterest)
-                            : await deleteExplorationPreference();
-                        if (!response.success) throw new Error(response.error || '同步探索偏好失败');
-                        set({
-                            explorationMode: custom ? EXPLORATION_MODES.CUSTOM : EXPLORATION_MODES.RANDOM,
-                            explorationInterest: custom ? savedInterest : '',
-                            isExplorationInitialized: true,
-                            locationError: null,
-                        });
-                    } catch (error) {
-                        set({ preferenceError: error.message, locationError: error.message, isLocationLoading: false });
-                    } finally {
-                        set({ isSavingPreference: false });
-                        preferenceInitialization = null;
-                    }
-                })();
-                return preferenceInitialization;
-            },
-
-            handleModeChange: async (mode) => {
-                if (get().isSavingPreference || get().isLoadingLocation) return;
-                if (mode === EXPLORATION_MODES.RANDOM) {
-                    set({ isSavingPreference: true, preferenceError: null });
-                    try {
-                        const response = await deleteExplorationPreference();
-                        if (!response.success) throw new Error(response.error || '删除探索偏好失败');
-                        localStorage.setItem(EXPLORATION_MODE_KEY, EXPLORATION_MODES.RANDOM);
-                        localStorage.removeItem(EXPLORATION_INTEREST_KEY);
-                        set({
-                            explorationMode: EXPLORATION_MODES.RANDOM,
-                            explorationInterest: '',
-                            isExplorationInitialized: true,
-                        });
-                        await get().loadRandomLocation(true);
-                    } catch (error) {
-                        set({ preferenceError: error.message });
-                        get().showToastMessage(error.message);
-                    } finally {
-                        set({ isSavingPreference: false });
-                    }
-                } else if (mode === EXPLORATION_MODES.CUSTOM) {
-                    set({ explorationMode: EXPLORATION_MODES.CUSTOM });
-                }
-            },
-
-            handlePreferenceChange: async (interest) => {
-                const state = get();
-                const now = Date.now();
-
-                // 检查限流
-                if (now - state.lastRefreshTime < RATE_LIMIT_MS) {
-                    const waitTime = Math.ceil(
-                        (RATE_LIMIT_MS - (now - state.lastRefreshTime)) / 1000,
-                    );
-                    set({ preferenceError: `请等待 ${waitTime} 秒后再试` });
-                    return;
-                }
-
-                if (state.isSavingPreference || state.isLoadingLocation) return;
-
-                set({
-                    isSavingPreference: true,
-                    preferenceError: null,
-                    lastRefreshTime: now,
-                });
-
-                try {
-                    const resp = await setExplorationPreference(interest, false);
-
-                    if (resp.success) {
-                        localStorage.setItem(EXPLORATION_MODE_KEY, EXPLORATION_MODES.CUSTOM);
-                        localStorage.setItem(EXPLORATION_INTEREST_KEY, interest);
-
-                        set({
-                            explorationMode: EXPLORATION_MODES.CUSTOM,
-                            explorationInterest: interest,
-                            preferenceError: null,
-                        });
-
-                        // 自动刷新位置
-                        get().loadRandomLocation(true);
-                    } else {
-                        throw new Error(resp.error || '保存失败');
-                    }
-                } catch (error) {
-                    console.error('保存探索偏好失败:', error);
-                    set({
-                        preferenceError: error.message || '保存失败，请重试',
-                    });
-                } finally {
-                    set({ isSavingPreference: false });
-                }
-            },
-
-            // UI Actions
-            setHeading: (heading) => {
-                const numericHeading = Number(heading);
-                if (!Number.isFinite(numericHeading)) return;
-
-                const normalizedHeading = ((Math.round(numericHeading) % 360) + 360) % 360;
-                if (get().heading !== normalizedHeading) {
-                    set({ heading: normalizedHeading });
-                }
-            },
-
-            setStreetViewView: (nextView) => {
-                if (!nextView?.panoId) return;
-                const normalized = {
-                    panoId: String(nextView.panoId),
-                    latitude: Number(nextView.latitude),
-                    longitude: Number(nextView.longitude),
-                    heading: Math.round(Number(nextView.heading) || 0),
-                    pitch: Math.round(Number(nextView.pitch) || 0),
-                    zoom: Number(nextView.zoom) || 1,
-                    fov: Math.round(Number(nextView.fov) || 90),
-                    source: nextView.source || 'initial',
-                };
-                const current = get().streetViewView;
+        const promise = (async () => {
+          try {
+            const resp = await streamLocationDescription(
+              panoId,
+              currentLanguage,
+              controller.signal,
+              currentView,
+              (delta) => {
+                const latestState = get();
                 if (
-                    current?.panoId === normalized.panoId &&
-                    current.heading === normalized.heading &&
-                    current.pitch === normalized.pitch &&
-                    current.fov === normalized.fov &&
-                    current.source === normalized.source
+                  latestState.descriptionRequestKey === requestKey &&
+                  latestState.currentLocationRef?.pano_id === panoId &&
+                  getActiveLanguage() === currentLanguage
                 ) {
-                    return;
+                  set((state) => ({
+                    description: `${state.description || ""}${delta}`,
+                  }));
                 }
-                set({ streetViewView: normalized });
-            },
-            setScale: (scale) => set({ scale }),
+              },
+            );
+            const latestState = get();
 
-            showToastMessage: (message) => {
-                if (toastHideTimer !== null) {
-                    clearTimeout(toastHideTimer);
+            if (
+              latestState.descriptionRequestKey !== requestKey ||
+              latestState.currentLocationRef?.pano_id !== panoId ||
+              getActiveLanguage() !== currentLanguage
+            ) {
+              return;
+            }
+
+            if (resp.success && resp.data?.description) {
+              set({
+                description: resp.data.description,
+                descriptionCitations: resp.data.citations || null,
+                descriptionResearchStatus:
+                  resp.data.research_status || "unverified",
+                descriptionError: null,
+              });
+            } else if (!controller.signal.aborted) {
+              throw new Error(resp.error || "获取描述失败");
+            }
+          } catch (error) {
+            if (
+              controller.signal.aborted ||
+              get().descriptionRequestKey !== requestKey
+            ) {
+              return;
+            }
+
+            console.error("加载描述失败:", error);
+            set({ description: null, descriptionCitations: null });
+
+            if (retryCount < MAX_RETRIES && get().networkState) {
+              const retryDelay = Math.min(1000 * Math.pow(2, retryCount), 5000);
+              setTimeout(() => {
+                const state = get();
+                if (state.currentLocationRef?.pano_id === panoId) {
+                  state.loadLocationDescription(panoId, retryCount + 1);
                 }
-                set({
-                    toastMessage: message,
-                    showToast: true,
-                });
+              }, retryDelay);
+            } else {
+              set({ descriptionError: "获取位置描述失败" });
+            }
+          } finally {
+            if (activeDescriptionRequest?.requestKey === requestKey) {
+              activeDescriptionRequest = null;
+            }
+            if (get().descriptionRequestKey === requestKey) {
+              set({ isDescriptionLoading: false });
+            }
+          }
+        })();
 
-                // 3秒后自动隐藏
-                toastHideTimer = setTimeout(() => {
-                    set({ showToast: false });
-                    toastHideTimer = null;
-                }, 3000);
-            },
+        activeDescriptionRequest = {
+          fingerprint,
+          requestKey,
+          controller,
+          promise,
+        };
+        return promise;
+      },
 
-            // Network State Actions
-            setNetworkState: (state) => set({ networkState: state }),
+      cancelLocationDescription: () => {
+        activeDescriptionRequest?.controller.abort();
+        activeDescriptionRequest = null;
+        set({
+          isDescriptionLoading: false,
+          descriptionRequestKey: null,
+        });
+      },
 
-            // Reset Actions
-            resetLocationError: () => set({ locationError: null }),
-            resetDescriptionError: () => set({ descriptionError: null }),
-        }),
-        {
-            name: 'streetview-store',
-        },
-    ),
+      // Exploration Mode Actions
+      initializeExplorationMode: () => {
+        if (preferenceInitialization) return preferenceInitialization;
+        set({ isSavingPreference: true, preferenceError: null });
+        preferenceInitialization = (async () => {
+          try {
+            const savedMode = localStorage.getItem(EXPLORATION_MODE_KEY);
+            const savedInterest =
+              localStorage.getItem(EXPLORATION_INTEREST_KEY) || "";
+            const custom =
+              savedMode === EXPLORATION_MODES.CUSTOM && Boolean(savedInterest);
+            const response = custom
+              ? await setExplorationPreference(savedInterest)
+              : await deleteExplorationPreference();
+            if (!response.success)
+              throw new Error(response.error || "同步探索偏好失败");
+            set({
+              explorationMode: custom
+                ? EXPLORATION_MODES.CUSTOM
+                : EXPLORATION_MODES.RANDOM,
+              explorationInterest: custom ? savedInterest : "",
+              isExplorationInitialized: true,
+              locationError: null,
+            });
+          } catch (error) {
+            set({
+              preferenceError: error.message,
+              locationError: error.message,
+              isLocationLoading: false,
+            });
+          } finally {
+            set({ isSavingPreference: false });
+            preferenceInitialization = null;
+          }
+        })();
+        return preferenceInitialization;
+      },
+
+      handleModeChange: async (mode) => {
+        if (get().isSavingPreference || get().isLoadingLocation) return;
+        if (mode === EXPLORATION_MODES.RANDOM) {
+          set({ isSavingPreference: true, preferenceError: null });
+          try {
+            const response = await deleteExplorationPreference();
+            if (!response.success)
+              throw new Error(response.error || "删除探索偏好失败");
+            localStorage.setItem(
+              EXPLORATION_MODE_KEY,
+              EXPLORATION_MODES.RANDOM,
+            );
+            localStorage.removeItem(EXPLORATION_INTEREST_KEY);
+            set({
+              explorationMode: EXPLORATION_MODES.RANDOM,
+              explorationInterest: "",
+              isExplorationInitialized: true,
+            });
+            await get().loadRandomLocation(true);
+          } catch (error) {
+            set({ preferenceError: error.message });
+            get().showToastMessage(error.message);
+          } finally {
+            set({ isSavingPreference: false });
+          }
+        } else if (mode === EXPLORATION_MODES.CUSTOM) {
+          set({ explorationMode: EXPLORATION_MODES.CUSTOM });
+        }
+      },
+
+      handlePreferenceChange: async (interest) => {
+        const state = get();
+        const now = Date.now();
+
+        // 检查限流
+        if (now - state.lastRefreshTime < RATE_LIMIT_MS) {
+          const waitTime = Math.ceil(
+            (RATE_LIMIT_MS - (now - state.lastRefreshTime)) / 1000,
+          );
+          set({ preferenceError: `请等待 ${waitTime} 秒后再试` });
+          return;
+        }
+
+        if (state.isSavingPreference || state.isLoadingLocation) return;
+
+        set({
+          isSavingPreference: true,
+          preferenceError: null,
+          lastRefreshTime: now,
+        });
+
+        try {
+          const resp = await setExplorationPreference(interest, false);
+
+          if (resp.success) {
+            localStorage.setItem(
+              EXPLORATION_MODE_KEY,
+              EXPLORATION_MODES.CUSTOM,
+            );
+            localStorage.setItem(EXPLORATION_INTEREST_KEY, interest);
+
+            set({
+              explorationMode: EXPLORATION_MODES.CUSTOM,
+              explorationInterest: interest,
+              preferenceError: null,
+            });
+
+            // 自动刷新位置
+            get().loadRandomLocation(true);
+          } else {
+            throw new Error(resp.error || "保存失败");
+          }
+        } catch (error) {
+          console.error("保存探索偏好失败:", error);
+          set({
+            preferenceError: error.message || "保存失败，请重试",
+          });
+        } finally {
+          set({ isSavingPreference: false });
+        }
+      },
+
+      // UI Actions
+      setHeading: (heading) => {
+        const numericHeading = Number(heading);
+        if (!Number.isFinite(numericHeading)) return;
+
+        const normalizedHeading =
+          ((Math.round(numericHeading) % 360) + 360) % 360;
+        if (get().heading !== normalizedHeading) {
+          set({ heading: normalizedHeading });
+        }
+      },
+
+      setStreetViewView: (nextView) => {
+        if (!nextView?.panoId) return;
+        const normalized = {
+          panoId: String(nextView.panoId),
+          latitude: Number(nextView.latitude),
+          longitude: Number(nextView.longitude),
+          heading: Math.round(Number(nextView.heading) || 0),
+          pitch: Math.round(Number(nextView.pitch) || 0),
+          zoom: Number(nextView.zoom) || 1,
+          fov: Math.round(Number(nextView.fov) || 90),
+          source: nextView.source || "initial",
+        };
+        const current = get().streetViewView;
+        if (
+          current?.panoId === normalized.panoId &&
+          current.heading === normalized.heading &&
+          current.pitch === normalized.pitch &&
+          current.fov === normalized.fov &&
+          current.source === normalized.source
+        ) {
+          return;
+        }
+        set({ streetViewView: normalized });
+      },
+      setScale: (scale) => set({ scale }),
+
+      showToastMessage: (message) => {
+        if (toastHideTimer !== null) {
+          clearTimeout(toastHideTimer);
+        }
+        set({
+          toastMessage: message,
+          showToast: true,
+        });
+
+        // 3秒后自动隐藏
+        toastHideTimer = setTimeout(() => {
+          set({ showToast: false });
+          toastHideTimer = null;
+        }, 3000);
+      },
+
+      // Network State Actions
+      setNetworkState: (state) => set({ networkState: state }),
+
+      // Reset Actions
+      resetLocationError: () => set({ locationError: null }),
+      resetDescriptionError: () => set({ descriptionError: null }),
+    }),
+    {
+      name: "streetview-store",
+    },
+  ),
 );
 
 export default useStore;

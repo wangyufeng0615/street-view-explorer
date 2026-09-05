@@ -20,10 +20,7 @@ function LegacyGeoRedirect() {
   const nextPath = location.pathname.replace(/^\/geo/, "/guess");
 
   return (
-    <Navigate
-      to={`${nextPath}${location.search}${location.hash}`}
-      replace
-    />
+    <Navigate to={`${nextPath}${location.search}${location.hash}`} replace />
   );
 }
 
@@ -65,7 +62,10 @@ function App() {
       >
         <Routes>
           <Route path="/" element={<HomePage />} />
-          <Route path="/footprints" element={<HomePage showFootprintFromRoute />} />
+          <Route
+            path="/footprints"
+            element={<HomePage showFootprintFromRoute />}
+          />
           <Route
             path="/agent"
             element={

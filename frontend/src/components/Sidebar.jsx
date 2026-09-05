@@ -1,4 +1,11 @@
-import React, { memo, useRef, useEffect, useState, lazy, Suspense } from "react";
+import React, {
+  memo,
+  useRef,
+  useEffect,
+  useState,
+  lazy,
+  Suspense,
+} from "react";
 import { useTranslation } from "react-i18next";
 import AiDescription from "./AiDescription";
 import AtlasVoicePanel from "./AtlasVoicePanel";
@@ -81,7 +88,13 @@ const Sidebar = memo(function Sidebar({
         >
           <div style={styles.mapContainer} className="sidebar-map-container">
             {location && shouldLoadSecondaryMaps ? (
-              <Suspense fallback={<div style={styles.mapPlaceholder}>{t("loading_location")}</div>}>
+              <Suspense
+                fallback={
+                  <div style={styles.mapPlaceholder}>
+                    {t("loading_location")}
+                  </div>
+                }
+              >
                 <GlobalMap
                   latitude={location.latitude}
                   longitude={location.longitude}

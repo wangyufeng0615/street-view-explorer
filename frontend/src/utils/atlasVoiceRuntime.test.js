@@ -231,10 +231,10 @@ describe("atlasVoiceRuntime", () => {
 
   it("keeps current speech but replaces stale queued Doubao replies", () => {
     expect(
-      nextDoubaoSpeechQueue(
-        [{ id: 1, text: "old pending reply" }],
-        { id: 2, text: "new reply" },
-      ),
+      nextDoubaoSpeechQueue([{ id: 1, text: "old pending reply" }], {
+        id: 2,
+        text: "new reply",
+      }),
     ).toEqual([{ id: 2, text: "new reply" }]);
   });
 });

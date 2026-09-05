@@ -162,7 +162,11 @@ const NarrationBody = memo(function NarrationBody({
         ),
       )}
       <CitationLinks citations={citations} label={citationsLabel} />
-      {researchStatus === 'unverified' && <p className="research-status" role="note">{unverifiedLabel}</p>}
+      {researchStatus === "unverified" && (
+        <p className="research-status" role="note">
+          {unverifiedLabel}
+        </p>
+      )}
     </div>
   );
 });
@@ -197,7 +201,9 @@ const AiDescription = memo(
     const isChinese = activeLanguage.startsWith("zh");
     const sectionTitle = isChinese ? "Atlas 说…" : "Atlas says...";
     const citationsLabel = isChinese ? "出处" : "Sources";
-    const unverifiedLabel = isChinese ? '本次检索状态未获上游确认，请结合出处核对。' : 'Search execution was not confirmed by the provider; check the sources.';
+    const unverifiedLabel = isChinese
+      ? "本次检索状态未获上游确认，请结合出处核对。"
+      : "Search execution was not confirmed by the provider; check the sources.";
     const primaryStatusTitle =
       retries > 0 ? t("ai.retrying", { retries }) : t("ai.thinkingTitle");
     const visibleSectionTitle = shouldShowLoading
@@ -239,7 +245,9 @@ const AiDescription = memo(
         if (result.success && nextDescription) {
           setDetailedDescription(nextDescription);
           setDetailedCitations(result.data?.citations || null);
-          setDetailedResearchStatus(result.data?.research_status || 'unverified');
+          setDetailedResearchStatus(
+            result.data?.research_status || "unverified",
+          );
         } else {
           setDetailedError(result.error || t("ai.retryDetailedDescription"));
         }
@@ -291,7 +299,9 @@ const AiDescription = memo(
         if (result.success && nextDescription) {
           setDetailedDescription(nextDescription);
           setDetailedCitations(result.data?.citations || null);
-          setDetailedResearchStatus(result.data?.research_status || 'unverified');
+          setDetailedResearchStatus(
+            result.data?.research_status || "unverified",
+          );
           setDetailedError(null);
         } else {
           setDetailedError(result.error || t("ai.retryDetailedDescription"));
@@ -354,10 +364,7 @@ const AiDescription = memo(
           aria-busy={shouldShowLoading || isLoadingDetailed}
         >
           {shouldShowLoading ? (
-            <ThinkingIndicator
-              title={primaryStatusTitle}
-              showTitle={false}
-            />
+            <ThinkingIndicator title={primaryStatusTitle} showTitle={false} />
           ) : error ? (
             <div className="ai-error">
               <div className="ai-error-message">{error}</div>
@@ -424,7 +431,9 @@ const AiDescription = memo(
                     text={detailedDescription}
                     citations={detailedCitations}
                     citationsLabel={citationsLabel}
-                    researchStatus={!isLoadingDetailed ? detailedResearchStatus : null}
+                    researchStatus={
+                      !isLoadingDetailed ? detailedResearchStatus : null
+                    }
                     unverifiedLabel={unverifiedLabel}
                   />
                 </div>
@@ -441,7 +450,7 @@ const AiDescription = memo(
     prevProps.isLoading === nextProps.isLoading &&
     prevProps.error === nextProps.error &&
     prevProps.description === nextProps.description &&
-      prevProps.citations === nextProps.citations &&
+    prevProps.citations === nextProps.citations &&
     prevProps.researchStatus === nextProps.researchStatus &&
     prevProps.retries === nextProps.retries &&
     prevProps.panoId === nextProps.panoId &&
