@@ -13,9 +13,9 @@ import (
 
 const (
 	defaultAPIEndpoint     = "https://openrouter.ai/api/v1/chat/completions"
-	defaultModel           = "deepseek/deepseek-v4-flash"
-	defaultSceneModel      = "deepseek/deepseek-v4-flash-vision-exp"
-	defaultVisionModel     = "deepseek/deepseek-v4-flash-vision-exp"
+	defaultModel           = "deepseek/deepseek-v4.1-flash"
+	defaultSceneModel      = "deepseek/deepseek-v4.1-flash"
+	defaultVisionModel     = "deepseek/deepseek-v4.1-flash"
 	defaultProviderSort    = "latency"
 	maxRetries             = 2
 	retryBaseDelay         = 500 * time.Millisecond

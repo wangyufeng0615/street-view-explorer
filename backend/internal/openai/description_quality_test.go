@@ -54,10 +54,13 @@ func TestBothDescriptionPromptsCarryGroundingContract(t *testing.T) {
 				t.Errorf("missing grounding %q", phrase)
 			}
 		}
-		for _, wire := range []string{`"order":["fireworks"]`, `"allow_fallbacks":true`, `"engine":"exa"`, `"mode":"fast"`, `"tool_choice":"required"`} {
+		for _, wire := range []string{`"engine":"exa"`, `"mode":"fast"`, `"tool_choice":"required"`} {
 			if !strings.Contains(string(data), wire) {
 				t.Errorf("missing production policy %s", wire)
 			}
+		}
+		if body["provider"] != nil {
+			t.Error("V4.1 default must use automatic provider routing")
 		}
 		requests++
 		w.Header().Set("Content-Type", "text/event-stream")

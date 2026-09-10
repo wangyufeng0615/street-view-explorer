@@ -12,8 +12,11 @@ func TestDescriptionPerformancePolicy(t *testing.T) {
 	if descriptionProviderPreferences("another-model") != nil {
 		t.Fatal("game policy leaked into descriptions")
 	}
-	if p := descriptionProviderPreferences(defaultSceneModel); p == nil || len(p.Order) != 1 || p.Order[0] != "fireworks" || p.AllowFallbacks == nil || !*p.AllowFallbacks || p.Sort != "" {
+	if p := descriptionProviderPreferences("deepseek/deepseek-v4-flash-vision-exp"); p == nil || len(p.Order) != 1 || p.Order[0] != "fireworks" || p.AllowFallbacks == nil || !*p.AllowFallbacks || p.Sort != "" {
 		t.Fatal("missing measured model preference or fallback")
+	}
+	if descriptionProviderPreferences(defaultSceneModel) != nil {
+		t.Fatal("V4.1 Flash must not inherit the legacy Fireworks preference")
 	}
 	for _, detailed := range []bool{false, true} {
 		p := descriptionSearchParameters(detailed)

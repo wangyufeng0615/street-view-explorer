@@ -731,20 +731,20 @@ func TestSelectModelUsesCNModelOnlyWithoutProxy(t *testing.T) {
 	}
 }
 
-func TestSelectModelUsesDeepSeekV4FlashByDefault(t *testing.T) {
+func TestSelectModelUsesDeepSeekV41FlashByDefault(t *testing.T) {
 	t.Setenv("OPENROUTER_MODEL", "")
 	t.Setenv("AI_MODEL", "")
 	t.Setenv("CN_AI_MODEL", "")
 
-	if got := selectModel("http://127.0.0.1:10086"); got != "deepseek/deepseek-v4-flash" {
-		t.Fatalf("selectModel with proxy = %q, want deepseek/deepseek-v4-flash", got)
+	if got := selectModel("http://127.0.0.1:10086"); got != "deepseek/deepseek-v4.1-flash" {
+		t.Fatalf("selectModel with proxy = %q, want deepseek/deepseek-v4.1-flash", got)
 	}
 }
 
-func TestSelectSceneAndVisionModelsUseDeepSeekVisionByDefaultAndAllowOverrides(t *testing.T) {
+func TestSelectSceneAndVisionModelsUseDeepSeekV41ByDefaultAndAllowOverrides(t *testing.T) {
 	t.Setenv("OPENROUTER_SCENE_MODEL", "")
-	if got := selectSceneModel(); got != "deepseek/deepseek-v4-flash-vision-exp" {
-		t.Fatalf("selectSceneModel = %q, want deepseek/deepseek-v4-flash-vision-exp", got)
+	if got := selectSceneModel(); got != "deepseek/deepseek-v4.1-flash" {
+		t.Fatalf("selectSceneModel = %q, want deepseek/deepseek-v4.1-flash", got)
 	}
 	t.Setenv("OPENROUTER_SCENE_MODEL", "scene-override")
 	if got := selectSceneModel(); got != "scene-override" {
@@ -752,8 +752,8 @@ func TestSelectSceneAndVisionModelsUseDeepSeekVisionByDefaultAndAllowOverrides(t
 	}
 
 	t.Setenv("OPENROUTER_VISION_MODEL", "")
-	if got := selectVisionModel(); got != "deepseek/deepseek-v4-flash-vision-exp" {
-		t.Fatalf("selectVisionModel = %q, want deepseek/deepseek-v4-flash-vision-exp", got)
+	if got := selectVisionModel(); got != "deepseek/deepseek-v4.1-flash" {
+		t.Fatalf("selectVisionModel = %q, want deepseek/deepseek-v4.1-flash", got)
 	}
 
 	t.Setenv("OPENROUTER_VISION_MODEL", "google/gemini-2.5-flash")

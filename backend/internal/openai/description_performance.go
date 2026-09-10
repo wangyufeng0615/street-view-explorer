@@ -15,7 +15,7 @@ func descriptionProviderPreferences(model string) *providerPreferences {
 	case "off", "auto":
 		return nil
 	}
-	if model == defaultSceneModel || model == defaultSceneModel+"-20260821" {
+	if model == "deepseek/deepseek-v4-flash-vision-exp" || model == "deepseek/deepseek-v4-flash-vision-exp-20260821" {
 		allow := true
 		return &providerPreferences{Order: []string{"fireworks"}, AllowFallbacks: &allow}
 	}

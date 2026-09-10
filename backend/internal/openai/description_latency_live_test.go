@@ -87,7 +87,9 @@ func TestDescriptionLatencyLive(t *testing.T) {
 	info := map[string]string{"formatted_address": "Unnamed Road, Paia, Samoa", "streetview_address": "Unnamed Road, Paia, Samoa", "country": "Samoa", "locality": "Paia"}
 	model := env["OPENROUTER_SCENE_MODEL"]
 	if model == "" {
-		model = defaultSceneModel
+		// Historical provider/search benchmark: its Fireworks variant is specific
+		// to the legacy model. Use TestModelComparisonLive for model upgrades.
+		model = "deepseek/deepseek-v4-flash-vision-exp"
 	}
 	variants := []string{"baseline", "latency", "fast-search"}
 	if os.Getenv("ATLAS_LATENCY_CONFIRM") == "1" {
