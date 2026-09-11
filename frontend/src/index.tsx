@@ -5,7 +5,9 @@ import App from "./App";
 import AppErrorBoundary from "./components/AppErrorBoundary";
 import "./i18n";
 import { initErrorHandlers } from "./services/sentryLazy";
+import { initPreloadRecovery } from "./utils/preloadRecovery";
 
+initPreloadRecovery();
 // Initialize lightweight error handlers (Sentry loads on-demand)
 initErrorHandlers();
 

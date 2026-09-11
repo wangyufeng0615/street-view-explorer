@@ -151,6 +151,7 @@ func readChatCompletionStream(body io.Reader, onDelta func(string) error) (chatR
 	var annotations []annotation
 	var usage completionUsage
 	var generationID, provider string
+	completed := false
 
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -158,7 +159,12 @@ func readChatCompletionStream(body io.Reader, onDelta func(string) error) (chatR
 			continue
 		}
 		payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
-		if payload == "" || payload == "[DONE]" {
+		if payload == "[DONE]" {
+			// The SSE terminator is authoritative; the connection can remain open.
+			completed = true
+			break
+		}
+		if payload == "" {
 			continue
 		}
 		var chunk chatStreamChunk
@@ -194,7 +200,7 @@ func readChatCompletionStream(body io.Reader, onDelta func(string) error) (chatR
 			annotations = append(annotations, choice.Message.Annotations...)
 		}
 	}
-	if err := scanner.Err(); err != nil {
+	if err := scanner.Err(); err != nil && !completed {
 		return chatResponse{}, fmt.Errorf("读取流式响应失败: %w", err)
 	}
 

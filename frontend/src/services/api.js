@@ -93,6 +93,7 @@ async function streamDescriptionEndpoint(
   let timeoutId = null;
   let pendingDelta = "";
   let deltaTimerId = null;
+  let reader = null;
 
   const discardDelta = () => {
     pendingDelta = "";
@@ -152,7 +153,7 @@ async function streamDescriptionEndpoint(
       };
     }
 
-    const reader = resp.body?.getReader();
+    reader = resp.body?.getReader();
     if (!reader) throw new Error("浏览器不支持流式响应");
 
     const decoder = new TextDecoder();
@@ -183,12 +184,13 @@ async function streamDescriptionEndpoint(
         const boundary = match.index;
         const separatorLength = match[0].length;
         handleBlock(buffer.slice(0, boundary));
+        if (completed) break;
         buffer = buffer.slice(boundary + separatorLength);
         match = buffer.match(/\r?\n\r?\n/);
       }
-      streamDone = done;
+      streamDone = done || completed !== null;
     }
-    if (buffer.trim()) handleBlock(buffer);
+    if (!completed && buffer.trim()) handleBlock(buffer);
     flushDelta();
     if (!completed?.description) throw new Error("流式响应未正常完成");
 
@@ -204,6 +206,13 @@ async function streamDescriptionEndpoint(
     };
   } finally {
     discardDelta();
+    // Release the response on done/error without waiting for the peer to close.
+    // Cancellation must not delay completion or replace the original result.
+    try {
+      reader?.cancel?.().catch(() => {});
+    } catch {
+      // The stream may already have been aborted.
+    }
     if (timeoutId) clearTimeout(timeoutId);
     externalSignal?.removeEventListener("abort", abortFromExternal);
   }

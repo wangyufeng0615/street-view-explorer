@@ -22,6 +22,7 @@ vi.mock("../i18n", () => ({
 }));
 
 import useStore from "./useStore";
+import i18n from "../i18n";
 import {
   deleteExplorationPreference,
   setExplorationPreference,
@@ -120,14 +121,162 @@ describe("toast lifecycle", () => {
 
 describe("description request lifecycle", () => {
   beforeEach(() => {
+    vi.useFakeTimers();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    useStore.getState().cancelLocationDescription();
     apiMocks.streamLocationDescription.mockReset();
+    i18n.resolvedLanguage = "zh";
     useStore.setState({
       isDescriptionLoading: false,
       descriptionRequestKey: null,
       currentLocationRef: { pano_id: "pano-1" },
       streetViewView: null,
       heading: 0,
+      networkState: true,
     });
+  });
+
+  afterEach(() => {
+    useStore.getState().cancelLocationDescription();
+    vi.clearAllTimers();
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it("cancels the pending automatic retry when the network goes offline", async () => {
+    apiMocks.streamLocationDescription.mockResolvedValue({
+      success: false,
+      error: "failure",
+    });
+    await useStore.getState().loadLocationDescription("pano-1");
+    useStore.setState({ networkState: false });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(apiMocks.streamLocationDescription).toHaveBeenCalledTimes(1);
+    expect(useStore.getState().descriptionError).toBe("ai.descriptionFailed");
+  });
+
+  it("retries a quick empty failure once and stops on a second failure", async () => {
+    apiMocks.streamLocationDescription.mockResolvedValue({
+      success: false,
+      error: "temporary failure",
+    });
+    await useStore.getState().loadLocationDescription("pano-1");
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(apiMocks.streamLocationDescription).toHaveBeenCalledTimes(2);
+    expect(useStore.getState().descriptionError).toBe("ai.descriptionFailed");
+    await vi.advanceTimersByTimeAsync(60000);
+    expect(apiMocks.streamLocationDescription).toHaveBeenCalledTimes(2);
+  });
+
+  it("finishes normally when the one automatic retry succeeds", async () => {
+    apiMocks.streamLocationDescription
+      .mockResolvedValueOnce({ success: false, error: "temporary failure" })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          description: "完整讲解",
+          research_status: "verified",
+          citations: [],
+        },
+      });
+    await useStore.getState().loadLocationDescription("pano-1");
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(useStore.getState()).toMatchObject({
+      description: "完整讲解",
+      descriptionError: null,
+      isDescriptionLoading: false,
+      descriptionResearchStatus: "verified",
+    });
+  });
+
+  it("preserves partial prose without citations or completion claims and does not retry", async () => {
+    useStore.setState({ descriptionResearchStatus: "verified" });
+    apiMocks.streamLocationDescription.mockImplementation(
+      async (_id, _lang, _signal, _view, onDelta) => {
+        onDelta("已经显示的内容");
+        return { success: false, error: "upstream timeout" };
+      },
+    );
+    await useStore.getState().loadLocationDescription("pano-1");
+    expect(useStore.getState()).toMatchObject({
+      description: "已经显示的内容",
+      descriptionCitations: null,
+      descriptionResearchStatus: null,
+      descriptionError: "ai.descriptionFailed",
+      isDescriptionLoading: false,
+    });
+    await vi.advanceTimersByTimeAsync(60000);
+    expect(apiMocks.streamLocationDescription).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not repeat a slow request that exhausted the model deadline", async () => {
+    apiMocks.streamLocationDescription.mockImplementation(
+      () =>
+        new Promise((resolve) =>
+          setTimeout(
+            () => resolve({ success: false, error: "timeout" }),
+            25000,
+          ),
+        ),
+    );
+    const pending = useStore.getState().loadLocationDescription("pano-1");
+    await vi.advanceTimersByTimeAsync(25000);
+    await pending;
+    await vi.advanceTimersByTimeAsync(60000);
+    expect(apiMocks.streamLocationDescription).toHaveBeenCalledTimes(1);
+    expect(useStore.getState().descriptionError).toBe("ai.descriptionFailed");
+  });
+
+  it.each(["offline", "aborted"])(
+    "does not retry an %s failure",
+    async (kind) => {
+      if (kind === "offline") useStore.setState({ networkState: false });
+      apiMocks.streamLocationDescription.mockResolvedValue({
+        success: false,
+        error: "failure",
+        aborted: kind === "aborted",
+      });
+      await useStore.getState().loadLocationDescription("pano-1");
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(apiMocks.streamLocationDescription).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it.each(["cancel", "language", "location", "manual"])(
+    "invalidates an older scheduled retry on %s",
+    async (change) => {
+      apiMocks.streamLocationDescription
+        .mockResolvedValueOnce({ success: false, error: "failure" })
+        .mockResolvedValue({ success: true, data: { description: "新内容" } });
+      await useStore.getState().loadLocationDescription("pano-1");
+      if (change === "cancel") useStore.getState().cancelLocationDescription();
+      if (change === "language") i18n.resolvedLanguage = "en";
+      if (change === "location")
+        useStore.setState({ currentLocationRef: { pano_id: "pano-2" } });
+      if (change === "manual")
+        await useStore.getState().loadLocationDescription("pano-1");
+      const calls = apiMocks.streamLocationDescription.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(apiMocks.streamLocationDescription).toHaveBeenCalledTimes(calls);
+    },
+  );
+
+  it("ignores a late result after cancel and restart of the same view", async () => {
+    let finishOld;
+    apiMocks.streamLocationDescription
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishOld = resolve;
+          }),
+      )
+      .mockResolvedValue({ success: true, data: { description: "新内容" } });
+    const old = useStore.getState().loadLocationDescription("pano-1");
+    useStore.getState().cancelLocationDescription();
+    await useStore.getState().loadLocationDescription("pano-1");
+    finishOld({ success: true, data: { description: "旧内容" } });
+    await old;
+    expect(useStore.getState().description).toBe("新内容");
   });
 
   it("aborts the active request when the page cleanup runs", async () => {

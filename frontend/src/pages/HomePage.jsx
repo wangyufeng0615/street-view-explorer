@@ -13,12 +13,12 @@ import { useNavigate } from "react-router-dom";
 import TopBar from "../components/TopBar";
 import Sidebar from "../components/Sidebar";
 import StreetView from "../components/StreetView";
+import GlobalLoading from "../components/GlobalLoading";
 import "../styles/animations.css";
 import "../styles/HomePage.css";
 import "../styles/responsive.css";
 
 // Lazy load components that are not immediately visible
-const GlobalLoading = lazy(() => import("../components/GlobalLoading"));
 const ErrorDisplay = lazy(() => import("../components/ErrorDisplay"));
 const Toast = lazy(() => import("../components/Toast"));
 const FootprintMap = lazy(() => import("../components/FootprintMap"));

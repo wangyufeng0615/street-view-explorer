@@ -13,6 +13,8 @@ const RATE_LIMIT_MS = 1000; // 1秒限制
 const EXPLORATION_MODE_KEY = "exploration_mode";
 const EXPLORATION_INTEREST_KEY = "exploration_interest";
 let activeDescriptionRequest = null;
+let descriptionRetryTimer = null;
+let descriptionRequestSequence = 0;
 let toastHideTimer = null;
 let preferenceInitialization = null;
 
@@ -275,7 +277,7 @@ const useStore = create(
 
       // Description Actions
       loadLocationDescription: (panoId, retryCount = 0) => {
-        const MAX_RETRIES = 3;
+        const MAX_RETRIES = 1;
         const currentLanguage = getActiveLanguage();
         const currentState = get();
         const currentView =
@@ -295,15 +297,20 @@ const useStore = create(
         if (activeDescriptionRequest?.fingerprint === fingerprint) {
           return activeDescriptionRequest.promise;
         }
+        clearTimeout(descriptionRetryTimer);
+        descriptionRetryTimer = null;
         activeDescriptionRequest?.controller.abort();
 
         const controller = new AbortController();
-        const requestKey = fingerprint;
+        const requestKey = `${fingerprint}:${++descriptionRequestSequence}`;
+        const startedAt = Date.now();
+        let receivedText = false;
 
         set({
           isDescriptionLoading: true,
           description: null,
           descriptionCitations: null,
+          descriptionResearchStatus: null,
           descriptionError: null,
           descriptionRetries: retryCount,
           descriptionRequestKey: requestKey,
@@ -317,12 +324,14 @@ const useStore = create(
               controller.signal,
               currentView,
               (delta) => {
+                if (controller.signal.aborted) return;
                 const latestState = get();
                 if (
                   latestState.descriptionRequestKey === requestKey &&
                   latestState.currentLocationRef?.pano_id === panoId &&
                   getActiveLanguage() === currentLanguage
                 ) {
+                  receivedText ||= Boolean(delta.trim());
                   set((state) => ({
                     description: `${state.description || ""}${delta}`,
                   }));
@@ -332,6 +341,7 @@ const useStore = create(
             const latestState = get();
 
             if (
+              controller.signal.aborted ||
               latestState.descriptionRequestKey !== requestKey ||
               latestState.currentLocationRef?.pano_id !== panoId ||
               getActiveLanguage() !== currentLanguage
@@ -348,29 +358,51 @@ const useStore = create(
                 descriptionError: null,
               });
             } else if (!controller.signal.aborted) {
-              throw new Error(resp.error || "获取描述失败");
+              const error = new Error(resp.error || "获取描述失败");
+              if (resp.aborted) error.name = "AbortError";
+              throw error;
             }
           } catch (error) {
             if (
               controller.signal.aborted ||
-              get().descriptionRequestKey !== requestKey
+              get().descriptionRequestKey !== requestKey ||
+              get().currentLocationRef?.pano_id !== panoId ||
+              getActiveLanguage() !== currentLanguage
             ) {
               return;
             }
 
             console.error("加载描述失败:", error);
-            set({ description: null, descriptionCitations: null });
+            set({
+              descriptionCitations: null,
+              descriptionResearchStatus: null,
+            });
 
-            if (retryCount < MAX_RETRIES && get().networkState) {
-              const retryDelay = Math.min(1000 * Math.pow(2, retryCount), 5000);
-              setTimeout(() => {
+            // Retry a quick failure once, but never restart a slow or partial answer.
+            if (
+              retryCount < MAX_RETRIES &&
+              get().networkState &&
+              !receivedText &&
+              error.name !== "AbortError" &&
+              Date.now() - startedAt < 5000
+            ) {
+              descriptionRetryTimer = setTimeout(() => {
+                descriptionRetryTimer = null;
                 const state = get();
-                if (state.currentLocationRef?.pano_id === panoId) {
-                  state.loadLocationDescription(panoId, retryCount + 1);
+                if (
+                  state.descriptionRequestKey === requestKey &&
+                  state.currentLocationRef?.pano_id === panoId &&
+                  getActiveLanguage() === currentLanguage
+                ) {
+                  if (state.networkState) {
+                    state.loadLocationDescription(panoId, retryCount + 1);
+                  } else {
+                    set({ descriptionError: i18n.t("ai.descriptionFailed") });
+                  }
                 }
-              }, retryDelay);
+              }, 1000);
             } else {
-              set({ descriptionError: "获取位置描述失败" });
+              set({ descriptionError: i18n.t("ai.descriptionFailed") });
             }
           } finally {
             if (activeDescriptionRequest?.requestKey === requestKey) {
@@ -392,6 +424,8 @@ const useStore = create(
       },
 
       cancelLocationDescription: () => {
+        clearTimeout(descriptionRetryTimer);
+        descriptionRetryTimer = null;
         activeDescriptionRequest?.controller.abort();
         activeDescriptionRequest = null;
         set({

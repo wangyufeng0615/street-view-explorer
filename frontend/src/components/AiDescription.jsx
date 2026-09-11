@@ -367,7 +367,16 @@ const AiDescription = memo(
             <ThinkingIndicator title={primaryStatusTitle} showTitle={false} />
           ) : error ? (
             <div className="ai-error">
-              <div className="ai-error-message">{error}</div>
+              <div className="ai-error-message" role="alert">
+                {description ? t("ai.descriptionInterrupted") : error}
+              </div>
+              {description && (
+                <NarrationBody
+                  text={description}
+                  citations={null}
+                  citationsLabel={citationsLabel}
+                />
+              )}
               <button className="ai-retry-button" onClick={onRetry}>
                 {t("ai.retryGetDescription")}
               </button>

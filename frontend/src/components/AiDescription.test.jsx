@@ -13,6 +13,9 @@ const translations = {
   "ai.waitingForAnalysis": "Atlas 旅行中…",
   "ai.loadingDetailedDescription": "我再往深处找找…",
   "ai.tellMeMore": "Atlas，再多讲讲",
+  "ai.descriptionInterrupted":
+    "讲解中断，以下内容尚未完成。你可以让 Atlas 再试一次。",
+  "ai.retryGetDescription": "让 Atlas 再试一次",
 };
 
 const languageState = vi.hoisted(() => ({ current: "zh" }));
@@ -28,6 +31,41 @@ vi.mock("react-i18next", () => ({
 }));
 
 describe("AiDescription thinking states", () => {
+  it("labels partial text as incomplete and offers a working manual retry", () => {
+    const onRetry = vi.fn();
+    const { rerender } = render(
+      <AiDescription
+        isLoading={false}
+        error="请求超时"
+        description="只完成了一部分。"
+        panoId="pano"
+        onRetry={onRetry}
+        citations={[{ url: "https://example.com", title: "旧出处" }]}
+        researchStatus="verified"
+      />,
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent("尚未完成");
+    expect(screen.getByText("只完成了一部分。")).toBeInTheDocument();
+    expect(screen.queryByText("旧出处")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Atlas，再多讲讲" }),
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "让 Atlas 再试一次" }));
+    expect(onRetry).toHaveBeenCalledTimes(1);
+    rerender(
+      <AiDescription
+        isLoading={false}
+        error={null}
+        description="完整讲解。"
+        panoId="pano"
+        onRetry={onRetry}
+      />,
+    );
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Atlas，再多讲讲" }),
+    ).toBeInTheDocument();
+  });
   it("does not announce failure while coordinates are still resolving and there is no pano yet", () => {
     render(<AiDescription isLoading description={null} panoId={null} />);
     expect(screen.getByRole("status")).toBeInTheDocument();

@@ -38,6 +38,48 @@ describe("description SSE client", () => {
     vi.restoreAllMocks();
   });
 
+  it.each([streamLocationDescription, streamLocationDetailedDescription])(
+    "completes at done without another read or waiting for cancellation",
+    async (load) => {
+      const reader = {
+        read: vi
+          .fn()
+          .mockResolvedValueOnce({
+            value: new TextEncoder().encode(
+              'event: delta\ndata: {"text":"完成"}\n\nevent: done\ndata: {"description":"完成","citations":[{"url":"https://example.com","title":"Source"}],"research_status":"verified"}\n\nevent: error\ndata: {"error":"late failure"}\n\n',
+            ),
+            done: false,
+          })
+          .mockRejectedValue(
+            new Error("connection stayed open until deadline"),
+          ),
+        cancel: vi.fn(() => new Promise(() => {})),
+      };
+      vi.spyOn(globalThis, "fetch").mockResolvedValue({
+        ok: true,
+        headers: { get: () => "text/event-stream" },
+        body: { getReader: () => reader },
+      });
+      const onDelta = vi.fn();
+      const result = await load("pano", "zh", null, null, onDelta);
+      expect(result.success).toBe(true);
+      expect(result.data.research_status).toBe("verified");
+      expect(result.data.citations).toHaveLength(1);
+      expect(onDelta).toHaveBeenCalledWith("完成");
+      expect(reader.read).toHaveBeenCalledTimes(1);
+      expect(reader.cancel).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it("rejects a connection ending without a done event", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      streamingResponse(['event: delta\ndata: {"text":"未完成"}\n\n']),
+    );
+    const result = await streamLocationDescription("pano");
+    expect(result.success).toBe(false);
+    expect(result.error).toBe("流式响应未正常完成");
+  });
+
   it("allows a slow detailed stream but still aborts a stalled request", async () => {
     vi.useFakeTimers();
     try {
