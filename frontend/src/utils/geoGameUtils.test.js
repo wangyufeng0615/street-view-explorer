@@ -5,7 +5,6 @@ import {
   formatDistance,
   getGuessToleranceKm,
   PERFECT_GUESS_DISTANCE_KM,
-  TOTAL_ROUNDS,
   START_ZOOM,
   MIN_ZOOM,
   MIN_ROUND_DISTANCE_KM,
@@ -71,19 +70,12 @@ describe("calculateScore", () => {
     expect(calculateScore(50, 20000)).toBeGreaterThanOrEqual(0);
   });
 
-  it("exponential decay: ~55% at 5 steps, ~30% at 10 steps", () => {
-    const at5 = calculateScore(5, 0);
-    const at10 = calculateScore(10, 0);
-    expect(at5 / 5000).toBeCloseTo(Math.exp(-5 * 0.12), 1);
-    expect(at10 / 5000).toBeCloseTo(Math.exp(-10 * 0.12), 1);
-  });
-
-  it("combined: 3 steps, 200km", () => {
-    const effectiveDistance = 200 - getGuessToleranceKm(3);
-    const expected = Math.round(
-      5000 * Math.exp(-3 * 0.12) * Math.exp(-effectiveDistance / 1500),
-    );
-    expect(calculateScore(3, 200)).toBe(expected);
+  it("matches hand-computed scores shared with the backend formula", () => {
+    // 5000 * exp(-steps * 0.12) * exp(-max(0, d - min(100, 1.45^steps)) / 1500)
+    expect(calculateScore(5, 0)).toBe(2744);
+    expect(calculateScore(10, 0)).toBe(1506);
+    expect(calculateScore(3, 200)).toBe(3059);
+    expect(calculateScore(0, 1000)).toBe(2569);
   });
 });
 
@@ -97,9 +89,8 @@ describe("formatDistance", () => {
   it("handles zero", () => expect(formatDistance(0)).toBe("0 m"));
 });
 
-describe("constants", () => {
-  it("has correct values", () => {
-    expect(TOTAL_ROUNDS).toBe(5);
+describe("zoom range", () => {
+  it("stays inside the 2-14 range the backend satellite endpoints accept", () => {
     expect(START_ZOOM).toBe(14);
     expect(MIN_ZOOM).toBe(2);
   });

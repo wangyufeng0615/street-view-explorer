@@ -23,6 +23,7 @@ export default function ExplorationPreference({
     if (!initialInterest && explorationMode !== "random") {
       onModeChange?.("random");
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 只在挂载时校正一次模式
   }, []);
 
   // 添加空格键处理

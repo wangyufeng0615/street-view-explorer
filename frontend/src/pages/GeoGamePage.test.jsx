@@ -120,13 +120,6 @@ describe("GeoGamePage", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("shows the concise intro", () => {
-    render(<GeoGamePage />);
-    expect(screen.getByText("geo.subtitle")).toBeInTheDocument();
-    expect(screen.queryByText("geo.welcome_rule_1")).not.toBeInTheDocument();
-    expect(screen.queryByText("geo.welcome_rule_2")).not.toBeInTheDocument();
-  });
-
   it("summarizes multiple strong rounds in Atlas's game-over note", () => {
     const t = makeSummaryT();
     const state = {

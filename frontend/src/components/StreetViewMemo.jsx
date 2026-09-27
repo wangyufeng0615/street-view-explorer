@@ -417,6 +417,7 @@ const StreetView = memo(
           panoramaInstanceRef.current = null;
         }
       };
+      // eslint-disable-next-line react-hooks/exhaustive-deps -- 只在坐标或语言变化时重建街景，辅助函数只读写 ref
     }, [latitude, longitude, t]);
 
     if (error) {

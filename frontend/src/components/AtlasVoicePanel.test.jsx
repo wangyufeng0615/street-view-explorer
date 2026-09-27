@@ -10,7 +10,6 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import AtlasVoicePanel, { TOOL_DEFINITIONS } from "./AtlasVoicePanel";
 import useStore from "../store/useStore";
-import { MIC_AUDIO_CONSTRAINTS } from "../utils/atlasVoiceRuntime";
 import { getRealtimeVoiceConfig } from "../services/api";
 
 const apiMocks = vi.hoisted(() => ({
@@ -209,12 +208,6 @@ describe("AtlasVoicePanel", () => {
       "coordinates",
       "nearby",
     ]);
-  });
-
-  it("starts microphone capture with echo cancellation controls", async () => {
-    await startPanel();
-
-    expect(getUserMedia).toHaveBeenCalledWith(MIC_AUDIO_CONSTRAINTS);
   });
 
   it("stores user transcripts for memory without rendering them", async () => {

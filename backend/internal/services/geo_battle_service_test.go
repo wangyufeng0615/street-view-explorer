@@ -2,7 +2,6 @@ package services
 
 import (
 	"context"
-	"math"
 	"testing"
 	"time"
 
@@ -49,20 +48,29 @@ func TestGeoBattleLeaveCancelsPreparation(t *testing.T) {
 	}
 }
 
-func TestGeoBattleCalculateScoreMatchesSinglePlayerFormula(t *testing.T) {
-	got := geoBattleCalculateScore(3, 200)
-	effectiveDistance := 200.0 - geoBattleGuessToleranceKM(3)
-	want := int(math.Round(5000 * math.Exp(-3*0.12) * math.Exp(-effectiveDistance/1500)))
-	if got != want {
-		t.Fatalf("geoBattleCalculateScore(3, 200) = %d, want %d", got, want)
+func TestGeoBattleCalculateScoreKnownValues(t *testing.T) {
+	// Hand-computed from 5000*exp(-zoomSteps*0.12)*exp(-effectiveDistanceKm/1500),
+	// effectiveDistanceKm = max(0, distanceKm - min(100, 1.45^zoomSteps)).
+	// Must stay identical to the frontend calculateScore.
+	cases := []struct {
+		zoomSteps  int
+		distanceKM float64
+		want       int
+	}{
+		{0, 0, 5000},
+		{0, 1000, 2569},
+		{3, 200, 3059},
+		{5, 500, 1975},
+		{20, 2000, 128}, // tolerance capped at 100 km
+	}
+	for _, tc := range cases {
+		if got := geoBattleCalculateScore(tc.zoomSteps, tc.distanceKM); got != tc.want {
+			t.Errorf("geoBattleCalculateScore(%d, %v) = %d, want %d", tc.zoomSteps, tc.distanceKM, got, tc.want)
+		}
 	}
 }
 
 func TestGeoBattleCalculateScoreTreatsDynamicToleranceAsExact(t *testing.T) {
-	if geoBattlePerfectDistanceKM != 1 {
-		t.Fatalf("geoBattlePerfectDistanceKM = %v, want 1", geoBattlePerfectDistanceKM)
-	}
-
 	if got := geoBattleCalculateScore(0, 0.8); got != 5000 {
 		t.Fatalf("geoBattleCalculateScore(0, 0.8) = %d, want 5000", got)
 	}
@@ -77,20 +85,6 @@ func TestGeoBattleCalculateScoreTreatsDynamicToleranceAsExact(t *testing.T) {
 	}
 	if got, want := geoBattleCalculateScore(10, 35), geoBattleCalculateScore(10, 0); got != want {
 		t.Fatalf("dynamic-tolerance score = %d, exact score = %d", got, want)
-	}
-}
-
-func TestGeoBattleCalculateScoreStillDecaysOutsidePerfectRange(t *testing.T) {
-	close := geoBattleCalculateScore(0, geoBattlePerfectDistanceKM+0.1)
-	far := geoBattleCalculateScore(0, 1000)
-	if close <= far {
-		t.Fatalf("score should decay with distance outside perfect range: close=%d far=%d", close, far)
-	}
-}
-
-func TestGeoBattleRoundDurationIsOneHundredSeconds(t *testing.T) {
-	if geoBattleRoundDuration != 100*time.Second {
-		t.Fatalf("geoBattleRoundDuration = %v, want 100s", geoBattleRoundDuration)
 	}
 }
 

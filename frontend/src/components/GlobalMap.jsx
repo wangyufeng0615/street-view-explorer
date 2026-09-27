@@ -139,27 +139,6 @@ export default function GlobalMap({
     setMarkerPosition(markerInstanceRef.current, position);
   }, [latitude, longitude]);
 
-  // 参数验证
-  if (latitude === undefined || longitude === undefined) {
-    console.warn("GlobalMap: Missing coordinates", { latitude, longitude });
-    return (
-      <div
-        style={{
-          width: "100%",
-          height: "100%",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          backgroundColor: "#f5f5f5",
-          borderRadius: "8px",
-          color: "#666",
-        }}
-      >
-        {t("loading_location")}
-      </div>
-    );
-  }
-
   // 使用useCallback确保initMap函数引用稳定
   const initMap = useCallback(async () => {
     if (!mapRef.current) return;
@@ -381,6 +360,27 @@ export default function GlobalMap({
       window.removeEventListener("orientationchange", requestSync);
     };
   }, [syncMapToPosition]);
+
+  // 参数验证放在所有 hook 之后，保证每次渲染的 hook 调用顺序一致
+  if (latitude === undefined || longitude === undefined) {
+    console.warn("GlobalMap: Missing coordinates", { latitude, longitude });
+    return (
+      <div
+        style={{
+          width: "100%",
+          height: "100%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          backgroundColor: "#f5f5f5",
+          borderRadius: "8px",
+          color: "#666",
+        }}
+      >
+        {t("loading_location")}
+      </div>
+    );
+  }
 
   if (error) {
     return (

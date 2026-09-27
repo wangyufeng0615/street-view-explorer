@@ -78,6 +78,7 @@ backend/
 - `frontend/src/services/api.js` 当前使用同源 `/api/v1`，`VITE_API_BASE_URL` 是历史配置字段，不要假设它会改变请求根路径。
 - Atlas Voice 默认走 `backend-ws`：浏览器连 `/api/v1/realtime/ws`，后端用 `OPENAI_API_KEY` 或 `REALTIME_API_KEY` 连 OpenAI Realtime。所有本地外部请求都应走 `AI_PROXY_URL` / `PROXY_URL`，豆包 TTS 可额外用 `DOUBAO_TTS_PROXY_URL`。
 - `CORSMiddleware()` 存在但 `main.go` 当前没有注册；部署态 CORS 主要由 `nginx/conf.d/default.conf` 处理。
+- 前端 ESLint 启用 `react-hooks` 规则，`exhaustive-deps` 是 error；有意省略依赖时用 `// eslint-disable-next-line react-hooks/exhaustive-deps -- 原因`。新增依赖前先确认它不会让 effect 多跑。
 
 ## UI 路由
 
@@ -149,11 +150,12 @@ backend/
 - 单人局起始 zoom 是 14，最小 zoom 是 2；后端 `GET /api/v1/geo/satellite` 和 `POST /api/v1/geo/ai-guess` 也校验 `zoom` 必须在 2-14。
 - `GET /api/v1/geo/satellite` 可带 `width,height`，两者必须同时提供且每边在 120-640；单人和 AI 猜测会按当前卫星面板比例请求图片，缺省仍是 640x480。
 - `generateRoundPlan()` 会从 `geoDatabase.js` 选 2 或 3 个题库点，其余使用后端随机位置；题库点会经过 `jitterCoord()` 小偏移。
-- `GeoGamePage.jsx` 的 loading effect 使用 `langRef` 读取语言，避免语言切换重新抽题。
+- `useGeoGameRoundTargets` 的 loading effect 使用 `langRef` 读取语言，避免语言切换重新抽题。
 - 单人卫星图中心图钉必须始终可见；拉远时先加载下一张静态图，再用约 760ms 的 handoff 动画切换，避免闪烁。
 - 简单音效和气泡提示通过 `useGameFeedback()` / `GameFeedback.jsx` 复用，单人模式的本地开关 key 是 `geoGameSound`。
 - 计分公式在前后端一致：`5000 * exp(-zoomSteps * 0.12) * exp(-effectiveDistanceKm / 1500)`；`effectiveDistanceKm = max(0, distanceKm - min(100, 1 * 1.45^zoomSteps))`，拉远后容错半径会动态变大。
 - Atlas AI 猜测只看到用户锁定结果时当前 zoom 的一张卫星图，不会看到前面每次拉远的历史图；prompt 明确要求猜这张图的中心点，并按 UI 语言返回 reasoning。
+- Atlas 每轮结果页只猜一次：之后切换语言或调整卫星面板尺寸不会重新请求，reasoning 保持请求时的语言；被中止的请求不上报失败。
 - 结果地图图钉颜色语义：绿色是正确位置，红色是玩家，紫色是 Atlas；结果文字区也按同一语义展示。
 - 以前审查中关注过近邻题库点、`roundPlan` 生命周期和小轮数边界；修改这些文件时要补充相应测试。
 
@@ -169,6 +171,7 @@ backend/
 - `GET /image` 只在 `playing/reveal/finished` 可用；`lobby/preparing/countdown` 返回 image-not-ready，避免倒计时提前露出卫星图。
 - `SubmitGuess` 只记录猜测，不会因为双方都锁定就直接 reveal；playing 阶段快照会隐藏当前轮猜测详情、目标和本轮新增分数，直到服务端 deadline 推进到 reveal。
 - `GET /image` 根据当前玩家 zoom 返回同一目标卫星图；reveal/finished 阶段最多展示 zoom 5。
+- 揭晓阶段结果地图按 `getBattleResultOverlayKey()`（阶段、轮次、目标、双方猜测坐标）重绘，轮询带来的新 room 对象不会重画或重新取景。
 - 多人卫星图也必须显示中心图钉，并和单人模式使用一致的拉远 handoff 动画；加载新图时保留旧图，禁用地图交互避免误点。
 - 多人颜色语义：红色是你，蓝色是对手，绿色是正确位置；这些颜色要在玩家卡片、地图图钉、气泡和结果文字里保持一致。
 - 多人结果必须清晰展示拉远次数、时间剩余或不扣分状态、距离，以及 base/zoom/tolerance/distance/final 等计分权重。

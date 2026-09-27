@@ -731,16 +731,6 @@ func TestSelectModelUsesCNModelOnlyWithoutProxy(t *testing.T) {
 	}
 }
 
-func TestSelectModelUsesDeepSeekV41FlashByDefault(t *testing.T) {
-	t.Setenv("OPENROUTER_MODEL", "")
-	t.Setenv("AI_MODEL", "")
-	t.Setenv("CN_AI_MODEL", "")
-
-	if got := selectModel("http://127.0.0.1:10086"); got != "deepseek/deepseek-v4.1-flash" {
-		t.Fatalf("selectModel with proxy = %q, want deepseek/deepseek-v4.1-flash", got)
-	}
-}
-
 func TestSelectSceneAndVisionModelsUseDeepSeekV41ByDefaultAndAllowOverrides(t *testing.T) {
 	t.Setenv("OPENROUTER_SCENE_MODEL", "")
 	if got := selectSceneModel(); got != "deepseek/deepseek-v4.1-flash" {

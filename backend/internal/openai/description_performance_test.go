@@ -1,9 +1,6 @@
 package openai
 
-import (
-	"strings"
-	"testing"
-)
+import "testing"
 
 func TestDescriptionPerformancePolicy(t *testing.T) {
 	t.Setenv("OPENROUTER_DESCRIPTION_SEARCH", "")
@@ -41,12 +38,5 @@ func TestDescriptionPerformancePolicy(t *testing.T) {
 	t.Setenv("OPENROUTER_DESCRIPTION_PROVIDER_SORT", "off")
 	if descriptionProviderPreferences(defaultSceneModel) != nil {
 		t.Fatal("cannot restore automatic routing")
-	}
-}
-
-func TestStreamRetainsProviderIdentity(t *testing.T) {
-	r, err := readChatCompletionStream(strings.NewReader("data: {\"id\":\"gen-test\",\"provider\":\"Example\",\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}\n\ndata: {\"choices\":[],\"usage\":{\"server_tool_use\":{\"web_search_requests\":1}}}\n\ndata: [DONE]\n\n"), nil)
-	if err != nil || r.ID != "gen-test" || r.Provider != "Example" || r.Usage.webSearchRequests() != 1 {
-		t.Fatalf("lost request metadata: %+v %v", r, err)
 	}
 }

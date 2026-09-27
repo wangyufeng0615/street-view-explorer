@@ -14,7 +14,12 @@ module.exports = {
   overrides: [
     {
       files: ["**/*.{js,jsx}"],
-      extends: ["eslint:recommended", "plugin:react/recommended", "prettier"],
+      extends: [
+        "eslint:recommended",
+        "plugin:react/recommended",
+        "plugin:react-hooks/recommended",
+        "prettier",
+      ],
       parserOptions: {
         ecmaVersion: "latest",
         sourceType: "module",
@@ -26,6 +31,7 @@ module.exports = {
         "no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
         "react/prop-types": "off",
         "react/react-in-jsx-scope": "off",
+        "react-hooks/exhaustive-deps": "error",
       },
     },
     {
@@ -35,6 +41,7 @@ module.exports = {
       extends: [
         "eslint:recommended",
         "plugin:react/recommended",
+        "plugin:react-hooks/recommended",
         "plugin:@typescript-eslint/recommended",
         "prettier",
       ],
@@ -50,6 +57,7 @@ module.exports = {
         "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
         "react/prop-types": "off",
         "react/react-in-jsx-scope": "off",
+        "react-hooks/exhaustive-deps": "error",
       },
     },
     {

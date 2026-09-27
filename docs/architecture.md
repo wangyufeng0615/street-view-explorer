@@ -113,7 +113,7 @@ The online duel state is not in SQLite. Rooms, room codes, session-to-room mappi
 
 ## Solo Geo Game
 
-The solo game is implemented mostly in `frontend/src/pages/GeoGamePage.jsx` and `frontend/src/utils/geoGameUtils.js`.
+The solo game page `frontend/src/pages/GeoGamePage.jsx` owns the reducer and action handlers and composes `frontend/src/hooks/useGeoGame*.js` (round targets and preloading, satellite size and zoom handoff, guess map, Atlas guess, phase feedback) plus `GeoGameTopBar`, `GeoGameSatellitePanel` and `GeoGameGuessPanel`. Pure helpers live in `frontend/src/utils/geoGameUtils.js`, `geoGameSatellite.js`, `geoGameMapPins.js` and `geoGameTargets.js`.
 
 Game flow:
 
@@ -146,10 +146,10 @@ round(5000 * exp(-zoomSteps * 0.12) * exp(-effectiveDistanceKm / 1500))
 
 The online duel is implemented in:
 
-- `frontend/src/pages/GeoBattlePage.jsx`;
+- `frontend/src/pages/GeoBattlePage.jsx`, which composes `frontend/src/hooks/useGeoBattle*.js` (room sync and polling, guess map, satellite image handoff, actions, transition feedback), `GeoBattleRoomHeader`, `GeoBattleSatellitePanel`, `GeoBattleMapPanel`, and helpers in `frontend/src/utils/geoBattle*.js`;
 - `frontend/src/services/api.js`;
 - `backend/internal/api/geo_online_handlers.go`;
-- `backend/internal/services/geo_battle_service.go`;
+- `backend/internal/services/geo_battle_*.go`: `geo_battle_service.go` (types, constructor, cleanup loop), `geo_battle_rooms.go` (private room API), `geo_battle_matchmaking.go`, `geo_battle_phases.go` (round generation and phase transitions), `geo_battle_snapshot.go`, `geo_battle_lookup.go`, `geo_battle_codes.go`, `geo_battle_scoring.go`;
 - `backend/internal/models/geo_battle.go`.
 
 Modes:

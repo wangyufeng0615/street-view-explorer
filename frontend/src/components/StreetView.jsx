@@ -307,6 +307,7 @@ export default function StreetView({
     } catch (error) {
       console.warn("街景视角更新失败:", error);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 辅助函数只读写 ref，每次渲染都会重建，只在朝向变化时执行
   }, [heading]);
 
   // 处理用户交互
@@ -392,6 +393,7 @@ export default function StreetView({
         observer.disconnect();
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 只在挂载时注册可见性监听，辅助函数只读写 ref
   }, []);
 
   useEffect(() => {
@@ -649,6 +651,7 @@ export default function StreetView({
       cleanupFunctionsRef.current.forEach((fn) => fn());
       cleanupFunctionsRef.current = [];
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 只在坐标或语言变化时重建街景，辅助函数只读写 ref
   }, [latitude, longitude, t]);
 
   return (

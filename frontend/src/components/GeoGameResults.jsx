@@ -425,6 +425,7 @@ function RoundResult({ state, t, onNext }) {
 function GameOverModal({ state, t, onRestart, onNext }) {
   useEffect(() => {
     if (state.scores.length < TOTAL_ROUNDS) onNext();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 只在弹窗挂载时补齐一次未完成的轮次
   }, []);
   const playerTotal = state.scores.reduce((s, r) => s + r.playerScore, 0);
   const aiTotal = state.aiEnabled

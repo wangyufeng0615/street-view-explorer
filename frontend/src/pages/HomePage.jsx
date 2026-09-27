@@ -261,6 +261,7 @@ export default function HomePage({ showFootprintFromRoute = false }) {
         loadLocationDescription(location.pano_id);
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 只在全景或语言变化时触发，位置对象的其他字段变化不重新请求
   }, [
     activeLanguage,
     isLanguageReady,
@@ -329,6 +330,7 @@ export default function HomePage({ showFootprintFromRoute = false }) {
     if (location && location.latitude != null && location.longitude != null) {
       updateURL(location.latitude, location.longitude);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 只在坐标变化时更新地址栏
   }, [location?.latitude, location?.longitude]);
 
   // Memoized styles to prevent re-creation
