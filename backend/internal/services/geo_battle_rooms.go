@@ -2,6 +2,7 @@ package services
 
 import (
 	"fmt"
+	"math"
 	"slices"
 	"time"
 
@@ -17,6 +18,7 @@ func (s *GeoBattleService) CreatePrivateRoom(sessionID, nickname string) (models
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	s.releaseFinishedMatchmakingLocked(sessionID)
 	if room := s.activeRoomForSessionLocked(sessionID); room != nil {
 		if player := s.playerBySessionLocked(room, sessionID); player != nil {
 			player.Nickname = nickname
@@ -77,6 +79,7 @@ func (s *GeoBattleService) JoinPrivateRoom(sessionID, nickname, code string) (mo
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	s.releaseFinishedMatchmakingLocked(sessionID)
 	if room := s.activeRoomForSessionLocked(sessionID); room != nil {
 		if player := s.playerBySessionLocked(room, sessionID); player != nil {
 			player.Nickname = nickname
@@ -105,7 +108,9 @@ func (s *GeoBattleService) JoinPrivateRoom(sessionID, nickname, code string) (mo
 		return models.GeoBattleRoomSnapshot{}, ErrGeoBattleRoomClosed
 	}
 
-	if existing := s.playerBySessionLocked(room, sessionID); existing != nil {
+	// A player who left mid-match rejoins as a fresh member: the departed
+	// record is dropped below and a new one is appended.
+	if existing := s.playerBySessionLocked(room, sessionID); existing != nil && !existing.Left {
 		existing.Nickname = nickname
 		s.touchRoomPlayerLocked(room, sessionID)
 		return s.snapshotLocked(room, sessionID), nil
@@ -118,6 +123,8 @@ func (s *GeoBattleService) JoinPrivateRoom(sessionID, nickname, code string) (mo
 	now := time.Now()
 	if room.Phase == models.GeoBattlePhaseFinished {
 		s.resetRoomToLobbyLocked(room, now)
+	} else {
+		s.removeDepartedPlayersLocked(room)
 	}
 
 	room.Players = append(room.Players, &geoBattlePlayer{
@@ -126,6 +133,7 @@ func (s *GeoBattleService) JoinPrivateRoom(sessionID, nickname, code string) (mo
 		LastSeenAt:  now,
 		CurrentZoom: models.GeoBattleStartZoom,
 	})
+	s.reassignHostLocked(room)
 	room.UpdatedAt = now
 	s.sessionRooms[sessionID] = room.ID
 
@@ -236,7 +244,8 @@ func (s *GeoBattleService) SubmitGuess(roomID, sessionID string, lat, lng *float
 		return models.GeoBattleRoomSnapshot{}, ErrGeoBattleAlreadyGuessed
 	}
 	if !skipped {
-		if lat == nil || lng == nil || *lat < -90 || *lat > 90 || *lng < -180 || *lng > 180 {
+		if lat == nil || lng == nil || math.IsNaN(*lat) || math.IsNaN(*lng) ||
+			*lat < -90 || *lat > 90 || *lng < -180 || *lng > 180 {
 			return models.GeoBattleRoomSnapshot{}, fmt.Errorf("invalid guess coordinates")
 		}
 	}
@@ -277,36 +286,41 @@ func (s *GeoBattleService) LeaveRoom(roomID, sessionID string) error {
 		return ErrGeoBattleNotInRoom
 	}
 
-	delete(s.sessionRooms, sessionID)
+	s.leaveRoomLocked(room, player)
+	return nil
+}
+
+func (s *GeoBattleService) leaveRoomLocked(room *geoBattleRoom, player *geoBattlePlayer) {
+	if currentRoomID, ok := s.sessionRooms[player.SessionID]; ok && currentRoomID == room.ID {
+		delete(s.sessionRooms, player.SessionID)
+	}
+	if player.Left {
+		return
+	}
 	now := time.Now()
 
-	if room.Phase == models.GeoBattlePhaseLobby || room.Phase == models.GeoBattlePhaseFinished {
-		idx := slices.IndexFunc(room.Players, func(candidate *geoBattlePlayer) bool {
-			return candidate.SessionID == sessionID
+	idle := room.Phase == models.GeoBattlePhaseLobby || room.Phase == models.GeoBattlePhaseFinished
+	if idle && room.Mode == models.GeoBattleModePrivate {
+		room.Players = slices.DeleteFunc(room.Players, func(candidate *geoBattlePlayer) bool {
+			return candidate == player
 		})
-		if idx >= 0 {
-			room.Players = append(room.Players[:idx], room.Players[idx+1:]...)
-		}
+		s.resetRoomToLobbyLocked(room, now)
 		if len(room.Players) == 0 {
 			s.deleteRoomLocked(room.ID)
-			return nil
 		}
-		room.UpdatedAt = now
-		if room.HostSessionID == sessionID {
-			room.HostSessionID = room.Players[0].SessionID
-		}
-		for _, remaining := range room.Players {
-			remaining.IsHost = remaining.SessionID == room.HostSessionID
-		}
-		s.resetRoomToLobbyLocked(room, now)
-		return nil
+		return
 	}
 
+	// Mid-match leaves end the match. A matchmaking room is never refilled,
+	// so leaving it in any phase also ends it and the remaining player can only
+	// read the result and leave.
 	player.Left = true
 	player.LastSeenAt = now
 	room.Message = "player_left:" + player.Nickname
 	s.finishRoomLocked(room)
-	return nil
+	if s.activePlayerCountLocked(room) == 0 {
+		s.deleteRoomLocked(room.ID)
+	}
 }
 
 func (s *GeoBattleService) GetImageSpec(roomID, sessionID string) (float64, float64, int, error) {

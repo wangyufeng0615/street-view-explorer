@@ -254,6 +254,29 @@ function useGeoBattleGuessMap({
     t,
   ]);
 
+  const roundIndex = room?.round?.index;
+  useEffect(() => {
+    setGuessPin(null);
+    clearPendingMarker();
+    clearResultOverlays();
+    // Reads the phase at the time the round changes; a later phase change
+    // alone must not clear the player's pin.
+    // This must run before the result overlay effect below: when a single
+    // snapshot changes the round and lands in reveal/finished (entering or
+    // refreshing mid-reveal, or a throttled tab skipping a whole round), the
+    // overlay effect then redraws this round's pins after the reset.
+    if (roomRef.current?.phase !== "playing") {
+      resetMapViewport();
+    }
+  }, [
+    clearPendingMarker,
+    clearResultOverlays,
+    resetMapViewport,
+    roomRef,
+    roundIndex,
+    setGuessPin,
+  ]);
+
   useEffect(() => {
     const room = roomRef.current;
     if (!room) return;
@@ -304,25 +327,6 @@ function useGeoBattleGuessMap({
     resultOverlayKey,
     roomRef,
     t,
-  ]);
-
-  const roundIndex = room?.round?.index;
-  useEffect(() => {
-    setGuessPin(null);
-    clearPendingMarker();
-    clearResultOverlays();
-    // Reads the phase at the time the round changes; a later phase change
-    // alone must not clear the player's pin.
-    if (roomRef.current?.phase !== "playing") {
-      resetMapViewport();
-    }
-  }, [
-    clearPendingMarker,
-    clearResultOverlays,
-    resetMapViewport,
-    roomRef,
-    roundIndex,
-    setGuessPin,
   ]);
 
   return { mapsReady, mapReady, mapsError };

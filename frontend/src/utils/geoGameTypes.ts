@@ -37,6 +37,7 @@ export type GameState = {
   > | null;
   countryCode: string;
   usedTargets: Target[];
+  targetError: boolean;
 };
 export type GameAction =
   | { type: "START_GAME"; countryCode?: string; aiEnabled?: boolean }
@@ -50,6 +51,8 @@ export type GameAction =
         | "GIVE_UP"
         | "SET_AI_LOADING"
         | "NEXT_ROUND"
+        | "TARGET_FAILED"
+        | "RETRY_TARGET"
         | "RESTART";
     };
 export type Translate = (

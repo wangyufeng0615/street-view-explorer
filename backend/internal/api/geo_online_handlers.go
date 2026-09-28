@@ -130,6 +130,11 @@ func (gh *GeoHandlers) SubmitOnlineGuess(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "invalid request body"})
 		return
 	}
+	if !req.GiveUp && (req.Lat == nil || req.Lng == nil ||
+		*req.Lat < -90 || *req.Lat > 90 || *req.Lng < -180 || *req.Lng > 180) {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "invalid guess coordinates"})
+		return
+	}
 
 	sessionID, err := gh.geoBattleSessionID(c)
 	if err != nil {

@@ -9,6 +9,8 @@ import {
 
 const apiMocks = vi.hoisted(() => ({
   deleteExplorationPreference: vi.fn(),
+  getRandomLocation: vi.fn(),
+  lookupLocation: vi.fn(),
   searchLocation: vi.fn(),
   setExplorationPreference: vi.fn(),
 }));
@@ -124,7 +126,9 @@ describe("executeAtlasVoiceTool", () => {
     );
 
     expect(apiMocks.deleteExplorationPreference).toHaveBeenCalledWith("en");
-    expect(loadRandomLocation).toHaveBeenCalledWith(true);
+    expect(loadRandomLocation).toHaveBeenCalledWith(true, {
+      preserveLocation: true,
+    });
     expect(localStorage.getItem("exploration_mode")).toBe("random");
     expect(localStorage.getItem("exploration_interest")).toBeNull();
     expect(useStore.getState().explorationMode).toBe("random");
@@ -221,7 +225,9 @@ describe("executeAtlasVoiceTool", () => {
       success: false,
       error: "Could not find Street View near those coordinates",
     });
-    expect(loadLocationFromURL).toHaveBeenCalledWith(1, 2);
+    expect(loadLocationFromURL).toHaveBeenCalledWith(1, 2, {
+      preserveLocation: true,
+    });
   });
 
   it("keeps the matched place on a failed search and applies a successful one", async () => {
@@ -318,6 +324,78 @@ describe("executeAtlasVoiceTool", () => {
       terminal: true,
       retry_allowed: false,
     });
+  });
+
+  it("keeps the current place and the page when every real nearby lookup fails", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    apiMocks.lookupLocation.mockResolvedValue({
+      success: false,
+      error: "no street view",
+    });
+
+    const result = await executeAtlasVoiceTool(
+      "navigate",
+      { mode: "nearby" },
+      makeDeps(),
+    );
+
+    expect(apiMocks.lookupLocation).toHaveBeenCalledTimes(3);
+    expect(result).toMatchObject({ success: false, terminal: true });
+    expect(useStore.getState()).toMatchObject({
+      location: CROMWELL,
+      locationError: null,
+      isLoadingLocation: false,
+    });
+  });
+
+  it("reports a failed random voice navigation without an error page", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    apiMocks.deleteExplorationPreference.mockResolvedValue({ success: true });
+    apiMocks.getRandomLocation.mockResolvedValue({
+      success: false,
+      error: "upstream down",
+    });
+    useStore.setState({ isExplorationInitialized: true, lastRefreshTime: 0 });
+
+    const result = await executeAtlasVoiceTool(
+      "navigate",
+      { mode: "random" },
+      makeDeps(),
+    );
+
+    expect(result).toMatchObject({ success: false, error: "upstream down" });
+    expect(useStore.getState().location).toBe(CROMWELL);
+    expect(useStore.getState().locationError).toBeNull();
+  });
+
+  it("does not let an in-flight random load overwrite a voice place search", async () => {
+    let finishRandom;
+    apiMocks.getRandomLocation.mockReturnValue(
+      new Promise((resolve) => {
+        finishRandom = resolve;
+      }),
+    );
+    apiMocks.searchLocation.mockResolvedValue({
+      success: true,
+      data: { latitude: 35.6586, longitude: 139.7454, pano_id: "pano-tokyo" },
+      place: null,
+    });
+    useStore.setState({ isExplorationInitialized: true, lastRefreshTime: 0 });
+
+    const randomLoad = useStore.getState().loadRandomLocation(true);
+    await executeAtlasVoiceTool(
+      "navigate",
+      { mode: "place", query: "Tokyo Tower" },
+      makeDeps(),
+    );
+    finishRandom({
+      success: true,
+      data: { latitude: 1, longitude: 2, pano_id: "pano-random" },
+    });
+    await expect(randomLoad).resolves.toMatchObject({ superseded: true });
+
+    expect(useStore.getState().location.pano_id).toBe("pano-tokyo");
+    expect(useStore.getState().isLoadingLocation).toBe(false);
   });
 
   it("turns the camera and keeps an active Street View pose in sync", async () => {

@@ -84,14 +84,59 @@ describe("useGeoGameRoundTargets", () => {
     expect(getRandomLocation).toHaveBeenCalledWith("en", "geo_game", "JP");
   });
 
-  it("restarts the game when no target can be found", async () => {
+  it("reports a retryable error instead of restarting when no target is found", async () => {
     getRandomLocation.mockResolvedValue({ success: false });
     const dispatch = vi.fn();
-    renderTargets({ state: gameState(), dispatch });
+    const { rerender } = renderTargets({
+      state: gameState({ round: 3 }),
+      dispatch,
+    });
 
     await waitFor(() =>
-      expect(dispatch).toHaveBeenCalledWith({ type: "RESTART" }),
+      expect(dispatch).toHaveBeenCalledWith({ type: "TARGET_FAILED" }),
     );
+    expect(dispatch).not.toHaveBeenCalledWith({ type: "RESTART" });
+    const failedCalls = getRandomLocation.mock.calls.length;
+
+    // While the error is shown nothing is fetched.
+    rerender({
+      state: gameState({ round: 3, targetError: true }),
+      dispatch,
+      language: "en",
+      satelliteImageSize: SIZE,
+    });
+    expect(getRandomLocation).toHaveBeenCalledTimes(failedCalls);
+
+    // Retrying clears the error and resolves the same round again.
+    getRandomLocation.mockResolvedValue(location(30, 40, "pano-3"));
+    rerender({
+      state: gameState({ round: 3, targetError: false }),
+      dispatch,
+      language: "en",
+      satelliteImageSize: SIZE,
+    });
+    await waitFor(() =>
+      expect(dispatch).toHaveBeenCalledWith({
+        type: "SET_TARGET",
+        payload: expect.objectContaining({ lat: 30, lng: 40 }),
+      }),
+    );
+  });
+
+  it("does not refetch the preload when the satellite panel resizes", async () => {
+    getRandomLocation.mockImplementation(() => new Promise(() => {}));
+    const state = gameState({ phase: "ROUND_RESULT" });
+    const dispatch = vi.fn();
+    const { rerender } = renderTargets({ state, dispatch });
+    expect(getRandomLocation).toHaveBeenCalledTimes(1);
+
+    rerender({
+      state,
+      dispatch,
+      language: "en",
+      satelliteImageSize: { width: 640, height: 480 },
+    });
+    expect(getRandomLocation).toHaveBeenCalledTimes(1);
   });
 
   it("does not dispatch a stale target after the round changes", async () => {

@@ -45,6 +45,13 @@ export function useGeoGameSatelliteZoom({
     setZoomTransitionLoading(false);
   }, [state.currentZoom, state.target]);
 
+  // A new request size swaps the <img> for a different URL; treat it as not
+  // loaded until it is, so the spinner shows and zoom-out waits for it.
+  useEffect(() => {
+    setImgLoaded(false);
+    setImgError(false);
+  }, [satelliteImageSize]);
+
   useEffect(() => {
     setZoomTransition(null);
     setZoomTransitionLoading(false);

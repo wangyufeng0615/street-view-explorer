@@ -84,6 +84,7 @@ func (s *GeoBattleService) enterPreparingLocked(room *geoBattleRoom, token uint6
 
 func (s *GeoBattleService) resetRoomToLobbyLocked(room *geoBattleRoom, now time.Time) {
 	cancelGeoBattlePreparation(room)
+	s.removeDepartedPlayersLocked(room)
 	room.Phase = models.GeoBattlePhaseLobby
 	room.PhaseDeadlineAt = nil
 	room.Message = ""

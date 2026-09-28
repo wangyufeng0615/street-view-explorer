@@ -56,6 +56,12 @@ type SecurityConfig struct {
 		Timeout int
 		Secure  bool
 	}
+	Realtime struct {
+		// WebRTCEnabled exposes /realtime/client-secret and /realtime/calls.
+		// Off by default: ephemeral secrets bypass the WebSocket relay's
+		// connection budgets and client event filtering.
+		WebRTCEnabled bool
+	}
 }
 
 func (c *config) ServerAddress() string {
@@ -168,6 +174,7 @@ func New() Config {
 			Secure:  getEnvOrDefault("SESSION_SECURE", "true") == "true",
 		},
 	}
+	cfg.securityConfig.Realtime.WebRTCEnabled = getEnvAsBoolOrDefault("REALTIME_WEBRTC_ENABLED", false)
 
 	return cfg
 }
@@ -186,4 +193,16 @@ func getEnvAsIntOrDefault(key string, defaultValue int) int {
 		}
 	}
 	return defaultValue
+}
+
+func getEnvAsBoolOrDefault(key string, defaultValue bool) bool {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return defaultValue
+	}
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return defaultValue
+	}
+	return parsed
 }

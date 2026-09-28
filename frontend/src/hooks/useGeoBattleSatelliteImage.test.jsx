@@ -12,6 +12,7 @@ vi.mock("../utils/session", () => ({
 
 import { fetchGeoBattleImage } from "../services/api";
 import {
+  IMAGE_RETRY_DELAYS_MS,
   SATELLITE_ZOOM_TRANSITION_MS,
   useGeoBattleSatelliteImage,
 } from "./useGeoBattleSatelliteImage";
@@ -257,11 +258,41 @@ describe("useGeoBattleSatelliteImage", () => {
     expect(revokeObjectURL).toHaveBeenCalledWith("blob:1");
   });
 
-  it("shows error feedback when the image request fails", async () => {
+  it("retries a failed image request with backoff before succeeding", async () => {
     const { result, feedback } = setup();
     await act(async () => {
-      requests[0].reject(new Error("image 409"));
+      requests[0].reject(new Error("image 429"));
     });
+    expect(result.current.imgError).toBe(false);
+    expect(result.current.showImageLoading).toBe(true);
+    expect(requests).toHaveLength(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(IMAGE_RETRY_DELAYS_MS[0]);
+    });
+    expect(requests).toHaveLength(2);
+    expect(requests[1].version).toBe(requests[0].version);
+
+    await resolveRequest(1, "blob:retry");
+    expect(result.current.imageObjectUrl).toBe("blob:retry");
+    expect(result.current.imgError).toBe(false);
+    expect(feedback.playFeedback).not.toHaveBeenCalled();
+  });
+
+  it("shows error feedback once every retry has failed", async () => {
+    const { result, feedback } = setup();
+    for (let i = 0; i <= IMAGE_RETRY_DELAYS_MS.length; i += 1) {
+      await act(async () => {
+        requests[i].reject(new Error("image 409"));
+      });
+      if (i < IMAGE_RETRY_DELAYS_MS.length) {
+        expect(result.current.imgError).toBe(false);
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(IMAGE_RETRY_DELAYS_MS[i]);
+        });
+      }
+    }
+    expect(requests).toHaveLength(IMAGE_RETRY_DELAYS_MS.length + 1);
     expect(result.current.imgError).toBe(true);
     expect(result.current.showImageLoading).toBe(false);
     expect(result.current.imageInteractionPending).toBe(false);

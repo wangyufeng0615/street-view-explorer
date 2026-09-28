@@ -94,7 +94,11 @@ vi.mock("../services/api", () => ({
 
 import GeoBattlePage from "./GeoBattlePage";
 import { loadGoogleMapsScript } from "../utils/googleMaps";
-import { fetchGeoBattleImage, zoomOutGeoBattle } from "../services/api";
+import {
+  fetchGeoBattleImage,
+  getGeoBattleRoom,
+  zoomOutGeoBattle,
+} from "../services/api";
 
 Object.defineProperty(URL, "revokeObjectURL", {
   configurable: true,
@@ -337,10 +341,9 @@ describe("GeoBattlePage", () => {
     await waitFor(() => expect(mocks.maps.Marker).toHaveBeenCalledTimes(1));
     const marker = mocks.markerInstances[0];
     expect(marker.setMap).not.toHaveBeenCalled();
-    const firstRoomResolver = mocks.roomResolver;
-
+    // Wait for a follow-up poll to be in flight (only one runs at a time).
     await waitFor(
-      () => expect(mocks.roomResolver).not.toBe(firstRoomResolver),
+      () => expect(vi.mocked(getGeoBattleRoom).mock.calls.length).toBe(2),
       {
         timeout: 2200,
       },
@@ -401,9 +404,12 @@ describe("GeoBattlePage", () => {
       ).toBe("blob:round-1-zoom-13");
     });
 
-    const resolverBeforePoll = mocks.roomResolver;
+    // A poll is in flight (it may have started before the zoom action).
     await waitFor(
-      () => expect(mocks.roomResolver).not.toBe(resolverBeforePoll),
+      () =>
+        expect(
+          vi.mocked(getGeoBattleRoom).mock.calls.length,
+        ).toBeGreaterThanOrEqual(2),
       {
         timeout: 2200,
       },
@@ -420,5 +426,21 @@ describe("GeoBattlePage", () => {
     expect(
       document.querySelector(".geo-battle-satellite-img")?.getAttribute("src"),
     ).toBe("blob:round-1-zoom-13");
+  });
+
+  it("keeps at most one room poll in flight", async () => {
+    render(<GeoBattlePage />);
+    await act(async () => {
+      mocks.roomResolver({ success: true, data: { room: makeRoom() } });
+    });
+    await waitFor(() =>
+      expect(vi.mocked(getGeoBattleRoom).mock.calls.length).toBe(2),
+    );
+    // The second poll never answers; timers and re-renders must not stack
+    // more requests behind it.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1700));
+    });
+    expect(getGeoBattleRoom).toHaveBeenCalledTimes(2);
   });
 });

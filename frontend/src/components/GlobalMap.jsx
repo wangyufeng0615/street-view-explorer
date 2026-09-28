@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from "react";
+import React, { memo, useEffect, useRef, useState, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { loadGoogleMapsScript } from "../utils/googleMaps";
 
@@ -76,7 +76,7 @@ function PickStatusOverlay({ status, message }) {
   );
 }
 
-export default function GlobalMap({
+function GlobalMap({
   latitude,
   longitude,
   mapId = "global",
@@ -93,8 +93,14 @@ export default function GlobalMap({
   const dragEndListenerRef = useRef(null);
   const onLocationPickRef = useRef(onLocationPick);
   const isPickingLocationRef = useRef(isPickingLocation);
-  const [error, setError] = useState(null);
+  // 地图只创建一次；坐标变化由 syncMapToPosition 移动中心点和标记
+  const positionRef = useRef({ latitude, longitude });
+  const [mapLoadFailed, setMapLoadFailed] = useState(false);
   const { t } = useTranslation();
+
+  useEffect(() => {
+    positionRef.current = { latitude, longitude };
+  }, [latitude, longitude]);
 
   useEffect(() => {
     onLocationPickRef.current = onLocationPick;
@@ -151,17 +157,17 @@ export default function GlobalMap({
       if (!mapRef.current) return;
 
       // 确保坐标是数字类型
-      const lat = parseFloat(latitude);
-      const lng = parseFloat(longitude);
+      const { latitude: latestLatitude, longitude: latestLongitude } =
+        positionRef.current;
+      const lat = parseFloat(latestLatitude);
+      const lng = parseFloat(latestLongitude);
 
-      if (isNaN(lat) || isNaN(lng) || lat === 0 || lng === 0) {
+      if (isNaN(lat) || isNaN(lng)) {
         console.error("Invalid coordinates for GlobalMap:", {
-          latitude,
-          longitude,
-          lat,
-          lng,
+          latitude: latestLatitude,
+          longitude: latestLongitude,
         });
-        throw new Error(t("error.invalidCoordinates"));
+        throw new Error("Invalid coordinates for GlobalMap");
       }
 
       // 如果已经有地图实例，清理它
@@ -299,14 +305,18 @@ export default function GlobalMap({
       mapInstanceRef.current.setCenter(position);
 
       // 清除错误状态
-      setError(null);
+      setMapLoadFailed(false);
     } catch (err) {
       console.error("GlobalMap initialization error:", err);
-      setError(t("error.mapLoadFailed"));
+      setMapLoadFailed(true);
     }
-  }, [latitude, longitude, pickFromLatLng, t]);
+  }, [pickFromLatLng]);
+
+  // 缺坐标时渲染的是占位符，mapRef 不存在；坐标到位后才创建地图
+  const hasCoordinates = latitude !== undefined && longitude !== undefined;
 
   useEffect(() => {
+    if (!hasCoordinates) return undefined;
     let isMounted = true;
 
     // 延迟执行以避免React Strict Mode的重复调用
@@ -328,7 +338,7 @@ export default function GlobalMap({
         mapInstanceRef.current = null;
       }
     };
-  }, [initMap]);
+  }, [hasCoordinates, initMap]);
 
   useEffect(() => {
     if (!mapRef.current) return undefined;
@@ -382,7 +392,7 @@ export default function GlobalMap({
     );
   }
 
-  if (error) {
+  if (mapLoadFailed) {
     return (
       <div
         style={{
@@ -396,7 +406,7 @@ export default function GlobalMap({
           color: "#666",
         }}
       >
-        {error}
+        {t("error.mapLoadFailed")}
       </div>
     );
   }
@@ -423,3 +433,5 @@ export default function GlobalMap({
     </div>
   );
 }
+
+export default memo(GlobalMap);

@@ -1,15 +1,13 @@
 import React from "react";
 
 import {
+  SCORE_DISTANCE_DECAY_KM,
+  SCORE_ZOOM_DECAY_PER_STEP,
   formatDistance,
   getEffectiveDistanceKm,
   getGuessToleranceKm,
   isPerfectGuess,
-} from "../utils/geoGameUtils";
-
-const SCORE_ZOOM_DECAY_PER_STEP = 0.12;
-
-const SCORE_DISTANCE_DECAY_KM = 1500;
+} from "../utils/geoGameScoring";
 
 function getOutcomeLabel(room, t) {
   if (!room?.opponent) return null;

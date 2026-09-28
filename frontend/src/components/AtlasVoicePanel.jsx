@@ -47,7 +47,11 @@ export default function AtlasVoicePanel() {
   const copy = TEXT[locale];
 
   const location = useStore((state) => state.location);
-  const description = useStore((state) => state.description);
+  // Hold the narration steady while it streams: every chunk would otherwise
+  // change the context signature and resend the whole session.update.
+  const description = useStore((state) =>
+    state.isDescriptionLoading ? "" : state.description,
+  );
   const heading = useStore((state) => state.heading);
   const streetViewView = useStore((state) => state.streetViewView);
   const showToastMessage = useStore((state) => state.showToastMessage);
@@ -74,6 +78,9 @@ export default function AtlasVoicePanel() {
   const voiceConfigRef = useRef(voiceConfig);
   const memoryRef = useRef(loadVoiceMemory());
   const sessionOutputConfiguredRef = useRef(false);
+  // Bumped on every cleanup; an in-flight start compares it to know whether
+  // the session it is building still exists.
+  const sessionGenerationRef = useRef(0);
 
   const currentContext = useMemo(
     () => ({ location, description, heading, streetViewView }),
@@ -252,6 +259,7 @@ export default function AtlasVoicePanel() {
     });
 
   const cleanupConnection = useCallback(() => {
+    sessionGenerationRef.current += 1;
     resetAssistantSpeech();
     clearResponseWatchdog();
     deferredSessionUpdateRef.current = false;
@@ -356,12 +364,23 @@ export default function AtlasVoicePanel() {
     ],
   );
 
+  // A dropped socket/data channel releases the mic and audio graph too.
+  const handleTransportClosed = useCallback(() => {
+    cleanupConnection();
+    setStatus("idle");
+  }, [cleanupConnection]);
+
   const startVoice = useCallback(async () => {
+    // Release anything a previous session left behind before starting again.
+    cleanupConnection();
+    const generation = sessionGenerationRef.current;
+    const isCurrent = () => sessionGenerationRef.current === generation;
     setError("");
     setStatus("connecting");
 
     try {
       await loadVoiceConfig();
+      if (!isCurrent()) return;
 
       const transport = {
         locale,
@@ -377,6 +396,8 @@ export default function AtlasVoicePanel() {
         startMicrophoneStreaming,
         sendSessionUpdateForCurrentContext,
         showToastMessage,
+        isCurrent,
+        onClosed: handleTransportClosed,
       };
       if (REALTIME_TRANSPORT === "backend-ws") {
         await startBackendWebSocketVoice(transport);
@@ -384,6 +405,8 @@ export default function AtlasVoicePanel() {
       }
       await startWebRTCVoice(transport);
     } catch (err) {
+      // Stopped, unmounted or dropped meanwhile: that path already cleaned up.
+      if (!isCurrent()) return;
       cleanupConnection();
       setError(err.message || copy.openaiError);
       setStatus("idle");
@@ -392,6 +415,7 @@ export default function AtlasVoicePanel() {
     cleanupConnection,
     copy,
     handleRealtimeEvent,
+    handleTransportClosed,
     locale,
     loadVoiceConfig,
     sendSessionUpdateForCurrentContext,

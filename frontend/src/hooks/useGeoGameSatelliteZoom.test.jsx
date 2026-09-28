@@ -84,6 +84,35 @@ describe("useGeoGameSatelliteZoom", () => {
     expect(result.current.canZoomOut).toBe(true);
   });
 
+  it("waits for the new image again when the request size changes", () => {
+    const state = playingState();
+    const stateRef = { current: state };
+    const { result, rerender } = renderHook(
+      ({ size }) =>
+        useGeoGameSatelliteZoom({
+          state,
+          stateRef,
+          dispatch: vi.fn(),
+          satelliteImageSize: size,
+          playFeedback: vi.fn(),
+          showFeedbackBubble: vi.fn(),
+          t: (key) => key,
+        }),
+      { initialProps: { size: SIZE } },
+    );
+    act(() => result.current.handleSatelliteImageLoad());
+    expect(result.current.canZoomOut).toBe(true);
+    const firstUrl = result.current.satelliteUrl;
+
+    rerender({ size: { width: 640, height: 480 } });
+    expect(result.current.satelliteUrl).not.toBe(firstUrl);
+    expect(result.current.imgLoaded).toBe(false);
+    expect(result.current.canZoomOut).toBe(false);
+
+    act(() => result.current.handleSatelliteImageLoad());
+    expect(result.current.canZoomOut).toBe(true);
+  });
+
   it("loads the next image before zooming out, then hands off", () => {
     const { result, rerender, dispatch, playFeedback } = setup();
     act(() => result.current.handleSatelliteImageLoad());

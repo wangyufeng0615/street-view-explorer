@@ -87,7 +87,7 @@ curl -s http://localhost:8080/api/v1/realtime/voice-config
 curl -s 'http://localhost:8080/api/v1/realtime/client-secret?lang=zh'
 ```
 
-The first response should show `success: true`. The second requires `OPENAI_API_KEY` or `REALTIME_API_KEY`; failures there usually mean missing credentials, blocked egress, or proxy misconfiguration.
+The first response should show `success: true`. The second returns 404 `realtime_webrtc_disabled` unless `REALTIME_WEBRTC_ENABLED=true`; when enabled it requires `OPENAI_API_KEY` or `REALTIME_API_KEY`, and failures there usually mean missing credentials, blocked egress, or proxy misconfiguration.
 
 Atlas visual-context smoke (replace the panorama ID with one returned by a location endpoint):
 
@@ -311,6 +311,8 @@ Use `--skip-proxy-check` only when the proxy health check itself is unreliable b
 - `/api/v1/geo/satellite` and `/api/v1/geo/online/rooms/:roomId/image` have a per-IP limit of 180 requests per minute.
 - `/api/v1/realtime/client-secret`, `/api/v1/realtime/calls`, `/api/v1/realtime/ws`, and `/api/v1/realtime/doubao-tts` have a per-IP limit of 20 requests per minute.
 - `/api/v1/realtime/voice-config` has a per-IP limit of 120 requests per minute.
+- Online duel room create/join/ready and `POST /api/v1/geo/online/matchmaking` have a per-IP limit of 20 requests per minute each; matchmaking status polling keeps the default limit.
+- AI description hourly budgets also cap each IP at a quarter of the global budget; failed upstream calls are refunded.
 - `/api/v1/preferences/exploration` has tighter per-IP and per-session limits.
 - Set `RATE_LIMIT_ENABLED=false` only for local debugging.
 
@@ -319,7 +321,7 @@ Use `--skip-proxy-check` only when the proxy health check itself is unreliable b
 - SQLite uses modernc `_pragma` connection options: WAL, 5-second busy timeout, NORMAL synchronous mode, and foreign keys. Regression tests read them back on replacement connections. Back up with SQLite's online backup API (including while WAL is active), never copy just a live `.db` file.
 - `/health` checks database connectivity; `/app/main health` checks HTTP status and the JSON health contract within 2.5 seconds without an outbound proxy. Docker health checks use this command.
 - Set `TRUSTED_PROXY_CIDRS` to the actual trusted proxy hop ranges; the default trusts no forwarding headers. The public edge must preserve the real client address while rejecting arbitrary client-supplied forwarding chains. Never use `0.0.0.0/0` or `::/0`.
-- Realtime WebSockets allow at most 16 simultaneous connections process-wide, 2 per client IP, 4 MiB per message, 15 minutes per session, 90 seconds read inactivity, and a 10-second write deadline. Reconnect after the session limit. These bounds supplement the per-minute HTTP limiter; they do not apply to direct WebRTC sessions.
+- Realtime WebSockets allow at most 16 simultaneous connections process-wide, 2 per client IP, 4 MiB per message, 15 minutes per session, 90 seconds of inactivity in both directions combined, and a 10-second write deadline. Reconnect after the session limit. Browser events are filtered to the types the frontend sends (`realtime_client_events.go`). These bounds supplement the per-minute HTTP limiter; they do not apply to direct WebRTC sessions, which are disabled unless `REALTIME_WEBRTC_ENABLED=true`.
 - Online duel preparation has a 45-second budget and is cancelled when a player leaves. Guess and zoom requests reject expired deadlines even before a timer changes phase.
 - `/api/v1/visits?source=random&distinct=1` paginates unique panoramas. The footprints page requests at most 5000 places, states the loaded count separately from the total, and clusters markers by map zoom.
 - The source checkout may be owned by the SSH login user while Docker requires sudo. Use `REMOTE_SUDO=1`; the deploy script trusts only the selected checkout for that process. It requires actual health checks, a missing-panorama 404, and invalid-zoom 400. It never prints raw production logs on failure.

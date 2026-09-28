@@ -449,3 +449,53 @@ func TestUserPreferenceRegionGeneration(t *testing.T) {
 		t.Logf("✅ 用户偏好区域坐标生成修复成功！")
 	}
 }
+
+func TestAntimeridianUserRegionStaysLocal(t *testing.T) {
+	var fiji, paris models.Region
+	fiji.Coordinates.North, fiji.Coordinates.South = -15, -20
+	fiji.Coordinates.West, fiji.Coordinates.East = 177, -178
+	paris.Coordinates.North, paris.Coordinates.South = 49, 48
+	paris.Coordinates.West, paris.Coordinates.East = 2, 3
+
+	regions := selectRegionSource([]models.Region{fiji, paris})
+	if regions[0].Area != 25 || regions[1].Area != 1 {
+		t.Fatalf("areas = %v, %v; want 25 (5° x 5°) and 1", regions[0].Area, regions[1].Area)
+	}
+
+	sawParis := false
+	for range 400 {
+		candidates, err := GenerateRandomCoordinateCandidates([]models.Region{fiji, paris}, "", RandomStrategyInterest, 12)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, c := range candidates {
+			inFiji := c.Latitude >= -20 && c.Latitude <= -15 && (c.Longitude >= 177 || c.Longitude <= -178)
+			inParis := c.Latitude >= 48 && c.Latitude <= 49 && c.Longitude >= 2 && c.Longitude <= 3
+			if !inFiji && !inParis {
+				t.Fatalf("candidate (%.3f, %.3f) outside both regions", c.Latitude, c.Longitude)
+			}
+			if c.Longitude < -180 || c.Longitude > 180 {
+				t.Fatalf("longitude %.3f not normalized", c.Longitude)
+			}
+			sawParis = sawParis || inParis
+		}
+	}
+	if !sawParis {
+		t.Fatal("antimeridian region should not crowd out the other region")
+	}
+}
+
+func TestNormalizeLongitude(t *testing.T) {
+	for input, want := range map[float64]float64{181: -179, 182.5: -177.5, -181: 179, 541: -179, 180: 180, -180: -180, 12: 12} {
+		if got := normalizeLongitude(input); math.Abs(got-want) > 1e-9 {
+			t.Fatalf("normalizeLongitude(%v) = %v, want %v", input, got, want)
+		}
+	}
+}
+
+func TestCalculateDistanceAntipodalIsFinite(t *testing.T) {
+	distance := CalculateDistance(-86.78, -179, 86.78, 1)
+	if math.IsNaN(distance) || math.Abs(distance-math.Pi*6371) > 1 {
+		t.Fatalf("antipodal distance = %v", distance)
+	}
+}

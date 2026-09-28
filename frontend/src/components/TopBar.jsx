@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { formatAddress } from "../utils/addressUtils";
 import { EXPLORATION_MODES } from "../hooks/useExplorationMode";
+import { writeLocalStorage } from "../utils/safeStorage";
 
 const CONTACT_EMAIL = "alanwang424@gmail.com";
 const WECHAT_ID = "807103724";
@@ -107,7 +108,7 @@ const TopBar = memo(function TopBar({
 
   const changeLanguage = (lng) => {
     if ((i18n.resolvedLanguage || i18n.language) === lng) return;
-    window.localStorage?.setItem("i18nextLng", lng);
+    writeLocalStorage("i18nextLng", lng);
     i18n.changeLanguage(lng);
     setShowDropdown(false);
   };

@@ -195,6 +195,73 @@ describe("AtlasVoicePanel", () => {
     return MockWebSocket.instances[0];
   }
 
+  it("releases the microphone when the socket drops and restarts cleanly", async () => {
+    const firstTrack = { stop: vi.fn() };
+    getUserMedia.mockResolvedValueOnce({ getTracks: () => [firstTrack] });
+    const socket = await startPanel();
+
+    await act(async () => {
+      socket.close();
+    });
+
+    expect(firstTrack.stop).toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "开始" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "开始" }));
+    await waitFor(() => expect(MockWebSocket.instances).toHaveLength(2));
+    await waitFor(() => expect(getUserMedia).toHaveBeenCalledTimes(2));
+    expect(firstTrack.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops a microphone granted after the panel unmounted", async () => {
+    const lateTrack = { stop: vi.fn() };
+    let grantMic;
+    getUserMedia.mockReturnValueOnce(
+      new Promise((resolve) => {
+        grantMic = resolve;
+      }),
+    );
+    const { unmount } = render(<AtlasVoicePanel />);
+    fireEvent.click(screen.getByRole("button", { name: "开始" }));
+    await waitFor(() => expect(getUserMedia).toHaveBeenCalled());
+
+    unmount();
+    await act(async () => {
+      grantMic({ getTracks: () => [lateTrack] });
+    });
+
+    expect(lateTrack.stop).toHaveBeenCalled();
+  });
+
+  it("does not resend the session for every streamed narration chunk", async () => {
+    const socket = await startPanel();
+    const sessionUpdates = () =>
+      socket.sent.filter((event) => event.type === "session.update").length;
+
+    await act(async () => {
+      useStore.setState({ isDescriptionLoading: true, description: null });
+    });
+    const duringStream = sessionUpdates();
+    await act(async () => {
+      for (const chunk of [
+        "第一段",
+        "第一段，第二段",
+        "第一段，第二段，第三段",
+      ]) {
+        useStore.setState({ description: chunk });
+      }
+    });
+    expect(sessionUpdates()).toBe(duringStream);
+
+    await act(async () => {
+      useStore.setState({
+        isDescriptionLoading: false,
+        description: "第一段，第二段，第三段",
+      });
+    });
+    expect(sessionUpdates()).toBe(duringStream + 1);
+  });
+
   it("exposes one unambiguous navigation tool", () => {
     expect(TOOL_DEFINITIONS.map((tool) => tool.name)).toEqual([
       "navigate",

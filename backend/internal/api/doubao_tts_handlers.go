@@ -3,11 +3,13 @@ package api
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -29,7 +31,17 @@ const (
 	defaultDoubaoTTSSpeaker    = "zh_male_m191_uranus_bigtts"
 	defaultDoubaoTTSFormat     = "pcm"
 	defaultDoubaoTTSSampleRate = 24000
+
+	// The stream is bounded by an overall cap plus an idle timer instead of
+	// http.Client.Timeout, which would cut off long but healthy audio streams.
+	doubaoTTSMaxDuration = 3 * time.Minute
 )
+
+// doubaoTTSIdleTimeout is the longest gap allowed between upstream chunks
+// (a variable so tests can shorten it).
+var doubaoTTSIdleTimeout = 20 * time.Second
+
+var errDoubaoTTSIdle = errors.New("Doubao TTS stream stalled")
 
 type realtimeVoiceConfigResponse struct {
 	Provider              string `json:"provider"`
@@ -230,8 +242,21 @@ func (h *RealtimeHandlers) streamDoubaoTTS(
 		return err
 	}
 
+	ctx, cancelTimeout := context.WithTimeout(c.Request.Context(), doubaoTTSMaxDuration)
+	defer cancelTimeout()
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
+	idleTimer := time.AfterFunc(doubaoTTSIdleTimeout, func() { cancel(errDoubaoTTSIdle) })
+	defer idleTimer.Stop()
+	streamErr := func(err error) error {
+		if cause := context.Cause(ctx); errors.Is(cause, errDoubaoTTSIdle) {
+			return fmt.Errorf("%w (no data for %s)", errDoubaoTTSIdle, doubaoTTSIdleTimeout)
+		}
+		return err
+	}
+
 	req, err := http.NewRequestWithContext(
-		c.Request.Context(),
+		ctx,
 		http.MethodPost,
 		config.Endpoint,
 		bytes.NewReader(reqJSON),
@@ -263,9 +288,10 @@ func (h *RealtimeHandlers) streamDoubaoTTS(
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("failed to reach Doubao TTS API: %w", err)
+		return fmt.Errorf("failed to reach Doubao TTS API: %w", streamErr(err))
 	}
 	defer resp.Body.Close()
+	idleTimer.Reset(doubaoTTSIdleTimeout)
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
@@ -284,6 +310,7 @@ func (h *RealtimeHandlers) streamDoubaoTTS(
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 2*1024*1024)
 	for scanner.Scan() {
+		idleTimer.Reset(doubaoTTSIdleTimeout)
 		line := bytes.TrimSpace(scanner.Bytes())
 		if len(line) == 0 {
 			continue
@@ -329,7 +356,7 @@ func (h *RealtimeHandlers) streamDoubaoTTS(
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("failed to read Doubao TTS stream: %w", err)
+		return fmt.Errorf("failed to read Doubao TTS stream: %w", streamErr(err))
 	}
 
 	writeDoubaoTTSLine(c.Writer, gin.H{"type": "done"})
@@ -484,12 +511,18 @@ func doubaoProxyFunc() func(*http.Request) (*url.URL, error) {
 }
 
 func newDoubaoTTSHTTPClient() *http.Client {
-	transport := &http.Transport{Proxy: doubaoProxyFunc()}
+	transport := &http.Transport{
+		Proxy:                 doubaoProxyFunc(),
+		DialContext:           (&net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ResponseHeaderTimeout: 20 * time.Second,
+		IdleConnTimeout:       90 * time.Second,
+		ForceAttemptHTTP2:     true,
+	}
 	if transport.Proxy == nil {
 		transport.Proxy = http.ProxyFromEnvironment
 	}
-	return &http.Client{
-		Transport: transport,
-		Timeout:   45 * time.Second,
-	}
+	// No Client.Timeout: it would include reading the streamed body.
+	// streamDoubaoTTS bounds each request with a context instead.
+	return &http.Client{Transport: transport}
 }

@@ -3,6 +3,7 @@ package openai
 import (
 	"context"
 	"github.com/my-streetview-project/backend/internal/models"
+	"github.com/my-streetview-project/backend/internal/utils"
 	"log"
 	"net/http"
 	"net/url"
@@ -157,6 +158,7 @@ type chatStreamChunk struct {
 			Content     string       `json:"content"`
 			Annotations []annotation `json:"annotations,omitempty"`
 		} `json:"message,omitempty"`
+		FinishReason string `json:"finish_reason,omitempty"`
 	} `json:"choices"`
 	Error *struct {
 		Message string `json:"message"`
@@ -208,13 +210,13 @@ func NewClient(apiKey string, modelName ...string) Client {
 				}
 			}
 
-			log.Printf("AI客户端使用SOCKS5代理: %s", proxyURLWithAuth)
+			log.Printf("AI客户端使用SOCKS5代理: %s", utils.RedactProxyURL(proxyURLWithAuth))
 
 			// 注意：这里需要额外的库支持SOCKS5
 			// 简化起见，我们仍然使用http.ProxyURL，但实际使用时需要使用SOCKS5专用的库
 			proxyURL, err := url.Parse(proxyURLWithAuth)
 			if err != nil {
-				log.Printf("解析代理URL失败: %v，将不使用代理", err)
+				log.Printf("解析代理URL失败: %s，将不使用代理", utils.RedactProxyURL(proxyURLWithAuth))
 				proxyFunc = nil
 			} else {
 				proxyFunc = http.ProxyURL(proxyURL)
@@ -223,7 +225,7 @@ func NewClient(apiKey string, modelName ...string) Client {
 			// 默认HTTP代理
 			proxyURL, err := url.Parse(proxyURLStr)
 			if err != nil {
-				log.Printf("解析代理URL失败: %v，将不使用代理", err)
+				log.Printf("解析代理URL失败: %s，将不使用代理", utils.RedactProxyURL(proxyURLStr))
 				proxyFunc = nil
 			} else {
 				// 如果提供了用户名和密码，添加到代理URL
@@ -231,15 +233,14 @@ func NewClient(apiKey string, modelName ...string) Client {
 					proxyURL.User = url.UserPassword(proxyUser, proxyPass)
 				}
 				proxyFunc = http.ProxyURL(proxyURL)
-				log.Printf("AI客户端使用HTTP代理: %s", proxyURL.String())
+				log.Printf("AI客户端使用HTTP代理: %s", utils.RedactProxyURL(proxyURL.String()))
 			}
 		}
 
-		// 创建带有代理的Transport
+		// 从默认 Transport 克隆，保留拨号/TLS 超时、连接池和 HTTP/2 设置
 		if proxyFunc != nil {
-			transport = &http.Transport{
-				Proxy: proxyFunc,
-			}
+			transport = http.DefaultTransport.(*http.Transport).Clone()
+			transport.Proxy = proxyFunc
 			httpClient.Transport = transport
 		}
 	}

@@ -1,6 +1,10 @@
 import { useEffect, useRef } from "react";
 import { calculateScore, haversineDistance } from "../utils/geoGameUtils";
 
+// The round result waits for Atlas before "Next round" unlocks, so a hung
+// request must give up instead of blocking the game.
+export const ATLAS_GUESS_TIMEOUT_MS = 45000;
+
 /**
  * Ask Atlas to guess the current satellite image once the round result is
  * shown. Atlas only sees the image at the zoom the player locked in, sized
@@ -9,7 +13,9 @@ import { calculateScore, haversineDistance } from "../utils/geoGameUtils";
  * Atlas guesses once per round result: resizing the panel or switching the UI
  * language afterwards must not re-ask (which would replace Atlas's score and
  * spend another rate-limited request), so those inputs are read from a ref at
- * request time. An aborted request is ignored instead of reported as failed.
+ * request time. An aborted request is ignored instead of reported as failed;
+ * a request that exceeds ATLAS_GUESS_TIMEOUT_MS counts as Atlas sitting the
+ * round out, which clears `aiLoading`.
  */
 export function useGeoGameAtlasGuess({
   state,
@@ -31,6 +37,11 @@ export function useGeoGameAtlasGuess({
     const { currentZoom, zoomSteps, satelliteImageSize, language } =
       requestInputRef.current;
     const controller = new AbortController();
+    let timedOut = false;
+    const timeoutId = window.setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, ATLAS_GUESS_TIMEOUT_MS);
 
     dispatch({ type: "SET_AI_LOADING" });
     fetch("/api/v1/geo/ai-guess", {
@@ -48,6 +59,7 @@ export function useGeoGameAtlasGuess({
     })
       .then((r) => r.json())
       .then((data) => {
+        window.clearTimeout(timeoutId);
         if (controller.signal.aborted) return;
         if (data.success && data.data) {
           const { lat, lng, reasoning } = data.data;
@@ -67,11 +79,13 @@ export function useGeoGameAtlasGuess({
         }
       })
       .catch(() => {
-        if (controller.signal.aborted) return;
+        window.clearTimeout(timeoutId);
+        if (controller.signal.aborted && !timedOut) return;
         dispatch({ type: "SET_AI_GUESS", payload: null });
       });
 
     return () => {
+      window.clearTimeout(timeoutId);
       controller.abort();
     };
   }, [state.phase, state.target, state.aiEnabled, dispatch]);

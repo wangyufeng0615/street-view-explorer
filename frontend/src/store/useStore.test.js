@@ -27,6 +27,7 @@ import {
   deleteExplorationPreference,
   setExplorationPreference,
   getRandomLocation,
+  lookupLocation,
 } from "../services/api";
 
 describe("exploration preference synchronization", () => {
@@ -84,6 +85,89 @@ describe("exploration preference synchronization", () => {
     await Promise.all([init, load]);
     expect(setExplorationPreference).toHaveBeenCalledTimes(1);
     expect(getRandomLocation).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("location loading errors", () => {
+  const CURRENT = { pano_id: "pano-current", latitude: 1, longitude: 2 };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    useStore.getState().cancelLocationDescription();
+    useStore.setState({
+      isExplorationInitialized: true,
+      isLoadingLocation: false,
+      isLocationLoading: false,
+      location: CURRENT,
+      currentLocationRef: CURRENT,
+      locationError: null,
+      lastRefreshTime: 0,
+      showToast: false,
+      toastMessage: "",
+    });
+  });
+
+  afterEach(() => {
+    useStore.getState().cancelLocationDescription();
+    vi.restoreAllMocks();
+  });
+
+  it("shows a toast instead of the error page when exploring too fast", async () => {
+    useStore.setState({ lastRefreshTime: Date.now() });
+    const result = await useStore.getState().loadRandomLocation();
+    expect(result).toMatchObject({ success: false, rateLimited: true });
+    expect(useStore.getState()).toMatchObject({
+      locationError: null,
+      location: CURRENT,
+      showToast: true,
+    });
+    expect(getRandomLocation).not.toHaveBeenCalled();
+  });
+
+  it("still reports a user-initiated failure on the page", async () => {
+    getRandomLocation.mockResolvedValue({ success: false, error: "down" });
+    const result = await useStore.getState().loadRandomLocation(true);
+    expect(result).toEqual({ success: false, error: "down" });
+    expect(useStore.getState().locationError).toBe("down");
+  });
+
+  it("keeps the current place when a preserving lookup fails", async () => {
+    lookupLocation.mockResolvedValue({ success: false, error: "no pano" });
+    const result = await useStore
+      .getState()
+      .loadLocationFromURL(3, 4, { preserveLocation: true });
+    expect(result).toEqual({ success: false, error: "no pano" });
+    expect(useStore.getState()).toMatchObject({
+      location: CURRENT,
+      locationError: null,
+      isLoadingLocation: false,
+    });
+  });
+
+  it("stops the old narration from streaming into a location that is loading", async () => {
+    let pushOldDelta;
+    let oldSignal;
+    apiMocks.streamLocationDescription.mockImplementation(
+      (_id, _lang, signal, _view, onDelta) => {
+        oldSignal = signal;
+        pushOldDelta = onDelta;
+        return new Promise(() => {});
+      },
+    );
+    useStore.getState().loadLocationDescription("pano-current");
+    getRandomLocation.mockReturnValue(new Promise(() => {}));
+
+    useStore.getState().loadRandomLocation(true);
+    await Promise.resolve();
+    pushOldDelta("旧地点的讲解");
+
+    expect(oldSignal.aborted).toBe(true);
+    expect(useStore.getState()).toMatchObject({
+      location: null,
+      description: null,
+      isDescriptionLoading: false,
+    });
   });
 });
 

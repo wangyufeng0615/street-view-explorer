@@ -2,14 +2,44 @@ package utils
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net"
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 )
+
+// RedactProxyURL returns a proxy URL that is safe to log: user and password
+// are removed. A string that cannot be parsed keeps only the part after the
+// last "@".
+func RedactProxyURL(proxyURL string) string {
+	parsed, err := url.Parse(proxyURL)
+	if err != nil {
+		if at := strings.LastIndex(proxyURL, "@"); at >= 0 {
+			return "<redacted>@" + proxyURL[at+1:]
+		}
+		return proxyURL
+	}
+	if parsed.User == nil {
+		return proxyURL
+	}
+	parsed.User = nil
+	return parsed.String()
+}
+
+// proxyParseError drops the raw URL from url.Parse errors, which would
+// otherwise carry proxy credentials into logs.
+func proxyParseError(err error) error {
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		return fmt.Errorf("解析代理URL失败: %v", urlErr.Err)
+	}
+	return fmt.Errorf("解析代理URL失败")
+}
 
 // CheckProxyHealth 检查代理是否可用
 func CheckProxyHealth(proxyURL string, timeout time.Duration) error {
@@ -20,7 +50,7 @@ func CheckProxyHealth(proxyURL string, timeout time.Duration) error {
 	// 解析代理URL
 	proxy, err := url.Parse(proxyURL)
 	if err != nil {
-		return fmt.Errorf("解析代理URL失败: %w", err)
+		return proxyParseError(err)
 	}
 
 	// 创建带有代理的HTTP客户端
@@ -67,7 +97,7 @@ func SetupProxyWithFallback(proxyURL string, timeout time.Duration) func(*http.R
 	// 解析代理URL
 	proxy, err := url.Parse(proxyURL)
 	if err != nil {
-		log.Printf("解析代理URL失败: %v，将不使用代理", err)
+		log.Printf("%v，将不使用代理", proxyParseError(err))
 		return nil
 	}
 

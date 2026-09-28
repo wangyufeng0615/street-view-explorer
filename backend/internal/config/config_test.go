@@ -34,3 +34,16 @@ func TestNew(t *testing.T) {
 		}
 	})
 }
+
+func TestRealtimeWebRTCDisabledByDefault(t *testing.T) {
+	t.Setenv("REALTIME_WEBRTC_ENABLED", "")
+	if New().SecurityConfig().Realtime.WebRTCEnabled {
+		t.Fatal("WebRTC should be disabled by default")
+	}
+	for value, want := range map[string]bool{"true": true, "1": true, "false": false, "nonsense": false} {
+		t.Setenv("REALTIME_WEBRTC_ENABLED", value)
+		if got := New().SecurityConfig().Realtime.WebRTCEnabled; got != want {
+			t.Fatalf("REALTIME_WEBRTC_ENABLED=%q: got %v, want %v", value, got, want)
+		}
+	}
+}

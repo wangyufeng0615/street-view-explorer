@@ -888,8 +888,12 @@ export async function getGeoBattleMatchmakingStatus() {
   });
 }
 
-export async function cancelGeoBattleMatchmaking() {
+/**
+ * `keepalive` lets the DELETE outlive the page when called from `pagehide`.
+ */
+export async function cancelGeoBattleMatchmaking({ keepalive = false } = {}) {
   return requestJson("/geo/online/matchmaking", {
     method: "DELETE",
+    ...(keepalive ? { keepalive: true } : {}),
   });
 }

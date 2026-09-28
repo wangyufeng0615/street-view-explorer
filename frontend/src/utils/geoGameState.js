@@ -26,6 +26,9 @@ const initialState = {
   roundPlan: null, // Array<{ source: 'database'|'random', entry? }>
   countryCode: "",
   usedTargets: [],
+  // The current round's target could not be resolved; LOADING waits for a
+  // retry instead of dropping the game.
+  targetError: false,
 };
 
 /** @param {GameState} state @param {import('./geoGameTypes').GameAction} action @returns {GameState} */
@@ -48,9 +51,16 @@ function reducer(state, action) {
       return {
         ...state,
         phase: "PLAYING",
+        targetError: false,
         target: action.payload,
         usedTargets: appendUsedTarget(state.usedTargets, action.payload),
       };
+    case "TARGET_FAILED":
+      if (state.phase !== "LOADING") return state;
+      return { ...state, targetError: true };
+    case "RETRY_TARGET":
+      if (state.phase !== "LOADING" || !state.targetError) return state;
+      return { ...state, targetError: false };
     case "ZOOM_OUT":
       if (state.phase !== "PLAYING" || state.currentZoom <= MIN_ZOOM) {
         return state;

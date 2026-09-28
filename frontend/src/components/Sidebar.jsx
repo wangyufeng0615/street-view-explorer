@@ -9,6 +9,7 @@ import React, {
 import { useTranslation } from "react-i18next";
 import AiDescription from "./AiDescription";
 import AtlasVoicePanel from "./AtlasVoicePanel";
+import useStore from "../store/useStore";
 import "../styles/Sidebar.css";
 
 const GlobalMap = lazy(() => import("./GlobalMap"));
@@ -16,10 +17,11 @@ const PreviewMap = lazy(() => import("./PreviewMap"));
 
 const SECONDARY_MAP_DELAY_MS = 700;
 
+// 固定的元素引用，AiDescription 重渲染时不会连带重渲染语音面板
+const ATLAS_VOICE_CONTROL = <AtlasVoicePanel />;
+
 const Sidebar = memo(function Sidebar({
   location,
-  heading,
-  streetViewView,
   description,
   descriptionCitations,
   descriptionResearchStatus,
@@ -33,12 +35,20 @@ const Sidebar = memo(function Sidebar({
   mapPickStatus,
 }) {
   const { t } = useTranslation();
+  // 朝向和视角变化很频繁，只在侧栏内订阅，首页其余部分不跟着重渲染
+  const heading = useStore((state) => state.heading);
+  const streetViewView = useStore((state) => state.streetViewView);
   const scrollContainerRef = useRef(null);
   const [shouldLoadSecondaryMaps, setShouldLoadSecondaryMaps] = useState(false);
+  // 加载新位置时 location 会短暂为空；地图继续显示上一个位置，不卸载重建
+  const [mapLocation, setMapLocation] = useState(location);
+  if (location && location !== mapLocation) {
+    setMapLocation(location);
+  }
 
+  // 只在首次拿到位置时延迟加载地图，让街景先占用网络；之后地图常驻
   useEffect(() => {
-    setShouldLoadSecondaryMaps(false);
-    if (!location?.pano_id) return undefined;
+    if (shouldLoadSecondaryMaps || !location?.pano_id) return undefined;
 
     let idleId = null;
     const timerId = window.setTimeout(() => {
@@ -58,7 +68,7 @@ const Sidebar = memo(function Sidebar({
         window.cancelIdleCallback(idleId);
       }
     };
-  }, [location?.pano_id]);
+  }, [location?.pano_id, shouldLoadSecondaryMaps]);
 
   // 当组件挂载时重置滚动位置
   useEffect(() => {
@@ -87,7 +97,7 @@ const Sidebar = memo(function Sidebar({
           className="sidebar-section sidebar-section--global-map"
         >
           <div style={styles.mapContainer} className="sidebar-map-container">
-            {location && shouldLoadSecondaryMaps ? (
+            {mapLocation && shouldLoadSecondaryMaps ? (
               <Suspense
                 fallback={
                   <div style={styles.mapPlaceholder}>
@@ -96,8 +106,8 @@ const Sidebar = memo(function Sidebar({
                 }
               >
                 <GlobalMap
-                  latitude={location.latitude}
-                  longitude={location.longitude}
+                  latitude={mapLocation.latitude}
+                  longitude={mapLocation.longitude}
                   mapId="global"
                   onLocationPick={onMapLocationPick}
                   isPickingLocation={isMapPickLoading}
@@ -125,12 +135,11 @@ const Sidebar = memo(function Sidebar({
           className="sidebar-section sidebar-section--preview-map"
         >
           <div style={styles.mapContainer} className="sidebar-map-container">
-            {location && shouldLoadSecondaryMaps ? (
+            {mapLocation && shouldLoadSecondaryMaps ? (
               <Suspense fallback={null}>
                 <PreviewMap
-                  latitude={location.latitude}
-                  longitude={location.longitude}
-                  heading={heading}
+                  latitude={mapLocation.latitude}
+                  longitude={mapLocation.longitude}
                   mapId="preview"
                   onLocationPick={onMapLocationPick}
                   isPickingLocation={isMapPickLoading}
@@ -159,7 +168,7 @@ const Sidebar = memo(function Sidebar({
         >
           <div style={styles.aiContainer} className="sidebar-ai-container">
             <AiDescription
-              voiceControl={<AtlasVoicePanel />}
+              voiceControl={ATLAS_VOICE_CONTROL}
               isLoading={isLoadingDesc || isLocationLoading}
               error={descError}
               description={description}

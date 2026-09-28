@@ -3,13 +3,17 @@ import React from "react";
 /**
  * Single-player satellite panel: current static image, zoom-out handoff
  * overlay, loading/error overlays, the always-visible center pin and the
- * zoom-out control. `panelRef` is used to measure the panel size.
+ * zoom-out control. `panelRef` is used to measure the panel size. When the
+ * round target could not be found (`targetError`) the loading overlay turns
+ * into an error with a retry button; the game and its scores are kept.
  */
 export default function GeoGameSatellitePanel({
   t,
   panelRef,
   phase,
   hasTarget,
+  targetError,
+  onRetryTarget,
   zoomSteps,
   satelliteUrl,
   imgLoaded,
@@ -50,7 +54,22 @@ export default function GeoGameSatellitePanel({
           />
         </div>
       )}
-      {(phase === "LOADING" ||
+      {phase === "LOADING" && targetError && (
+        <div
+          className="geo-loading-overlay geo-loading-overlay--error"
+          role="alert"
+        >
+          <span>{t("geo.target_error")}</span>
+          <button
+            type="button"
+            className="geo-zoom-out-btn geo-target-retry-btn"
+            onClick={onRetryTarget}
+          >
+            {t("geo.target_retry")}
+          </button>
+        </div>
+      )}
+      {((phase === "LOADING" && !targetError) ||
         ((phase === "PLAYING" || phase === "ROUND_RESULT") &&
           !imgLoaded &&
           !zoomTransition)) && (

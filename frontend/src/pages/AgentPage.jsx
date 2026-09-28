@@ -4,6 +4,7 @@ import { Trans, useTranslation } from "react-i18next";
 import { loadGoogleMapsScript } from "../utils/googleMaps";
 import { getAgentJourneys, getAgentJourneyDetail } from "../services/api";
 import LetterContent from "../components/LetterContent";
+import { readLocalStorage, writeLocalStorage } from "../utils/safeStorage";
 import "../styles/AgentPage.css";
 
 // Load classical fonts for title
@@ -373,13 +374,13 @@ export default function AgentPage() {
   const [pin, setPin] = useState(null);
   const [copied, setCopied] = useState(false);
   const [mapReady, setMapReady] = useState(false);
-  const [mapError, setMapError] = useState("");
+  const [mapError, setMapError] = useState(false);
   const [mapRetryKey, setMapRetryKey] = useState(0);
   const [feedback, setFeedback] = useState(null);
 
   // Journey viewer state
   const [viewerTravelerId, setViewerTravelerId] = useState(
-    () => localStorage.getItem("atlas_traveler_id") || "",
+    () => readLocalStorage("atlas_traveler_id") || "",
   );
   const [journeys, setJourneys] = useState([]);
   const [totalPlaces, setTotalPlaces] = useState(0);
@@ -395,6 +396,8 @@ export default function AgentPage() {
   const mapInstanceRef = useRef(null);
   const markerRef = useRef(null);
   const copyTimerRef = useRef(null);
+  // Only the latest journey lookup may write the list (lookups can race).
+  const journeysRequestRef = useRef(0);
 
   const currentLanguage = i18n.resolvedLanguage || "en";
   const currentLocale = currentLanguage === "zh" ? "zh-CN" : "en-US";
@@ -430,7 +433,7 @@ export default function AgentPage() {
   const hasMountQueried = useRef(false);
   useEffect(() => {
     if (viewerTravelerId.trim()) {
-      localStorage.setItem("atlas_traveler_id", viewerTravelerId.trim());
+      writeLocalStorage("atlas_traveler_id", viewerTravelerId.trim());
     }
   }, [viewerTravelerId]);
 
@@ -439,7 +442,7 @@ export default function AgentPage() {
     let cancelled = false;
     async function initMap() {
       setMapReady(false);
-      setMapError("");
+      setMapError(false);
       try {
         const maps = await loadGoogleMapsScript();
         if (cancelled || !mapRef.current) return;
@@ -461,7 +464,7 @@ export default function AgentPage() {
         mapInstanceRef.current = map;
         setMapReady(true);
       } catch {
-        if (!cancelled) setMapError(t("agent.error_load_map"));
+        if (!cancelled) setMapError(true);
       }
     }
     initMap();
@@ -473,7 +476,7 @@ export default function AgentPage() {
       }
       mapInstanceRef.current = null;
     };
-  }, [mapRetryKey, t]);
+  }, [mapRetryKey]);
 
   useEffect(() => {
     if (!pin || !mapReady || !mapInstanceRef.current) return;
@@ -514,9 +517,12 @@ export default function AgentPage() {
   const loadJourneys = useCallback(
     async (travelerId) => {
       if (!travelerId) return;
+      const requestId = journeysRequestRef.current + 1;
+      journeysRequestRef.current = requestId;
       setIsLoadingJourneys(true);
       setJourneysError("");
       const res = await getAgentJourneys(travelerId);
+      if (journeysRequestRef.current !== requestId) return;
       if (res.success && res.data) {
         setJourneys(res.data.journeys || []);
         setTotalPlaces(res.data.total_places || 0);
@@ -708,7 +714,9 @@ export default function AgentPage() {
             )}
             {mapError && (
               <div className="agent-map-overlay">
-                <div className="agent-map-overlay-title">{mapError}</div>
+                <div className="agent-map-overlay-title">
+                  {t("agent.error_load_map")}
+                </div>
                 <button
                   className="agent-secondary-btn"
                   onClick={() => setMapRetryKey((k) => k + 1)}

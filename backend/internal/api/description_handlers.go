@@ -1,9 +1,11 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -34,34 +36,96 @@ func writeDescriptionSSE(c *gin.Context, event string, payload interface{}) erro
 	return nil
 }
 
-func (h *Handlers) reserveDescriptionBudget(c *gin.Context, detailed bool) bool {
+// Hourly description budgets. The global budget caps total spend; each client
+// IP may only use a quarter of it so one address cannot starve everyone else.
+const (
+	descriptionGlobalBudgetStandard = 360
+	descriptionGlobalBudgetDetailed = 120
+	descriptionIPBudgetStandard     = descriptionGlobalBudgetStandard / 4
+	descriptionIPBudgetDetailed     = descriptionGlobalBudgetDetailed / 4
+)
+
+// descriptionBudgetReservation remembers the counters charged for one request
+// so they can be returned when the upstream call fails.
+type descriptionBudgetReservation struct {
+	limiter repositories.RateLimiter
+	keys    []string
+}
+
+func (r *descriptionBudgetReservation) refund() {
+	if r == nil {
+		return
+	}
+	for _, key := range r.keys {
+		refundRateLimit(r.limiter, key)
+	}
+	r.keys = nil
+}
+
+// refundOnUpstreamFailure returns the budget unless the client went away:
+// refunding cancelled requests would let a client start and abort paid calls
+// for free.
+func (r *descriptionBudgetReservation) refundOnUpstreamFailure(c *gin.Context, err error) {
+	if err == nil || errors.Is(err, context.Canceled) || errors.Is(c.Request.Context().Err(), context.Canceled) {
+		return
+	}
+	r.refund()
+}
+
+func (h *Handlers) reserveDescriptionBudget(c *gin.Context, detailed bool) (*descriptionBudgetReservation, bool) {
 	if h.descriptionBudget == nil {
-		return true
+		return nil, true
 	}
 
-	key := "global_ratelimit:description:standard"
-	maxRequests := 360
+	kind := "standard"
+	globalMax, ipMax := descriptionGlobalBudgetStandard, descriptionIPBudgetStandard
 	if detailed {
-		key = "global_ratelimit:description:detailed"
-		maxRequests = 120
+		kind = "detailed"
+		globalMax, ipMax = descriptionGlobalBudgetDetailed, descriptionIPBudgetDetailed
 	}
-	allowed, _, err := h.descriptionBudget.CheckAndIncrement(key, maxRequests, time.Hour)
-	if err != nil {
+	reservation := &descriptionBudgetReservation{limiter: h.descriptionBudget}
+	unavailable := func() {
+		reservation.refund()
 		c.JSON(http.StatusServiceUnavailable, gin.H{
 			"success": false,
 			"error":   "描述服务的成本保护暂时不可用，请稍后再试",
 		})
-		return false
 	}
+
+	ipKey := "ip_budget:description:" + kind + ":" + c.ClientIP()
+	allowed, _, err := checkRateLimit(c, h.descriptionBudget, ipKey, ipMax, time.Hour)
+	if err != nil {
+		unavailable()
+		return nil, false
+	}
+	reservation.keys = append(reservation.keys, ipKey)
 	if !allowed {
+		c.Header("Retry-After", "3600")
+		c.JSON(http.StatusTooManyRequests, gin.H{
+			"success": false,
+			"error":   "当前网络的描述额度已用完，请稍后再试",
+		})
+		return nil, false
+	}
+
+	globalKey := "global_ratelimit:description:" + kind
+	allowed, _, err = checkRateLimit(c, h.descriptionBudget, globalKey, globalMax, time.Hour)
+	if err != nil {
+		unavailable()
+		return nil, false
+	}
+	reservation.keys = append(reservation.keys, globalKey)
+	if !allowed {
+		// Nothing was served; give the IP share back.
+		reservation.refund()
 		c.Header("Retry-After", "3600")
 		c.JSON(http.StatusServiceUnavailable, gin.H{
 			"success": false,
 			"error":   "描述服务已达到当前时段额度，请稍后再试",
 		})
-		return false
+		return nil, false
 	}
-	return true
+	return reservation, true
 }
 
 // 获取位置描述
@@ -105,11 +169,12 @@ func (h *Handlers) GetLocationDescription(c *gin.Context) {
 		})
 		return
 	}
-	if !h.reserveDescriptionBudget(c, false) {
+	budget, ok := h.reserveDescriptionBudget(c, false)
+	if !ok {
 		return
 	}
 	if wantsDescriptionStream(c) {
-		h.streamDescription(c, svc.AIService, *loc, language, view, false)
+		h.streamDescription(c, svc.AIService, *loc, language, view, false, budget)
 		return
 	}
 
@@ -120,12 +185,9 @@ func (h *Handlers) GetLocationDescription(c *gin.Context) {
 	ctx := openai.WithResearchObserver(c.Request.Context(), func(status string) { researchStatus = status })
 	desc, citations, err := svc.AIService.GetDescriptionForLocationContext(ctx, *loc, language, view)
 	if err != nil {
+		budget.refundOnUpstreamFailure(c, err)
 		duration := time.Since(startTime)
-		statusCode := http.StatusInternalServerError
-
-		if strings.Contains(err.Error(), "超时") || strings.Contains(err.Error(), "timeout") {
-			statusCode = http.StatusRequestTimeout
-		}
+		statusCode := descriptionErrorStatus(err)
 
 		logger.Error("get_description_failed", "Failed to get AI description", err, map[string]interface{}{
 			"pano_id":  panoID,
@@ -221,11 +283,12 @@ func (h *Handlers) GetLocationDetailedDescription(c *gin.Context) {
 		})
 		return
 	}
-	if !h.reserveDescriptionBudget(c, true) {
+	budget, ok := h.reserveDescriptionBudget(c, true)
+	if !ok {
 		return
 	}
 	if wantsDescriptionStream(c) {
-		h.streamDescription(c, svc.AIService, *loc, language, view, true)
+		h.streamDescription(c, svc.AIService, *loc, language, view, true, budget)
 		return
 	}
 
@@ -236,15 +299,9 @@ func (h *Handlers) GetLocationDetailedDescription(c *gin.Context) {
 	ctx := openai.WithResearchObserver(c.Request.Context(), func(status string) { researchStatus = status })
 	desc, citations, err := svc.AIService.GetDetailedDescriptionForLocationContext(ctx, *loc, language, view)
 	if err != nil {
+		budget.refundOnUpstreamFailure(c, err)
 		duration := time.Since(startTime)
-		statusCode := http.StatusInternalServerError
-		errorMsg := err.Error()
-
-		if strings.Contains(errorMsg, "超时") || strings.Contains(errorMsg, "timeout") {
-			statusCode = http.StatusRequestTimeout
-		} else if strings.Contains(errorMsg, "没有找到基础对话历史") {
-			statusCode = http.StatusBadRequest
-		}
+		statusCode := descriptionErrorStatus(err)
 
 		logger.Error("get_detailed_description_failed", "Failed to get detailed AI description", err, map[string]interface{}{
 			"pano_id":  panoID,
@@ -297,7 +354,7 @@ func (h *Handlers) GetLocationDetailedDescription(c *gin.Context) {
 	})
 }
 
-func (h *Handlers) streamDescription(c *gin.Context, aiService *services.AIService, loc models.Location, language string, view services.StreetViewView, detailed bool) {
+func (h *Handlers) streamDescription(c *gin.Context, aiService *services.AIService, loc models.Location, language string, view services.StreetViewView, detailed bool, budget *descriptionBudgetReservation) {
 	startTime := time.Now()
 	researchStatus := "unverified"
 	ctx := openai.WithResearchObserver(c.Request.Context(), func(status string) { researchStatus = status })
@@ -325,7 +382,8 @@ func (h *Handlers) streamDescription(c *gin.Context, aiService *services.AIServi
 		desc, citations, err = aiService.StreamDescriptionForLocation(ctx, loc, language, view, onDelta)
 	}
 	if err != nil {
-		CaptureHandlerError(c, err, http.StatusInternalServerError, map[string]interface{}{
+		budget.refundOnUpstreamFailure(c, err)
+		CaptureHandlerError(c, err, descriptionErrorStatus(err), map[string]interface{}{
 			"operation": "stream_description",
 			"pano_id":   loc.PanoID,
 			"language":  language,
@@ -418,4 +476,30 @@ func streetViewViewFromRequest(c *gin.Context) (services.StreetViewView, error) 
 		Pitch:   pitch,
 		FOV:     fov,
 	}, nil
+}
+
+// descriptionErrorStatus maps an AI description failure to an HTTP status.
+// AppError.Error() only returns the user-facing message, so timeouts are
+// detected on the wrapped cause. 504 is used instead of 408: the timeout is
+// upstream, and browsers may silently retry a 408.
+func descriptionErrorStatus(err error) int {
+	if isUpstreamTimeout(err) {
+		return http.StatusGatewayTimeout
+	}
+	return http.StatusInternalServerError
+}
+
+func isUpstreamTimeout(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return true
+	}
+	message := strings.ToLower(reportableErrorMessage(err))
+	return strings.Contains(message, "timeout") || strings.Contains(message, "超时")
 }

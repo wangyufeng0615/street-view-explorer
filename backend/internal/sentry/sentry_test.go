@@ -67,3 +67,14 @@ func TestSentryEndpointRejectsInvalidHubWithoutPanicking(t *testing.T) {
 		t.Fatalf("status = %d, want 500; body: %s", response.Code, response.Body.String())
 	}
 }
+
+func TestHashSessionIDIsStableAndHidesRawID(t *testing.T) {
+	raw := "0123456789abcdef0123456789abcdef"
+	first, second := HashSessionID(raw), HashSessionID(raw)
+	if first != second || first == "" {
+		t.Fatalf("hash not stable: %q vs %q", first, second)
+	}
+	if strings.Contains(first, raw) || first == HashSessionID(raw+"x") {
+		t.Fatalf("hash %q leaks or collides", first)
+	}
+}

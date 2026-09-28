@@ -69,7 +69,7 @@ func main() {
 			os.Setenv("PROXY_USER", *proxyUser)
 			os.Setenv("PROXY_PASS", *proxyPass)
 		}
-		log.Printf("使用代理: %s (类型: %s)", *proxyURL, *proxyType)
+		log.Printf("使用代理: %s (类型: %s)", utils.RedactProxyURL(*proxyURL), *proxyType)
 
 		if !cfg.SkipProxyCheck() {
 			err := utils.CheckProxyHealth(*proxyURL, 5*time.Second)
@@ -85,7 +85,7 @@ func main() {
 	// 设置服务特定代理
 	if *openaiProxy != "" {
 		os.Setenv("AI_PROXY_URL", *openaiProxy)
-		log.Printf("AI使用专用代理: %s", *openaiProxy)
+		log.Printf("AI使用专用代理: %s", utils.RedactProxyURL(*openaiProxy))
 
 		if !cfg.SkipProxyCheck() {
 			err := utils.CheckProxyHealth(*openaiProxy, 5*time.Second)
@@ -98,7 +98,7 @@ func main() {
 	}
 	if *mapsProxy != "" {
 		os.Setenv("MAPS_PROXY_URL", *mapsProxy)
-		log.Printf("Google Maps使用专用代理: %s", *mapsProxy)
+		log.Printf("Google Maps使用专用代理: %s", utils.RedactProxyURL(*mapsProxy))
 
 		if !cfg.SkipProxyCheck() {
 			err := utils.CheckProxyHealth(*mapsProxy, 5*time.Second)
@@ -234,7 +234,7 @@ func main() {
 	handlers := api.NewHandlers(locationService, aiService, repo)
 	agentHandlers := api.NewAgentHandlers(repo, repo, handlers.GlobalServices(), cfg.GoogleMapsAPIKey(), googleMaps.HTTPClient())
 	geoHandlers := api.NewGeoHandlers(globalAIClient, cfg.GoogleMapsAPIKey(), locationService, geoBattleService, googleMaps.HTTPClient())
-	realtimeHandlers := api.NewRealtimeHandlers()
+	realtimeHandlers := api.NewRealtimeHandlers(api.WithRealtimeWebRTC(cfg.SecurityConfig().Realtime.WebRTCEnabled))
 	api.SetupRoutes(r, handlers, agentHandlers, realtimeHandlers, geoHandlers)
 
 	addr := cfg.ServerAddress()

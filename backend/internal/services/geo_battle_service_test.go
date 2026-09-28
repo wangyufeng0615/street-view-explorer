@@ -2,6 +2,8 @@ package services
 
 import (
 	"context"
+	"encoding/json"
+	"math"
 	"testing"
 	"time"
 
@@ -293,4 +295,152 @@ func newTestGeoBattleServiceWithPlayingRoom() (*GeoBattleService, *geoBattleRoom
 		},
 		queue: map[string]*geoBattleQueueEntry{},
 	}, room
+}
+
+func TestGeoBattleDepartedPlayerRejoinsAndIsNotShownAsOpponent(t *testing.T) {
+	svc, room := newTestGeoBattleServiceWithPlayingRoom()
+	if err := svc.LeaveRoom(room.ID, "player-a"); err != nil {
+		t.Fatal(err)
+	}
+	if room.Phase != models.GeoBattlePhaseFinished {
+		t.Fatalf("mid-match leave phase = %s, want finished", room.Phase)
+	}
+
+	rejoined, err := svc.JoinPrivateRoom("player-a", "A", room.Code)
+	if err != nil {
+		t.Fatalf("rejoin failed: %v", err)
+	}
+	if rejoined.Phase != models.GeoBattlePhaseLobby || rejoined.Me.Left || !rejoined.CanReady {
+		t.Fatalf("rejoined snapshot phase=%s left=%v canReady=%v", rejoined.Phase, rejoined.Me.Left, rejoined.CanReady)
+	}
+	if rejoined.Opponent == nil || rejoined.Opponent.Nickname != "B" || !rejoined.Opponent.IsHost || rejoined.Me.IsHost {
+		t.Fatalf("host should move to remaining player: me=%+v opponent=%+v", rejoined.Me, rejoined.Opponent)
+	}
+	if len(room.Players) != 2 || svc.sessionRooms["player-a"] != room.ID {
+		t.Fatalf("players=%d sessionRoom=%q", len(room.Players), svc.sessionRooms["player-a"])
+	}
+	if _, err := svc.SetReady(room.ID, "player-a", true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestGeoBattleNewPlayerDoesNotSeeDepartedOpponent(t *testing.T) {
+	svc, room := newTestGeoBattleServiceWithPlayingRoom()
+	if err := svc.LeaveRoom(room.ID, "player-a"); err != nil {
+		t.Fatal(err)
+	}
+
+	joined, err := svc.JoinPrivateRoom("player-c", "C", room.Code)
+	if err != nil {
+		t.Fatalf("JoinPrivateRoom failed: %v", err)
+	}
+	if joined.Opponent == nil || joined.Opponent.Nickname != "B" || joined.Opponent.Left || !joined.CanReady {
+		t.Fatalf("new player opponent=%+v canReady=%v", joined.Opponent, joined.CanReady)
+	}
+	remaining, err := svc.GetRoomSnapshot(room.ID, "player-b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if remaining.Opponent == nil || remaining.Opponent.Nickname != "C" || !remaining.Me.IsHost {
+		t.Fatalf("remaining player opponent=%+v me=%+v", remaining.Opponent, remaining.Me)
+	}
+	if _, err := svc.GetRoomSnapshot(room.ID, "player-a"); err != ErrGeoBattleNotInRoom {
+		t.Fatalf("departed player should be gone, err=%v", err)
+	}
+}
+
+func TestGeoBattleLastPlayerLeavingDeletesRoomWithDepartedPlayer(t *testing.T) {
+	svc, room := newTestGeoBattleServiceWithPlayingRoom()
+	if err := svc.LeaveRoom(room.ID, "player-a"); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.LeaveRoom(room.ID, "player-b"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := svc.rooms[room.ID]; ok {
+		t.Fatal("room should be deleted once nobody active remains")
+	}
+	if _, ok := svc.roomCodes[room.Code]; ok {
+		t.Fatal("room code should be released")
+	}
+}
+
+func TestGeoBattleFinishedMatchmakingRoomReleasesSession(t *testing.T) {
+	svc, room := newTestGeoBattleServiceWithPlayingRoom()
+	room.Mode = models.GeoBattleModeMatchmaking
+	room.Code = ""
+	room.Phase = models.GeoBattlePhaseFinished
+
+	status, err := svc.GetMatchmakingStatus("player-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.Status != models.GeoBattleQueueIdle {
+		t.Fatalf("status = %s, want idle instead of the finished room", status.Status)
+	}
+	remaining, err := svc.GetRoomSnapshot(room.ID, "player-b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if remaining.Phase != models.GeoBattlePhaseFinished || remaining.Opponent == nil || !remaining.Opponent.Left || remaining.CanReady {
+		t.Fatalf("remaining player snapshot phase=%s opponent=%+v canReady=%v", remaining.Phase, remaining.Opponent, remaining.CanReady)
+	}
+	if err := svc.LeaveRoom(room.ID, "player-b"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := svc.rooms[room.ID]; ok {
+		t.Fatal("matchmaking room should be deleted after both players leave")
+	}
+}
+
+func TestGeoBattleMatchmakingOpponentLeavingLobbyEndsRoom(t *testing.T) {
+	svc, room := newTestGeoBattleServiceWithPlayingRoom()
+	room.Mode = models.GeoBattleModeMatchmaking
+	room.Phase = models.GeoBattlePhaseLobby
+
+	if err := svc.LeaveRoom(room.ID, "player-a"); err != nil {
+		t.Fatal(err)
+	}
+	if room.Phase != models.GeoBattlePhaseFinished || room.Message != "player_left:A" {
+		t.Fatalf("phase=%s message=%q, want finished with player_left", room.Phase, room.Message)
+	}
+}
+
+func TestGeoBattleAntipodalGuessStaysFinite(t *testing.T) {
+	svc, room := newTestGeoBattleServiceWithPlayingRoom()
+	room.Rounds[0].Location.Latitude = -86.78
+	room.Rounds[0].Location.Longitude = -179
+	lat, lng := 86.78, 1.0
+
+	distance := geoBattleHaversineDistance(lat, lng, -86.78, -179)
+	if math.IsNaN(distance) || math.Abs(distance-math.Pi*6371) > 1 {
+		t.Fatalf("antipodal distance = %v, want half circumference", distance)
+	}
+	if _, err := svc.SubmitGuess(room.ID, "player-a", &lat, &lng, false); err != nil {
+		t.Fatal(err)
+	}
+	guess := room.Rounds[0].Guesses["player-a"]
+	if guess.DistanceKM == nil || math.IsNaN(*guess.DistanceKM) || guess.Score < 0 {
+		t.Fatalf("guess distance=%v score=%d", guess.DistanceKM, guess.Score)
+	}
+
+	room.Phase = models.GeoBattlePhaseReveal
+	snapshot, err := svc.GetRoomSnapshot(room.ID, "player-b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := json.Marshal(snapshot); err != nil {
+		t.Fatalf("reveal snapshot must stay JSON encodable: %v", err)
+	}
+}
+
+func TestGeoBattleNonFiniteDistanceScoresZeroAndIsHidden(t *testing.T) {
+	for _, distance := range []float64{math.NaN(), math.Inf(1)} {
+		if score := geoBattleCalculateScore(0, distance); score != 0 {
+			t.Fatalf("score(%v) = %d, want 0", distance, score)
+		}
+		if snapshot := geoBattleGuessSnapshotFromInternal(&geoBattleGuess{DistanceKM: &distance}); snapshot.DistanceKM != nil {
+			t.Fatalf("non-finite distance %v leaked into snapshot", distance)
+		}
+	}
 }

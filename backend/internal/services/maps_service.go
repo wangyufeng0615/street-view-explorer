@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -60,7 +61,7 @@ func NewMapsService(apiKey string) (*MapsService, error) {
 			proxyURL = os.Getenv("PROXY_URL")
 		}
 		logger.Info("proxy_configured", "Maps service configured with proxy", map[string]interface{}{
-			"proxy_url": proxyURL,
+			"proxy_url": utils.RedactProxyURL(proxyURL),
 		})
 	}
 
@@ -105,8 +106,9 @@ func (s *MapsService) configureHTTPClient() (*http.Client, bool) {
 	// 创建代理URL
 	proxy, err := url.Parse(proxyURL)
 	if err != nil {
-		utils.MapsLogger().Error("proxy_parse_failed", "Failed to parse proxy URL, using direct connection", err, map[string]interface{}{
-			"proxy_url": proxyURL,
+		// url.Parse errors embed the raw URL, including any credentials.
+		utils.MapsLogger().Error("proxy_parse_failed", "Failed to parse proxy URL, using direct connection", nil, map[string]interface{}{
+			"proxy_url": utils.RedactProxyURL(proxyURL),
 		})
 		return &http.Client{Timeout: 15 * time.Second}, false
 	}
@@ -335,7 +337,7 @@ func (s *MapsService) GeocodeAddress(ctx context.Context, address string) (float
 	}
 
 	if len(resp) == 0 {
-		return 0, 0, "", fmt.Errorf("未找到地点: %s", address)
+		return 0, 0, "", fmt.Errorf("%w: %s", errPlaceNotFound, address)
 	}
 
 	lat := resp[0].Geometry.Location.Lat
@@ -366,8 +368,18 @@ func (s *MapsService) SearchPlace(ctx context.Context, query string, language st
 		}, nil
 	}
 
-	return nil, fmt.Errorf("未找到地点: %s", query)
+	// Only report "not found" when every lookup came back empty; a quota or
+	// network failure must surface as an upstream error instead.
+	for _, err := range []error{placeErr, textErr, geocodeErr} {
+		if !errors.Is(err, errPlaceNotFound) {
+			return nil, fmt.Errorf("地点搜索请求失败: %w", err)
+		}
+	}
+	return nil, fmt.Errorf("%w: %s", errPlaceNotFound, query)
 }
+
+// errPlaceNotFound marks lookups that succeeded but returned no match.
+var errPlaceNotFound = errors.New("未找到地点")
 
 func (s *MapsService) findPlaceFromText(ctx context.Context, query string, language string) (*PlaceCandidate, error) {
 	req := &maps.FindPlaceFromTextRequest{
@@ -387,7 +399,7 @@ func (s *MapsService) findPlaceFromText(ctx context.Context, query string, langu
 		return nil, err
 	}
 	if len(resp.Candidates) == 0 {
-		return nil, fmt.Errorf("未找到地点: %s", query)
+		return nil, fmt.Errorf("%w: %s", errPlaceNotFound, query)
 	}
 	return placeSearchResultToCandidate(resp.Candidates[0]), nil
 }
@@ -403,7 +415,7 @@ func (s *MapsService) textSearchPlace(ctx context.Context, query string, languag
 		return nil, err
 	}
 	if len(resp.Results) == 0 {
-		return nil, fmt.Errorf("未找到地点: %s", query)
+		return nil, fmt.Errorf("%w: %s", errPlaceNotFound, query)
 	}
 	return placeSearchResultToCandidate(resp.Results[0]), nil
 }

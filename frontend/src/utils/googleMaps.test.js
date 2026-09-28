@@ -32,3 +32,33 @@ it("shares an in-flight SDK across language changes and never reloads a register
   expect(await loadGoogleMapsScript()).toBe(api);
   expect(document.querySelectorAll("script[data-google-maps]")).toHaveLength(1);
 });
+
+it("disconnects the visibility observer when the wait is cancelled", async () => {
+  const observers = [];
+  class MockIntersectionObserver {
+    constructor(callback) {
+      this.callback = callback;
+      this.disconnect = vi.fn();
+      this.observe = vi.fn();
+      observers.push(this);
+    }
+  }
+  vi.stubGlobal("IntersectionObserver", MockIntersectionObserver);
+  try {
+    const { loadGoogleMapsWhenVisible } = await import("./googleMaps");
+    const controller = new AbortController();
+    const pending = loadGoogleMapsWhenVisible(document.createElement("div"), {
+      signal: controller.signal,
+    });
+    controller.abort();
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    expect(observers[0].disconnect).toHaveBeenCalled();
+    await expect(
+      loadGoogleMapsWhenVisible(document.createElement("div"), {
+        signal: controller.signal,
+      }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});

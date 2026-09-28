@@ -67,3 +67,24 @@ func TestStreamKeepsConsumerCancellation(t *testing.T) {
 		t.Fatalf("consumer cancellation lost: %v", err)
 	}
 }
+
+func TestStreamEndingWithoutDoneOrFinishReasonIsTruncated(t *testing.T) {
+	_, err := readChatCompletionStream(strings.NewReader(
+		"data: {\"choices\":[{\"delta\":{\"content\":\"Partial answer\"}}]}\n\n",
+	), nil)
+	if !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Fatalf("clean EOF before completion should be truncation, got %v", err)
+	}
+}
+
+func TestStreamFinishReasonCompletesWithoutDone(t *testing.T) {
+	resp, err := readChatCompletionStream(strings.NewReader(
+		"data: {\"choices\":[{\"delta\":{\"content\":\"Whole answer\"},\"finish_reason\":\"stop\"}]}\n\n",
+	), nil)
+	if err != nil {
+		t.Fatalf("finish_reason should mark completion: %v", err)
+	}
+	if resp.Choices[0].Message.Content != "Whole answer" {
+		t.Fatalf("content = %q", resp.Choices[0].Message.Content)
+	}
+}

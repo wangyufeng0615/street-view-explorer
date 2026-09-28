@@ -29,19 +29,21 @@ import useLocationDescription from "../hooks/useLocationDescription";
 import useExplorationMode, {
   EXPLORATION_MODES,
 } from "../hooks/useExplorationMode";
-import useUIHandlers from "../hooks/useUIHandlers";
 import useKeyboardNavigation from "../hooks/useKeyboardNavigation";
 import useStore from "../store/useStore";
 
 // Memoized StreetViewContainer wrapper
+// 朝向在这里订阅，拖动或自动旋转时只重渲染街景，不牵动整个首页
 const StreetViewContainer = memo(
-  ({ latitude, longitude, heading, onPovChanged, onViewChanged }) => {
+  ({ latitude, longitude, paused, onPovChanged, onViewChanged }) => {
+    const heading = useStore((state) => state.heading);
     return (
       <div className="street-view-container">
         <StreetView
           latitude={latitude}
           longitude={longitude}
           heading={heading}
+          paused={paused}
           onPovChanged={onPovChanged}
           onViewChanged={onViewChanged}
         />
@@ -52,7 +54,7 @@ const StreetViewContainer = memo(
     return (
       prevProps.latitude === nextProps.latitude &&
       prevProps.longitude === nextProps.longitude &&
-      prevProps.heading === nextProps.heading
+      prevProps.paused === nextProps.paused
     );
   },
 );
@@ -144,9 +146,10 @@ export default function HomePage({ showFootprintFromRoute = false }) {
     handlePreferenceChange,
   } = useExplorationMode(lastRefreshTimeRef, loadingRef);
 
-  const { heading, setHeading, toastMessage, showToast } = useUIHandlers();
+  const setHeading = useStore((state) => state.setHeading);
+  const toastMessage = useStore((state) => state.toastMessage);
+  const showToast = useStore((state) => state.showToast);
   const setStreetViewView = useStore((state) => state.setStreetViewView);
-  const streetViewView = useStore((state) => state.streetViewView);
 
   // 使用键盘导航钩子
   useKeyboardNavigation(loadRandomLocation, isLoading, loadingRef);
@@ -406,7 +409,7 @@ export default function HomePage({ showFootprintFromRoute = false }) {
           <StreetViewContainer
             latitude={location?.latitude}
             longitude={location?.longitude}
-            heading={heading}
+            paused={showFootprintFromRoute}
             onPovChanged={handlePovChanged}
             onViewChanged={handleViewChanged}
           />
@@ -415,8 +418,6 @@ export default function HomePage({ showFootprintFromRoute = false }) {
         {/* 侧边栏 */}
         <Sidebar
           location={location}
-          heading={heading}
-          streetViewView={streetViewView}
           description={description}
           descriptionCitations={descriptionCitations}
           descriptionResearchStatus={descriptionResearchStatus}

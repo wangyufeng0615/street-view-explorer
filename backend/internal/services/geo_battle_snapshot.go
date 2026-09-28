@@ -1,6 +1,7 @@
 package services
 
 import (
+	"math"
 	"time"
 
 	"github.com/my-streetview-project/backend/internal/models"
@@ -154,11 +155,17 @@ func geoBattleGuessSnapshotFromInternal(guess *geoBattleGuess) *models.GeoBattle
 	if guess == nil {
 		return nil
 	}
+	// JSON cannot encode NaN or Inf; one bad value would break the whole
+	// room snapshot for both players.
+	distanceKM := guess.DistanceKM
+	if distanceKM != nil && (math.IsNaN(*distanceKM) || math.IsInf(*distanceKM, 0)) {
+		distanceKM = nil
+	}
 	return &models.GeoBattleGuessSnapshot{
 		Lat:         guess.Lat,
 		Lng:         guess.Lng,
 		Skipped:     guess.Skipped,
-		DistanceKM:  guess.DistanceKM,
+		DistanceKM:  distanceKM,
 		Score:       guess.Score,
 		ZoomSteps:   guess.ZoomSteps,
 		SubmittedAt: guess.SubmittedAt,

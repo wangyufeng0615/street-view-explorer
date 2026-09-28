@@ -8,6 +8,10 @@ import {
 } from "../utils/geoBattleRoomState";
 
 const SATELLITE_ZOOM_TRANSITION_MS = 760;
+// Failed image requests are retried with exponential backoff (1s, 2s, 4s)
+// before the error overlay is shown; polling alone never refetches because
+// the image version does not change.
+const IMAGE_RETRY_DELAYS_MS = [1000, 2000, 4000];
 
 /**
  * Loads the current round's satellite image as an object URL and runs the
@@ -76,64 +80,77 @@ function useGeoBattleSatelliteImage({
     }
     setImgError(false);
 
-    fetchGeoBattleImage(roomId, imageVersion, controller.signal)
-      .then((url) => {
-        if (cancelled) {
-          URL.revokeObjectURL(url);
-          return;
-        }
-        const shouldAnimateZoom =
-          hadVisibleImage &&
-          previousImageVersion &&
-          previousImageVersion !== imageVersion &&
-          roomPhase === "playing" &&
-          !(
-            typeof window !== "undefined" &&
-            window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches
-          );
-        setImageObjectUrl((prev) => {
-          if (prev) URL.revokeObjectURL(prev);
-          imageObjectUrlRef.current = url;
-          return url;
-        });
-        displayedImageVersionRef.current = imageVersion;
-        setDisplayedImageVersion(imageVersion);
-        setImageLoading(false);
-        setImgLoaded(true);
-        setImgError(false);
-        if (shouldAnimateZoom) {
-          setZoomTransition({
-            toUrl: url,
-            requestId: transitionRequestId,
-            animationDone: false,
-          });
-          if (zoomTransitionTimerRef.current) {
-            window.clearTimeout(zoomTransitionTimerRef.current);
+    let retryCount = 0;
+    let retryTimerId = null;
+
+    const loadImage = () =>
+      fetchGeoBattleImage(roomId, imageVersion, controller.signal)
+        .then((url) => {
+          if (cancelled) {
+            URL.revokeObjectURL(url);
+            return;
           }
-          zoomTransitionTimerRef.current = window.setTimeout(() => {
-            setZoomTransition((current) =>
-              completeZoomTransition(current, transitionRequestId),
+          const shouldAnimateZoom =
+            hadVisibleImage &&
+            previousImageVersion &&
+            previousImageVersion !== imageVersion &&
+            roomPhase === "playing" &&
+            !(
+              typeof window !== "undefined" &&
+              window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches
             );
-            zoomTransitionTimerRef.current = null;
-          }, SATELLITE_ZOOM_TRANSITION_MS);
-        } else {
-          setZoomTransition(null);
-        }
-      })
-      .catch((err) => {
-        if (cancelled || err.name === "AbortError") return;
-        setImageLoading(false);
-        setImgError(true);
-        setImgLoaded(true);
-        feedbackRef.current.playFeedback("error");
-        feedbackRef.current.showFeedbackBubble(
-          feedbackRef.current.t("geo_online.feedback_image_error"),
-          "danger",
-        );
-      });
+          setImageObjectUrl((prev) => {
+            if (prev) URL.revokeObjectURL(prev);
+            imageObjectUrlRef.current = url;
+            return url;
+          });
+          displayedImageVersionRef.current = imageVersion;
+          setDisplayedImageVersion(imageVersion);
+          setImageLoading(false);
+          setImgLoaded(true);
+          setImgError(false);
+          if (shouldAnimateZoom) {
+            setZoomTransition({
+              toUrl: url,
+              requestId: transitionRequestId,
+              animationDone: false,
+            });
+            if (zoomTransitionTimerRef.current) {
+              window.clearTimeout(zoomTransitionTimerRef.current);
+            }
+            zoomTransitionTimerRef.current = window.setTimeout(() => {
+              setZoomTransition((current) =>
+                completeZoomTransition(current, transitionRequestId),
+              );
+              zoomTransitionTimerRef.current = null;
+            }, SATELLITE_ZOOM_TRANSITION_MS);
+          } else {
+            setZoomTransition(null);
+          }
+        })
+        .catch((err) => {
+          if (cancelled || err.name === "AbortError") return;
+          if (retryCount < IMAGE_RETRY_DELAYS_MS.length) {
+            const delayMs = IMAGE_RETRY_DELAYS_MS[retryCount];
+            retryCount += 1;
+            retryTimerId = window.setTimeout(loadImage, delayMs);
+            return;
+          }
+          setImageLoading(false);
+          setImgError(true);
+          setImgLoaded(true);
+          feedbackRef.current.playFeedback("error");
+          feedbackRef.current.showFeedbackBubble(
+            feedbackRef.current.t("geo_online.feedback_image_error"),
+            "danger",
+          );
+        });
+
+    loadImage();
 
     return () => {
       cancelled = true;
+      window.clearTimeout(retryTimerId);
       controller.abort();
     };
     // roomPhase is part of imageVersion, so listing it adds no extra fetches.
@@ -183,4 +200,8 @@ function useGeoBattleSatelliteImage({
   };
 }
 
-export { useGeoBattleSatelliteImage, SATELLITE_ZOOM_TRANSITION_MS };
+export {
+  useGeoBattleSatelliteImage,
+  SATELLITE_ZOOM_TRANSITION_MS,
+  IMAGE_RETRY_DELAYS_MS,
+};

@@ -16,6 +16,7 @@ func (s *GeoBattleService) JoinMatchmaking(sessionID, nickname string) (models.G
 	startRoomID := ""
 	prepareToken := uint64(0)
 
+	s.releaseFinishedMatchmakingLocked(sessionID)
 	if room := s.activeRoomForSessionLocked(sessionID); room != nil {
 		if room.Mode != models.GeoBattleModeMatchmaking {
 			s.mu.Unlock()
@@ -49,7 +50,9 @@ func (s *GeoBattleService) JoinMatchmaking(sessionID, nickname string) (models.G
 		if entry.SessionID == sessionID {
 			continue
 		}
-		if now.Sub(entry.LastSeenAt) > geoBattleQueueTTL {
+		// A queued page polls every few seconds; one that stopped polling
+		// has been closed, so matching it would leave the newcomer alone.
+		if now.Sub(entry.LastSeenAt) > geoBattleOnlineThreshold {
 			delete(s.queue, entry.SessionID)
 			continue
 		}
@@ -128,6 +131,7 @@ func (s *GeoBattleService) GetMatchmakingStatus(sessionID string) (models.GeoBat
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	s.releaseFinishedMatchmakingLocked(sessionID)
 	if room := s.activeRoomForSessionLocked(sessionID); room != nil && room.Mode == models.GeoBattleModeMatchmaking {
 		s.touchRoomPlayerLocked(room, sessionID)
 		return models.GeoBattleMatchmakingSnapshot{

@@ -223,11 +223,14 @@ export default function useAtlasVoiceAudio({
   }, []);
 
   const startMicrophoneStreaming = useCallback(
-    async (stream, socket) => {
+    async (stream, socket, isCurrent = () => true) => {
       const audioContext = getAudioContext();
       if (audioContext.state === "suspended") {
         await audioContext.resume();
       }
+      // The session may have been torn down (and this context closed) while
+      // resuming; building the graph now would leak it.
+      if (!isCurrent()) return false;
 
       const source = audioContext.createMediaStreamSource(stream);
       const processor = audioContext.createScriptProcessor(4096, 1, 1);
@@ -266,6 +269,7 @@ export default function useAtlasVoiceAudio({
       audioSourceRef.current = source;
       audioProcessorRef.current = processor;
       audioSilenceRef.current = silence;
+      return true;
     },
     [getAudioContext, shouldSuppressMicForAssistantEcho],
   );

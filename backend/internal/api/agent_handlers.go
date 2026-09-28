@@ -1,8 +1,10 @@
 package api
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -40,6 +42,12 @@ func NewAgentHandlers(repo repositories.Repository, limiter repositories.RateLim
 // ==================== Token helpers ====================
 
 const maxAgentTokenLength = 128
+
+// minNewAgentTokenLength applies only when creating journeys. The Odyssey skill
+// tells agents to generate a 7-character hex traveler ID, and publicLetter only
+// scrubs tokens of at least this length from published letters. Existing
+// journeys with shorter tokens keep working for reads and updates.
+const minNewAgentTokenLength = 7
 
 var agentTokenRegex = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 var publicLetterImageRegex = regexp.MustCompile(`!\[([^\]]*)\]\(([^)]+)\)`)
@@ -103,7 +111,7 @@ func publicLetter(letter, travelerToken string, stops []models.AgentJourneyStop)
 		}
 		return fmt.Sprintf("![%s](stop_%d)", parts[1], stop.StopNumber)
 	})
-	if len(travelerToken) >= 7 {
+	if len(travelerToken) >= minNewAgentTokenLength {
 		safe = strings.ReplaceAll(safe, travelerToken, "[traveler-id]")
 	}
 	return safe
@@ -129,6 +137,10 @@ func (ah *AgentHandlers) CreateJourney(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": PublicErrorMessage(err)})
 		return
 	}
+	if len(req.Token) < minNewAgentTokenLength {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": fmt.Sprintf("Token must be at least %d characters", minNewAgentTokenLength)})
+		return
+	}
 	if req.StartLat < -90 || req.StartLat > 90 || req.StartLng < -180 || req.StartLng > 180 {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "Invalid coordinates"})
 		return
@@ -140,7 +152,7 @@ func (ah *AgentHandlers) CreateJourney(c *gin.Context) {
 
 	// Rate limit: 10 journeys/hour per token
 	if ah.limiter != nil {
-		allowed, _, err := ah.limiter.CheckAndIncrement("agent_create:"+req.Token, 10, time.Hour)
+		allowed, _, err := checkRateLimit(c, ah.limiter, "agent_create:"+req.Token, 10, time.Hour)
 		if err != nil {
 			c.JSON(http.StatusServiceUnavailable, gin.H{"success": false, "error": "Rate limit service unavailable"})
 			return
@@ -329,7 +341,7 @@ func (ah *AgentHandlers) AgentExplore(c *gin.Context) {
 
 	if ah.limiter != nil {
 		// Per-token: 60 explores/hour
-		allowed, _, err := ah.limiter.CheckAndIncrement("agent_explore:"+token, 60, time.Hour)
+		allowed, _, err := checkRateLimit(c, ah.limiter, "agent_explore:"+token, 60, time.Hour)
 		if err != nil {
 			c.JSON(http.StatusServiceUnavailable, gin.H{"success": false, "error": "Rate limit service unavailable"})
 			return
@@ -339,7 +351,7 @@ func (ah *AgentHandlers) AgentExplore(c *gin.Context) {
 			return
 		}
 		// Per-IP global: 200 explores/hour (prevents token rotation abuse)
-		allowed, _, err = ah.limiter.CheckAndIncrement("agent_explore_ip:"+clientIP(c), 200, time.Hour)
+		allowed, _, err = checkRateLimit(c, ah.limiter, "agent_explore_ip:"+clientIP(c), 200, time.Hour)
 		if err != nil {
 			c.JSON(http.StatusServiceUnavailable, gin.H{"success": false, "error": "Rate limit service unavailable"})
 			return
@@ -352,9 +364,24 @@ func (ah *AgentHandlers) AgentExplore(c *gin.Context) {
 
 	loc, err := ah.global.LocationService.LookupLocationWithContext(c.Request.Context(), lat, lng, language)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{
+		if errors.Is(err, services.ErrStreetViewNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{
+				"success": false,
+				"error":   "No street view found near these coordinates. Try adjusting lat/lng to a location closer to roads or populated areas. Do NOT call streetview API without a valid pano_id from a successful explore response.",
+			})
+			return
+		}
+		if errors.Is(err, context.Canceled) || errors.Is(c.Request.Context().Err(), context.Canceled) {
+			return
+		}
+		CaptureHandlerError(c, err, http.StatusBadGateway, map[string]interface{}{
+			"operation": "agent_explore",
+			"latitude":  lat,
+			"longitude": lng,
+		})
+		c.JSON(http.StatusBadGateway, gin.H{
 			"success": false,
-			"error":   "No street view found near these coordinates. Try adjusting lat/lng to a location closer to roads or populated areas. Do NOT call streetview API without a valid pano_id from a successful explore response.",
+			"error":   "Street View lookup is temporarily unavailable. Retry the same coordinates in a moment.",
 		})
 		return
 	}
@@ -667,7 +694,7 @@ func (ah *AgentHandlers) StreetViewImage(c *gin.Context) {
 	if ah.limiter != nil {
 		// Per-token rate limit (only when using token auth)
 		if token != "" {
-			allowed, _, err := ah.limiter.CheckAndIncrement("agent_sv_img:"+token, 120, time.Hour)
+			allowed, _, err := checkRateLimit(c, ah.limiter, "agent_sv_img:"+token, 120, time.Hour)
 			if err != nil {
 				c.JSON(http.StatusServiceUnavailable, gin.H{"success": false, "error": "Rate limit service unavailable"})
 				return
@@ -678,7 +705,7 @@ func (ah *AgentHandlers) StreetViewImage(c *gin.Context) {
 			}
 		}
 		// Per-IP global: 300 images/hour (always applied)
-		allowed, _, err := ah.limiter.CheckAndIncrement("agent_sv_img_ip:"+clientIP(c), 300, time.Hour)
+		allowed, _, err := checkRateLimit(c, ah.limiter, "agent_sv_img_ip:"+clientIP(c), 300, time.Hour)
 		if err != nil {
 			c.JSON(http.StatusServiceUnavailable, gin.H{"success": false, "error": "Rate limit service unavailable"})
 			return

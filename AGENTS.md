@@ -120,8 +120,8 @@ backend/
 ### Atlas Voice / Realtime
 
 - `GET /api/v1/realtime/voice-config` - 返回当前语音提供方和豆包 TTS 配置状态。
-- `GET /api/v1/realtime/client-secret` - 为 WebRTC 路径创建 OpenAI Realtime 临时 session。
-- `POST /api/v1/realtime/calls` - 代理 WebRTC SDP 到 OpenAI Realtime。
+- `GET /api/v1/realtime/client-secret` - 为 WebRTC 路径创建 OpenAI Realtime 临时 session；默认关闭（404），需 `REALTIME_WEBRTC_ENABLED=true`。
+- `POST /api/v1/realtime/calls` - 代理 WebRTC SDP 到 OpenAI Realtime；同样受 `REALTIME_WEBRTC_ENABLED` 控制。
 - `GET /api/v1/realtime/ws` - 默认语音路径，同源 WebSocket relay，Vite 和 Nginx 都需要支持 upgrade。
 - `POST /api/v1/realtime/doubao-tts` - `ATLAS_VOICE_PROVIDER=doubao` 时把 Atlas 文本回复转成豆包 PCM NDJSON 音频流。
 
@@ -182,7 +182,8 @@ backend/
 ## Atlas Voice 实现要点
 
 - 前端入口是 `frontend/src/components/AtlasVoicePanel.jsx`，只挂在首页；运行时工具和 VAD 配置在 `frontend/src/utils/atlasVoiceRuntime.js`，共享 persona 在 `frontend/src/utils/atlasPersona.js` 和 `backend/internal/atlas/persona.go`。
-- 默认传输是 `VITE_REALTIME_TRANSPORT=backend-ws`：浏览器连同源 `/api/v1/realtime/ws`，后端再连 OpenAI Realtime。WebRTC 兼容路径会先拿 `/client-secret`，再走 `/calls`。
+- 默认传输是 `VITE_REALTIME_TRANSPORT=backend-ws`：浏览器连同源 `/api/v1/realtime/ws`，后端再连 OpenAI Realtime。WebRTC 兼容路径会先拿 `/client-secret`，再走 `/calls`，后端默认关闭，启用时前后端要同时配置。
+- `/ws` 中继只放行前端实际发送的客户端事件（`realtime_client_events.go` 白名单）：`session.update` 只保留允许字段、三个 Atlas 工具和截断后的 instructions。前端新增事件类型或工具时必须同步更新白名单，否则会被静默丢弃。空闲 90 秒按两个方向共享计时。
 - 默认 Realtime 模型是 `gpt-realtime-2.1`，输出音色 `cedar`，转写模型 `gpt-4o-mini-transcribe`，turn detection 是 `semantic_vad` + `high`，支持被用户打断。
 - 工具集合在 `frontend/src/utils/atlasVoiceTools.js`：`navigate`（random/theme/place/coordinates/nearby）、`look_direction`、`read_current_place`。每个用户回合只允许一次导航尝试；具体地标/地址/店名走 `navigate` 的 place 模式，调用 `GET /api/v1/locations/search`。
 - `ATLAS_VOICE_PROVIDER=doubao` 时 OpenAI Realtime 只负责听写、文本、记忆和工具调用，后端 `/doubao-tts` 负责把最终文本转成 PCM 流。前端会排队播放并用短窗口忽略豆包外放回灌。
@@ -192,7 +193,8 @@ backend/
 
 - `make clean` 保留数据卷；只有显式 `make destroy-data CONFIRM_DELETE_DATA=yes` 才删除当前 Compose 项目的数据卷，执行前必须备份。
 
-- `RateLimitMiddleware()` 默认开启；`/api/v1/locations/search` 是每 IP 每分钟 45 次；`/api/v1/geo/ai-guess` 是每 IP 每分钟 30 次；`/api/v1/geo/satellite` 和 `/api/v1/geo/online/rooms/:roomId/image` 是每 IP 每分钟 180 次；Realtime session / WebSocket / Doubao TTS 入口是每 IP 每分钟 20 次，`/api/v1/realtime/voice-config` 是 120 次。
+- `RateLimitMiddleware()` 默认开启；`/api/v1/locations/search` 是每 IP 每分钟 45 次；`/api/v1/geo/ai-guess` 是每 IP 每分钟 30 次；`/api/v1/geo/satellite` 和 `/api/v1/geo/online/rooms/:roomId/image` 是每 IP 每分钟 180 次；Realtime session / WebSocket / Doubao TTS 入口是每 IP 每分钟 20 次，`/api/v1/realtime/voice-config` 是 120 次；在线对战建房、加入、ready 和 `POST /matchmaking` 是每 IP 每分钟 20 次（每次开局会生成 5 轮题目并调用大量 Google 接口）。AI 描述全局小时预算另有每 IP 四分之一份额，上游失败会退还。
+- 限流表 `expires_at` 统一写成 UTC 定宽字符串（`rateLimitTime`），不要直接绑定 `time.Time`；启动迁移会清掉旧格式行。
 - Google Static Maps 请求失败日志会隐藏 `GOOGLE_API_KEY`；不要把旧本地日志或生产日志原样外发，尤其是 2026-05-03 之前生成的地图错误日志。
 - Realtime 日志以 `[ATLAS_VOICE]` 开头，包含时延、provider、VAD 摘要和工具输出摘要；不要记录或外发 `OPENAI_API_KEY`、`REALTIME_API_KEY`、`DOUBAO_TTS_API_KEY`、`DOUBAO_TTS_TOKEN`。
 - 分支发布时先 push 当前分支，再用 `make deploy-remote REMOTE_BRANCH=$(git branch --show-current)`，保持本地、origin、VPS 三边一致；远端有 tracked dirty 文件时部署脚本会拒绝继续。
@@ -214,6 +216,7 @@ backend/
 - `OPENAI_API_KEY` / `REALTIME_API_KEY`，Atlas Voice 语音功能需要其一
 - `OPENAI_REALTIME_MODEL` / `OPENAI_REALTIME_API_BASE` / `OPENAI_REALTIME_WS_URL` / `OPENAI_REALTIME_VOICE`（默认 `cedar`）/ `OPENAI_REALTIME_TRANSCRIPTION_MODEL`
 - `OPENAI_REALTIME_ALLOWED_ORIGINS` / `REALTIME_ALLOWED_ORIGINS`，额外允许的语音 WebSocket 浏览器来源
+- `REALTIME_WEBRTC_ENABLED`，默认 `false`；只在前端 `VITE_REALTIME_TRANSPORT=webrtc` 时开启
 - `ATLAS_VOICE_PROVIDER`，默认 `openai`；设为 `doubao` 时 OpenAI Realtime 只负责听写、文本回复和工具调用，音频由豆包 TTS 输出
 - `DOUBAO_TTS_API_KEY`，或 `DOUBAO_TTS_APP_ID`/`DOUBAO_TTS_APPID` + `DOUBAO_TTS_ACCESS_KEY`/`DOUBAO_TTS_TOKEN`；豆包语音合成凭据
 - `DOUBAO_TTS_SPEAKER`（默认 `zh_male_m191_uranus_bigtts`，云舟 2.0 男声）/ `DOUBAO_TTS_RESOURCE_ID`（默认 `seed-tts-2.0`）/ `DOUBAO_TTS_FORMAT`（必须是 `pcm`）/ `DOUBAO_TTS_SAMPLE_RATE` / `DOUBAO_TTS_SPEECH_RATE` / `DOUBAO_TTS_PROXY_URL`

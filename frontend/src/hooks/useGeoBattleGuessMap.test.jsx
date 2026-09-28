@@ -324,6 +324,68 @@ describe("useGeoBattleGuessMap", () => {
     expect(onMap(fake.markers)).toHaveLength(0);
   });
 
+  it("draws the reveal when the room first loads straight into reveal", async () => {
+    // Maps is ready before the room arrives (e.g. refresh mid-reveal).
+    const { rerender } = await setup(null);
+    expect(fake.maps).toHaveLength(0);
+
+    rerender({
+      room: roomAt("reveal", {
+        index: 3,
+        target: TARGET,
+        my_guess: { lat: -30, lng: 150 },
+        opponent_guess: { lat: -37.8, lng: 144.9 },
+      }),
+    });
+    expect(fake.maps).toHaveLength(1);
+    expect(markerColors(fake.markers)).toEqual([GREEN, RED, BLUE]);
+    expect(onMap(fake.polylines)).toHaveLength(2);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(280);
+    });
+    expect(markerColors(fake.markers)).toEqual([GREEN, RED, BLUE]);
+    expect(fake.maps[0].fitBounds.mock.calls.at(-1)[0].points).toHaveLength(3);
+  });
+
+  it("draws the final round when the room first loads as finished", async () => {
+    const { rerender } = await setup(null);
+    rerender({
+      room: roomAt("finished", {
+        index: 5,
+        target: TARGET,
+        my_guess: { lat: -30, lng: 150 },
+      }),
+    });
+    expect(markerColors(fake.markers)).toEqual([GREEN, RED]);
+  });
+
+  it("shows the new round's pins when a snapshot skips a whole round", async () => {
+    const { rerender } = await setup();
+    rerender({
+      room: roomAt("reveal", {
+        index: 1,
+        target: TARGET,
+        my_guess: { lat: -30, lng: 150 },
+      }),
+    });
+    const firstRoundMarkers = onMap(fake.markers);
+    expect(firstRoundMarkers).toHaveLength(2);
+
+    const nextTarget = { lat: 48.85, lng: 2.35 };
+    rerender({
+      room: roomAt("reveal", {
+        index: 2,
+        target: nextTarget,
+        my_guess: { lat: 50, lng: 3 },
+        opponent_guess: { lat: 47, lng: 1 },
+      }),
+    });
+    expect(firstRoundMarkers.every((marker) => !marker.map)).toBe(true);
+    expect(markerColors(fake.markers)).toEqual([GREEN, RED, BLUE]);
+    expect(onMap(fake.markers)[0].position).toEqual(nextTarget);
+  });
+
   it("clearResultOverlays / resetMapViewport handles work imperatively", async () => {
     const { result, rerender } = await setup();
     rerender({

@@ -3,6 +3,10 @@
 
 export const STATIC_MAP_MAX_SIDE = 640;
 export const STATIC_MAP_MIN_SIDE = 120;
+// The short side snaps to this step so small layout changes (window drags,
+// scrollbars) map to the same request and reuse the cached image instead of
+// fetching a new one for every pixel of aspect ratio.
+export const STATIC_MAP_SIZE_STEP = 16;
 
 // Layout used before the satellite panel has been measured.
 const INITIAL_RIGHT_PANEL_WIDTH = 380;
@@ -10,9 +14,10 @@ const INITIAL_TOPBAR_HEIGHT = 50;
 
 /**
  * Pick a Static Maps request size matching the panel aspect ratio.
- * The long side is always STATIC_MAP_MAX_SIDE; both sides are clamped
- * to [STATIC_MAP_MIN_SIDE, STATIC_MAP_MAX_SIDE]. Returns null for
- * unmeasurable panels.
+ * The long side is always STATIC_MAP_MAX_SIDE; the short side is snapped to
+ * STATIC_MAP_SIZE_STEP, and both sides are clamped to
+ * [STATIC_MAP_MIN_SIDE, STATIC_MAP_MAX_SIDE]. Returns null for unmeasurable
+ * panels.
  */
 export function getSatelliteRequestSize(width, height) {
   if (
@@ -27,12 +32,15 @@ export function getSatelliteRequestSize(width, height) {
   let requestWidth;
   let requestHeight;
 
+  const snap = (value) =>
+    Math.round(value / STATIC_MAP_SIZE_STEP) * STATIC_MAP_SIZE_STEP;
+
   if (aspect >= 1) {
     requestWidth = STATIC_MAP_MAX_SIDE;
-    requestHeight = Math.round(STATIC_MAP_MAX_SIDE / aspect);
+    requestHeight = snap(STATIC_MAP_MAX_SIDE / aspect);
   } else {
     requestHeight = STATIC_MAP_MAX_SIDE;
-    requestWidth = Math.round(STATIC_MAP_MAX_SIDE * aspect);
+    requestWidth = snap(STATIC_MAP_MAX_SIDE * aspect);
   }
 
   return {

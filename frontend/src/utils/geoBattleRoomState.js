@@ -45,6 +45,15 @@ function getBattleResultOverlayKey(room) {
   ].join("|");
 }
 
+/**
+ * Phase + round of a snapshot. An action error raised under one progress key
+ * is stale once the room has moved on to another.
+ */
+function getRoomProgressKey(room) {
+  if (!room) return "";
+  return `${room.phase}|${room.round?.index ?? "-"}`;
+}
+
 /** The server only serves the round image in playing/reveal/finished. */
 function isBattleImageAvailable(room) {
   return Boolean(
@@ -127,6 +136,7 @@ export {
   getRoomMessage,
   getBattleImageVersion,
   getBattleResultOverlayKey,
+  getRoomProgressKey,
   isBattleImageAvailable,
   completeZoomTransition,
   getRoomFeedbackSnapshot,

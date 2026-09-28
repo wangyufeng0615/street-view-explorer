@@ -382,8 +382,9 @@ func (ls *LocationService) SetExplorationPreference(sessionID, interest string) 
 		return fmt.Errorf("无法理解该探索兴趣")
 	}
 
-	// 验证返回的区域数据
-	if err := validateRegions(regions); err != nil {
+	// 验证返回的区域数据，只保存合法区域
+	regions, err = validateRegions(regions)
+	if err != nil {
 		return fmt.Errorf("无法理解该探索兴趣")
 	}
 
@@ -416,17 +417,18 @@ func containsSensitiveChars(s string) bool {
 	return false
 }
 
-// validateRegions 验证区域数据的合法性
-func validateRegions(regions []models.Region) error {
+// validateRegions 验证区域数据的合法性，返回其中的合法区域。
+// 非法区域必须剔除：随机选点按面积加权，一个超大区域会压过其他所有区域。
+func validateRegions(regions []models.Region) ([]models.Region, error) {
 	if len(regions) == 0 {
-		return fmt.Errorf("区域列表为空")
+		return nil, fmt.Errorf("区域列表为空")
 	}
 
 	if len(regions) > 10 {
-		return fmt.Errorf("区域数量超出限制")
+		return nil, fmt.Errorf("区域数量超出限制")
 	}
 
-	validCount := 0
+	valid := make([]models.Region, 0, len(regions))
 	for _, region := range regions {
 		// 检查坐标范围
 		if region.Coordinates.North < -90 || region.Coordinates.North > 90 ||
@@ -446,7 +448,11 @@ func validateRegions(regions []models.Region) error {
 
 		// 检查区域大小
 		latDiff := region.Coordinates.North - region.Coordinates.South
-		lonDiff := math.Abs(region.Coordinates.East - region.Coordinates.West)
+		lonDiff := region.Coordinates.East - region.Coordinates.West
+		if lonDiff < 0 {
+			// West > East 表示跨越 180° 经线
+			lonDiff += 360
+		}
 
 		if latDiff > 89 {
 			continue
@@ -456,15 +462,15 @@ func validateRegions(regions []models.Region) error {
 			continue
 		}
 
-		validCount++
+		valid = append(valid, region)
 	}
 
 	// 只要有至少一个有效区域就通过验证
-	if validCount == 0 {
-		return fmt.Errorf("没有有效的区域数据")
+	if len(valid) == 0 {
+		return nil, fmt.Errorf("没有有效的区域数据")
 	}
 
-	return nil
+	return valid, nil
 }
 
 // LookupLocation 根据坐标查找或创建位置

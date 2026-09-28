@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import {
   STATIC_MAP_MAX_SIDE,
   STATIC_MAP_MIN_SIDE,
+  STATIC_MAP_SIZE_STEP,
   getInitialSatelliteRequestSize,
   getSatelliteRequestSize,
   getSatelliteUrl,
@@ -23,13 +24,23 @@ describe("getSatelliteRequestSize", () => {
     });
   });
 
-  it("rounds the short side to whole pixels", () => {
-    // 640 / (1000 / 700) = 448; 640 / (1000 / 333) = 213.12
+  it("snaps the short side to fixed steps", () => {
+    // 640 / (1000 / 700) = 448; 640 / (1000 / 333) = 213.12 -> 208
     expect(getSatelliteRequestSize(1000, 700)).toEqual({
       width: 640,
       height: 448,
     });
-    expect(getSatelliteRequestSize(1000, 333).height).toBe(213);
+    expect(getSatelliteRequestSize(1000, 333).height).toBe(208);
+    expect(
+      getSatelliteRequestSize(1000, 333).height % STATIC_MAP_SIZE_STEP,
+    ).toBe(0);
+  });
+
+  it("maps small panel changes to the same request size", () => {
+    const base = getSatelliteRequestSize(1000, 700);
+    for (let width = 996; width <= 1004; width += 1) {
+      expect(getSatelliteRequestSize(width, 700)).toEqual(base);
+    }
   });
 
   it("clamps very thin panels to the backend minimum side", () => {

@@ -8,7 +8,10 @@ import (
 	"github.com/my-streetview-project/backend/internal/models"
 )
 
-const maxVisitHistoryLimit = 5000
+const (
+	maxVisitHistoryLimit  = 5000
+	maxVisitHistoryOffset = 100000
+)
 
 // GetVisitHistory 获取全站共享访问历史
 func (h *Handlers) GetVisitHistory(c *gin.Context) {
@@ -16,6 +19,11 @@ func (h *Handlers) GetVisitHistory(c *gin.Context) {
 	offset := parseIntParam(c, "offset", 0)
 	if limit > maxVisitHistoryLimit {
 		limit = maxVisitHistoryLimit
+	}
+	if offset > maxVisitHistoryOffset {
+		// Deep OFFSETs make SQLite walk and discard every skipped row.
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "offset too large"})
+		return
 	}
 
 	svc := h.servicesForMode(c)

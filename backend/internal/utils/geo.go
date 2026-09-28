@@ -651,6 +651,20 @@ func GenerateRandomCoordinateInCountry(countryCode string) (latitude, longitude 
 }
 
 func generateCoordinateInRegion(region Region) (latitude, longitude float64) {
+	latitude, longitude = generateUnwrappedCoordinateInRegion(region)
+	return latitude, normalizeLongitude(longitude)
+}
+
+// normalizeLongitude folds a longitude from an antimeridian-spanning region
+// back into [-180, 180].
+func normalizeLongitude(lng float64) float64 {
+	if lng >= -180 && lng <= 180 {
+		return lng
+	}
+	return math.Mod(math.Mod(lng+180, 360)+360, 360) - 180
+}
+
+func generateUnwrappedCoordinateInRegion(region Region) (latitude, longitude float64) {
 	// 尝试在实际多边形内生成坐标
 	if len(region.Polygons) > 0 {
 		// 随机选择一个多边形（对于MultiPolygon情况）
@@ -679,12 +693,19 @@ func selectRegionSource(userRegions []models.Region) []Region {
 		// 将用户区域转换为内部Region格式
 		regions := make([]Region, len(userRegions))
 		for i, userRegion := range userRegions {
+			// West > East 表示区域跨越 180° 经线（如斐济 177 → -178）。
+			// 把东界展开到 180° 以外，宽度和面积才是真实值；生成的经度
+			// 在 generateCoordinateInRegion 里再折回 [-180, 180]。
+			east := userRegion.Coordinates.East
+			if east < userRegion.Coordinates.West {
+				east += 360
+			}
 			// 为用户区域创建简单的矩形多边形
 			rectPolygon := orb.Polygon{
 				orb.Ring{
 					orb.Point{userRegion.Coordinates.West, userRegion.Coordinates.South}, // 左下
-					orb.Point{userRegion.Coordinates.East, userRegion.Coordinates.South}, // 右下
-					orb.Point{userRegion.Coordinates.East, userRegion.Coordinates.North}, // 右上
+					orb.Point{east, userRegion.Coordinates.South},                        // 右下
+					orb.Point{east, userRegion.Coordinates.North},                        // 右上
 					orb.Point{userRegion.Coordinates.West, userRegion.Coordinates.North}, // 左上
 					orb.Point{userRegion.Coordinates.West, userRegion.Coordinates.South}, // 闭合
 				},
@@ -693,7 +714,7 @@ func selectRegionSource(userRegions []models.Region) []Region {
 			regions[i] = Region{
 				North:         userRegion.Coordinates.North,
 				South:         userRegion.Coordinates.South,
-				East:          userRegion.Coordinates.East,
+				East:          east,
 				West:          userRegion.Coordinates.West,
 				Polygons:      []orb.Polygon{rectPolygon},        // 添加矩形多边形
 				IsMinorIsland: false,                             // 用户定义的区域默认不是小型岛屿
@@ -918,6 +939,9 @@ func CalculateDistance(lat1, lon1, lat2, lon2 float64) float64 {
 	a := math.Sin(dLat/2)*math.Sin(dLat/2) +
 		math.Cos(lat1Rad)*math.Cos(lat2Rad)*
 			math.Sin(dLon/2)*math.Sin(dLon/2)
+	// Near antipodal points rounding can push a just past 1 and make the
+	// square root below NaN.
+	a = math.Min(1, math.Max(0, a))
 	c := 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
 	distance := R * c
 

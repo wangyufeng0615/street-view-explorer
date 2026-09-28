@@ -1,11 +1,11 @@
 import React from "react";
-import { act, cleanup, render } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import StreetView from "./StreetView";
 import { loadGoogleMapsWhenVisible } from "../utils/googleMaps";
 
-const { stableTranslate } = vi.hoisted(() => ({
-  stableTranslate: (key) => key,
+const translation = vi.hoisted(() => ({
+  t: (key) => key,
 }));
 
 vi.mock("../utils/googleMaps", () => ({
@@ -13,7 +13,7 @@ vi.mock("../utils/googleMaps", () => ({
 }));
 
 vi.mock("react-i18next", () => ({
-  useTranslation: () => ({ t: stableTranslate }),
+  useTranslation: () => ({ t: translation.t }),
 }));
 
 class MockStreetViewPanorama {
@@ -25,6 +25,7 @@ class MockStreetViewPanorama {
     this.pov = { ...options.pov };
     this.listeners = new Map();
     this.setPovCalls = 0;
+    this.status = "OK";
     MockStreetViewPanorama.instances.push(this);
   }
 
@@ -50,7 +51,7 @@ class MockStreetViewPanorama {
   }
 
   getStatus() {
-    return "OK";
+    return this.status;
   }
 
   emit(eventName) {
@@ -110,6 +111,7 @@ describe("StreetView auto-rotation", () => {
 
   afterEach(() => {
     cleanup();
+    translation.t = (key) => key;
     vi.useRealTimers();
     vi.clearAllMocks();
     setDocumentVisibility("visible");
@@ -241,5 +243,72 @@ describe("StreetView auto-rotation", () => {
 
     expect(panorama.getPov().heading).toBe(135);
     expect(onPovChanged).toHaveBeenCalledWith(135);
+  });
+
+  it("keeps the panorama when only the UI language changes", async () => {
+    const { rerender } = render(<StreetView latitude={1} longitude={2} />);
+    await advanceTimers(250);
+    expect(MockStreetViewPanorama.instances).toHaveLength(1);
+
+    translation.t = (key) => `zh:${key}`;
+    rerender(<StreetView latitude={1} longitude={2} />);
+    await advanceTimers(250);
+
+    expect(MockStreetViewPanorama.instances).toHaveLength(1);
+    expect(
+      MockStreetViewPanorama.instances[0].setVisible,
+    ).not.toHaveBeenCalled();
+  });
+
+  it("keeps the unavailable message instead of a later network timeout", async () => {
+    render(<StreetView latitude={1} longitude={2} />);
+    await advanceTimers(250);
+    const panorama = MockStreetViewPanorama.instances[0];
+
+    await act(async () => {
+      panorama.status = "ZERO_RESULTS";
+      panorama.emit("status_changed");
+    });
+    await advanceTimers(10000);
+
+    expect(screen.getByText("error.streetViewNotAvailable")).toBeTruthy();
+    expect(screen.queryByText("error.networkConnectionFailed")).toBeNull();
+  });
+
+  it("stops auto-rotation while another full-screen layer covers it", async () => {
+    const { rerender } = render(<StreetView latitude={1} longitude={2} />);
+    await advanceTimers(250);
+    const panorama = MockStreetViewPanorama.instances[0];
+    await act(async () => {
+      panorama.emit("pano_changed");
+      vi.advanceTimersByTime(2300);
+      await Promise.resolve();
+    });
+    expect(panorama.setPovCalls).toBeGreaterThan(0);
+
+    rerender(<StreetView latitude={1} longitude={2} paused />);
+    const callsWhilePaused = panorama.setPovCalls;
+    await advanceTimers(5000);
+    expect(panorama.setPovCalls).toBe(callsWhilePaused);
+
+    rerender(<StreetView latitude={1} longitude={2} />);
+    await advanceTimers(1000);
+    expect(panorama.setPovCalls).toBeGreaterThan(callsWhilePaused);
+  });
+
+  it("shows the interaction tip once per location, not on every step", async () => {
+    render(<StreetView latitude={1} longitude={2} />);
+    await advanceTimers(250);
+    const panorama = MockStreetViewPanorama.instances[0];
+
+    await act(async () => panorama.emit("pano_changed"));
+    await advanceTimers(3000);
+    expect(screen.getByText("streetview.interactionTip")).toBeTruthy();
+    await advanceTimers(8000);
+    expect(screen.queryByText("streetview.interactionTip")).toBeNull();
+
+    await act(async () => panorama.emit("pano_changed"));
+    await advanceTimers(3500);
+    expect(screen.queryByText("streetview.interactionTip")).toBeNull();
   });
 });

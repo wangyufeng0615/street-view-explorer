@@ -16,6 +16,8 @@ import (
 type SQLiteRepository struct {
 	db          *sql.DB
 	mu          sync.RWMutex // 保护写操作的序列化
+	statsMu     sync.Mutex
+	statsCache  map[string]visitStatsCacheEntry
 	cleanupStop chan struct{}
 	cleanupDone chan struct{}
 	closeOnce   sync.Once
@@ -128,6 +130,7 @@ func (r *SQLiteRepository) migrate() error {
 	CREATE INDEX IF NOT EXISTS idx_visit_history_session_visited_at ON visit_history(session_id, visited_at DESC, id DESC);
 	CREATE INDEX IF NOT EXISTS idx_visit_history_source_visited_at ON visit_history(source, visited_at DESC, id DESC);
 	CREATE INDEX IF NOT EXISTS idx_visit_history_source_pano_id ON visit_history(source, pano_id, id DESC);
+	CREATE INDEX IF NOT EXISTS idx_visit_history_pano_id ON visit_history(pano_id);
 
 	CREATE TABLE IF NOT EXISTS agent_journeys (
 		id TEXT PRIMARY KEY,
@@ -187,6 +190,13 @@ func (r *SQLiteRepository) migrate() error {
 			return err
 		}
 	}
+	// Counters written before rateLimitTime used the driver's local-zone
+	// t.String() form, which sorts after UTC timestamps and would keep old
+	// windows (including the global AI budget) alive for up to a zone offset.
+	// Counters are transient, so drop any row not in the canonical form.
+	if _, err := r.db.Exec("DELETE FROM rate_limits WHERE expires_at NOT GLOB ?", rateLimitTimeGlob); err != nil {
+		return fmt.Errorf("清理旧格式限流记录失败: %w", err)
+	}
 	return nil
 }
 
@@ -230,7 +240,7 @@ func (r *SQLiteRepository) cleanupLoop() {
 	for {
 		select {
 		case <-ticker.C:
-			_, _ = r.db.Exec("DELETE FROM rate_limits WHERE expires_at < datetime('now')")
+			_ = r.cleanupExpiredRateLimits(time.Now())
 		case <-r.cleanupStop:
 			return
 		}
@@ -377,19 +387,27 @@ func (r *SQLiteRepository) DeleteExplorationPreference(sessionID string) error {
 
 // CheckAndIncrement 检查并增加计数（实现 RateLimiter 接口）
 func (r *SQLiteRepository) CheckAndIncrement(key string, maxRequests int, window time.Duration) (bool, int, error) {
+	return r.CheckAndIncrementContext(context.Background(), key, maxRequests, window)
+}
+
+// CheckAndIncrementContext is CheckAndIncrement bounded by ctx. The database
+// has a single connection, so callers on the request path pass a deadline to
+// avoid queueing forever behind a slow query.
+func (r *SQLiteRepository) CheckAndIncrementContext(ctx context.Context, key string, maxRequests int, window time.Duration) (bool, int, error) {
 	now := time.Now()
 	expiresAt := now.Add(window)
 
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	// 先清理过期记录，再查询/插入，在同一个事务中
-	ctx := context.Background()
+	// 先拿连接（可被 ctx 取消），再加锁；单连接下持有连接即已串行化
 	conn, err := r.db.Conn(ctx)
 	if err != nil {
 		return false, 0, err
 	}
 	defer conn.Close()
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	// 先清理过期记录，再查询/插入，在同一个事务中
 	tx, err := conn.BeginTx(ctx, nil)
 	if err != nil {
 		return false, 0, err
@@ -400,7 +418,7 @@ func (r *SQLiteRepository) CheckAndIncrement(key string, maxRequests int, window
 			// SQLite can leave a transaction open after COMMIT fails (e.g. a
 			// deferred constraint). sql.Tx is already done, so explicitly roll
 			// back on the leased connection before returning it to the pool.
-			if _, rollbackErr := conn.ExecContext(ctx, "ROLLBACK"); rollbackErr != nil {
+			if _, rollbackErr := conn.ExecContext(context.Background(), "ROLLBACK"); rollbackErr != nil {
 				_ = conn.Raw(func(any) error { return driver.ErrBadConn })
 			}
 			return err
@@ -409,16 +427,16 @@ func (r *SQLiteRepository) CheckAndIncrement(key string, maxRequests int, window
 	}
 
 	// 删除此 key 的过期记录
-	if _, err := tx.Exec("DELETE FROM rate_limits WHERE key = ? AND expires_at < ?", key, now); err != nil {
+	if _, err := tx.ExecContext(ctx, "DELETE FROM rate_limits WHERE key = ? AND "+rateLimitExpiredBefore, key, rateLimitTime(now)); err != nil {
 		return false, 0, err
 	}
 
 	// 尝试插入或更新
 	var count int
-	err = tx.QueryRow("SELECT count FROM rate_limits WHERE key = ?", key).Scan(&count)
+	err = tx.QueryRowContext(ctx, "SELECT count FROM rate_limits WHERE key = ?", key).Scan(&count)
 	if err == sql.ErrNoRows {
 		// 新记录
-		_, err = tx.Exec("INSERT INTO rate_limits (key, count, expires_at) VALUES (?, 1, ?)", key, expiresAt)
+		_, err = tx.ExecContext(ctx, "INSERT INTO rate_limits (key, count, expires_at) VALUES (?, 1, ?)", key, rateLimitTime(expiresAt))
 		if err != nil {
 			return false, 0, err
 		}
@@ -433,7 +451,7 @@ func (r *SQLiteRepository) CheckAndIncrement(key string, maxRequests int, window
 
 	// 更新计数
 	count++
-	_, err = tx.Exec("UPDATE rate_limits SET count = ? WHERE key = ?", count, key)
+	_, err = tx.ExecContext(ctx, "UPDATE rate_limits SET count = ? WHERE key = ?", count, key)
 	if err != nil {
 		return false, 0, err
 	}
@@ -450,12 +468,42 @@ func (r *SQLiteRepository) CheckAndIncrement(key string, maxRequests int, window
 	return count <= maxRequests, remaining, nil
 }
 
+// RefundContext returns one unit of an unexpired counter, e.g. when the
+// upstream call it paid for failed. Missing or expired keys are left alone.
+func (r *SQLiteRepository) RefundContext(ctx context.Context, key string) error {
+	_, err := r.db.ExecContext(ctx,
+		"UPDATE rate_limits SET count = count - 1 WHERE key = ? AND count > 0 AND NOT "+rateLimitExpiredBefore,
+		key, rateLimitTime(time.Now()))
+	return err
+}
+
+// rateLimitTime renders rate limit timestamps in one canonical, fixed-width
+// UTC form so that SQL string comparison matches chronological order.
+// modernc's default binding of time.Time is t.String() ("... +0800 CST
+// m=+1.2"), which neither sorts across zones nor compares correctly with
+// datetime('now') (UTC); rows written before this change expire at the latest
+// one zone offset late.
+func rateLimitTime(t time.Time) string {
+	return t.UTC().Format("2006-01-02 15:04:05.000000000")
+}
+
+const rateLimitExpiredBefore = "expires_at < ?"
+
+// rateLimitTimeGlob matches exactly the rateLimitTime layout.
+const rateLimitTimeGlob = "[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] [0-9][0-9]:[0-9][0-9]:[0-9][0-9].[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]"
+
+// cleanupExpiredRateLimits removes counters whose window has ended.
+func (r *SQLiteRepository) cleanupExpiredRateLimits(now time.Time) error {
+	_, err := r.db.Exec("DELETE FROM rate_limits WHERE "+rateLimitExpiredBefore, rateLimitTime(now))
+	return err
+}
+
 // GetCount 获取当前计数（实现 RateLimiter 接口）
 func (r *SQLiteRepository) GetCount(key string) (int64, error) {
 	var count int64
 	err := r.db.QueryRow(
-		"SELECT count FROM rate_limits WHERE key = ? AND expires_at > datetime('now')",
-		key,
+		"SELECT count FROM rate_limits WHERE key = ? AND NOT "+rateLimitExpiredBefore,
+		key, rateLimitTime(time.Now()),
 	).Scan(&count)
 	if err == sql.ErrNoRows {
 		return 0, nil
@@ -487,6 +535,7 @@ func (r *SQLiteRepository) RecordVisit(sessionID string, loc models.Location, so
 	if err != nil {
 		return fmt.Errorf("记录访问失败: %w", err)
 	}
+	r.invalidateVisitStats()
 	return nil
 }
 
@@ -534,28 +583,29 @@ func (r *SQLiteRepository) GetGlobalVisitHistory(limit, offset int, sources ...s
 	if len(sources) > 0 {
 		source = sources[0]
 	}
-	// 获取全站总访问次数
-	var totalVisits int64
-	countQuery := "SELECT COUNT(*) FROM visit_history"
-	countArgs := []interface{}{}
-	if source != "" {
-		countQuery += " WHERE source = ?"
-		countArgs = append(countArgs, source)
-	}
-	err := r.db.QueryRow(countQuery, countArgs...).Scan(&totalVisits)
+	// 全站总访问次数与唯一地点数（短时缓存，避免每次请求全表统计）
+	totalVisits, uniquePlaces, err := r.cachedVisitStats("history:"+source, func() (int64, int64, error) {
+		var total, unique int64
+		countQuery := "SELECT COUNT(*) FROM visit_history"
+		countArgs := []interface{}{}
+		if source != "" {
+			countQuery += " WHERE source = ?"
+			countArgs = append(countArgs, source)
+		}
+		if err := r.db.QueryRow(countQuery, countArgs...).Scan(&total); err != nil {
+			return 0, 0, fmt.Errorf("获取全站访问记录总数失败: %w", err)
+		}
+		uniqueQuery := "SELECT COUNT(DISTINCT pano_id) FROM visit_history"
+		if source != "" {
+			uniqueQuery += " WHERE source = ?"
+		}
+		if err := r.db.QueryRow(uniqueQuery, countArgs...).Scan(&unique); err != nil {
+			return 0, 0, fmt.Errorf("获取全站唯一地点数失败: %w", err)
+		}
+		return total, unique, nil
+	})
 	if err != nil {
-		return nil, 0, 0, fmt.Errorf("获取全站访问记录总数失败: %w", err)
-	}
-
-	// 获取全站唯一地点数
-	var uniquePlaces int64
-	uniqueQuery := "SELECT COUNT(DISTINCT pano_id) FROM visit_history"
-	if source != "" {
-		uniqueQuery += " WHERE source = ?"
-	}
-	err = r.db.QueryRow(uniqueQuery, countArgs...).Scan(&uniquePlaces)
-	if err != nil {
-		return nil, 0, 0, fmt.Errorf("获取全站唯一地点数失败: %w", err)
+		return nil, 0, 0, err
 	}
 
 	query := `

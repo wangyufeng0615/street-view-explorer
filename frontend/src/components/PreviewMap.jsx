@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from "react";
+import React, { memo, useEffect, useRef, useState, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { loadGoogleMapsScript } from "../utils/googleMaps";
 
@@ -70,7 +70,7 @@ function PickStatusOverlay({ status, message }) {
   );
 }
 
-export default function PreviewMap({
+function PreviewMap({
   latitude,
   longitude,
   mapId = "preview",
@@ -87,8 +87,14 @@ export default function PreviewMap({
   const dragEndListenerRef = useRef(null);
   const onLocationPickRef = useRef(onLocationPick);
   const isPickingLocationRef = useRef(isPickingLocation);
-  const [error, setError] = useState(null);
+  // 地图只创建一次；坐标变化由 syncMapToPosition 移动中心点和标记
+  const positionRef = useRef({ latitude, longitude });
+  const [mapLoadFailed, setMapLoadFailed] = useState(false);
   const { t } = useTranslation();
+
+  useEffect(() => {
+    positionRef.current = { latitude, longitude };
+  }, [latitude, longitude]);
 
   useEffect(() => {
     onLocationPickRef.current = onLocationPick;
@@ -149,7 +155,10 @@ export default function PreviewMap({
       removeMapListener(clickListenerRef);
       removeMapListener(dragEndListenerRef);
 
-      const position = { lat: latitude, lng: longitude };
+      const position = {
+        lat: Number(positionRef.current.latitude),
+        lng: Number(positionRef.current.longitude),
+      };
 
       // 创建地图实例
       mapInstanceRef.current = new maps.Map(mapRef.current, {
@@ -239,12 +248,12 @@ export default function PreviewMap({
       mapInstanceRef.current.setCenter(position);
 
       // 清除错误状态
-      setError(null);
+      setMapLoadFailed(false);
     } catch (err) {
       console.error("PreviewMap initialization error:", err);
-      setError(t("error.mapLoadFailed"));
+      setMapLoadFailed(true);
     }
-  }, [latitude, longitude, pickFromLatLng, t]);
+  }, [pickFromLatLng]);
 
   useEffect(() => {
     let isMounted = true;
@@ -301,7 +310,7 @@ export default function PreviewMap({
     };
   }, [syncMapToPosition]);
 
-  if (error) {
+  if (mapLoadFailed) {
     return (
       <div
         style={{
@@ -315,7 +324,7 @@ export default function PreviewMap({
           color: "#666",
         }}
       >
-        {error}
+        {t("error.mapLoadFailed")}
       </div>
     );
   }
@@ -342,3 +351,5 @@ export default function PreviewMap({
     </div>
   );
 }
+
+export default memo(PreviewMap);

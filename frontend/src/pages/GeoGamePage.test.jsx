@@ -499,7 +499,7 @@ describe("GeoGamePage", () => {
     }
   });
 
-  it("lets the next-round button proceed before AI or next image preloading finishes", async () => {
+  it("locks next round while Atlas guesses, then proceeds before the next image preloads", async () => {
     window.history.pushState({}, "", "/guess?country=ZZ");
     let mapClickHandler;
     const maps = createMapsMock((handler) => {
@@ -511,7 +511,13 @@ describe("GeoGamePage", () => {
         this.srcValue = value;
       }
     };
-    global.fetch = vi.fn(() => neverSettles());
+    let resolveAtlas;
+    global.fetch = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          resolveAtlas = resolve;
+        }),
+    );
 
     loadGoogleMapsScript.mockResolvedValueOnce(maps);
     getRandomLocation
@@ -551,8 +557,19 @@ describe("GeoGamePage", () => {
       await waitFor(() =>
         expect(document.querySelector(".geo-result-panel")).toBeTruthy(),
       );
-      const nextButton = screen.getByText("geo.next_round");
+      const waitingButton = screen.getByText("geo.waiting_for_atlas");
+      expect(waitingButton).toBeDisabled();
+      expect(screen.queryByText("geo.next_round")).not.toBeInTheDocument();
+      fireEvent.click(waitingButton);
+      expect(document.querySelector(".geo-result-panel")).toBeInTheDocument();
+
+      // Atlas failing unlocks the button instead of blocking the game.
+      await act(async () => {
+        resolveAtlas({ json: () => Promise.resolve({ success: false }) });
+      });
+      const nextButton = await screen.findByText("geo.next_round");
       expect(nextButton).not.toBeDisabled();
+      expect(screen.getByText("geo.ai_unavailable")).toBeInTheDocument();
       fireEvent.click(nextButton);
 
       await waitFor(() => {
@@ -564,6 +581,37 @@ describe("GeoGamePage", () => {
     } finally {
       global.Image = OriginalImage;
     }
+  });
+
+  it("keeps the score and offers a retry when a round target cannot be found", async () => {
+    window.history.pushState({}, "", "/guess?country=ZZ");
+    getRandomLocation.mockResolvedValue({ success: false });
+
+    render(<GeoGamePage />);
+    fireEvent.click(screen.getByText("geo.start_atlas"));
+
+    const retryButton = await screen.findByText("geo.target_retry");
+    expect(screen.getByText("geo.target_error")).toBeInTheDocument();
+    expect(screen.queryByText("geo.start_atlas")).not.toBeInTheDocument();
+    expect(screen.queryByText("geo.loading")).not.toBeInTheDocument();
+
+    getRandomLocation.mockResolvedValue({
+      success: true,
+      data: {
+        latitude: 10,
+        longitude: 20,
+        formatted_address: "Round One",
+        country: "One",
+      },
+    });
+    fireEvent.click(retryButton);
+
+    await waitFor(() => {
+      expect(document.querySelector(".geo-satellite-img")?.src).toContain(
+        "lat=10",
+      );
+    });
+    expect(screen.queryByText("geo.target_error")).not.toBeInTheDocument();
   });
 
   it("keeps the round stable on repeated lock-in and next-round clicks", async () => {
@@ -621,9 +669,7 @@ describe("GeoGamePage", () => {
         expect(document.querySelector(".geo-result-panel")).toBeTruthy(),
       );
       expect(screen.getByText("geo.round")).toBeInTheDocument();
-      expect(screen.getByText("geo.next_round")).toBeInTheDocument();
-
-      const nextButton = screen.getByText("geo.next_round");
+      const nextButton = await screen.findByText("geo.next_round");
       fireEvent.click(nextButton);
       fireEvent.click(nextButton);
 

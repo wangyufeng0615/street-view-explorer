@@ -82,8 +82,9 @@ func TestGlobalDescriptionBudgetFailsClosed(t *testing.T) {
 	handlers := NewHandlers(nil, nil, limiter)
 	response := httptest.NewRecorder()
 	context, _ := gin.CreateTestContext(response)
+	context.Request = httptest.NewRequest(http.MethodGet, "/", nil)
 
-	if handlers.reserveDescriptionBudget(context, false) {
+	if _, ok := handlers.reserveDescriptionBudget(context, false); ok {
 		t.Fatal("reserveDescriptionBudget returned true after limiter error")
 	}
 	if response.Code != http.StatusServiceUnavailable {

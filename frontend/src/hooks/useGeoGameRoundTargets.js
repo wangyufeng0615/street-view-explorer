@@ -11,8 +11,10 @@ import { resolveRoundTarget } from "../utils/geoGameTargets";
  * Resolve each round's target from the round plan and preload the next
  * round's target (plus its first satellite image) during the round result.
  *
- * The active language is read through a ref so a language switch never
- * re-triggers round selection.
+ * The active language and satellite size are read through refs so a language
+ * switch or panel resize never re-triggers round selection or the preload.
+ * When no target can be found the round stays in LOADING with `targetError`
+ * set (scores are kept) until the player retries.
  */
 export function useGeoGameRoundTargets({
   state,
@@ -23,10 +25,14 @@ export function useGeoGameRoundTargets({
   const preloadedTargetsRef = useRef({});
   const langRef = useRef(language);
   langRef.current = language;
+  const satelliteImageSizeRef = useRef(satelliteImageSize);
+  satelliteImageSizeRef.current = satelliteImageSize;
 
   // ─── Fetch location: preloaded target, database entry or random API ───
   useEffect(() => {
-    if (state.phase !== "LOADING" || !state.roundPlan) return;
+    if (state.phase !== "LOADING" || !state.roundPlan || state.targetError) {
+      return;
+    }
     const plan = state.roundPlan[state.round - 1];
     const preloadedTarget = preloadedTargetsRef.current[state.round];
     if (preloadedTarget) {
@@ -47,7 +53,9 @@ export function useGeoGameRoundTargets({
       );
       if (cancelled) return;
       dispatch(
-        target ? { type: "SET_TARGET", payload: target } : { type: "RESTART" },
+        target
+          ? { type: "SET_TARGET", payload: target }
+          : { type: "TARGET_FAILED" },
       );
     })();
     return () => {
@@ -60,6 +68,7 @@ export function useGeoGameRoundTargets({
     state.roundPlan,
     state.countryCode,
     state.usedTargets,
+    state.targetError,
   ]);
 
   // ─── Preload next round after lock-in ───
@@ -86,7 +95,11 @@ export function useGeoGameRoundTargets({
       if (cancelled || !target) return;
       preloadedTargetsRef.current[nextRound] = target;
       const img = new Image();
-      img.src = getSatelliteUrl(target, START_ZOOM, satelliteImageSize);
+      img.src = getSatelliteUrl(
+        target,
+        START_ZOOM,
+        satelliteImageSizeRef.current,
+      );
     })();
 
     return () => {
@@ -98,7 +111,6 @@ export function useGeoGameRoundTargets({
     state.roundPlan,
     state.countryCode,
     state.usedTargets,
-    satelliteImageSize,
   ]);
 
   const clearPreloadedTargets = useCallback(() => {

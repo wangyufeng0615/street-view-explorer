@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import {
@@ -8,6 +8,7 @@ import {
   joinGeoBattleMatchmaking,
   joinGeoBattleRoom,
 } from "../services/api";
+import { readLocalStorage, writeLocalStorage } from "../utils/safeStorage";
 
 const NICKNAME_STORAGE_KEY = "geoBattleNickname";
 const SYNC_INTERVAL_PLAYING = 1500;
@@ -25,13 +26,11 @@ const NICKNAMES = {
 };
 
 function readSavedNickname() {
-  if (typeof window === "undefined") return "";
-  return window.localStorage.getItem(NICKNAME_STORAGE_KEY) || "";
+  return readLocalStorage(NICKNAME_STORAGE_KEY) || "";
 }
 
 function saveNickname(nickname) {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(NICKNAME_STORAGE_KEY, nickname);
+  writeLocalStorage(NICKNAME_STORAGE_KEY, nickname);
 }
 
 function getGeoLanguage(i18n) {
@@ -43,6 +42,14 @@ function generateNickname(language = "en") {
   const names = NICKNAMES[language] || NICKNAMES.en;
   const name = names[Math.floor(Math.random() * names.length)];
   return `${name}${Math.floor(100 + Math.random() * 900)}`;
+}
+
+/**
+ * Best-effort queue cancel while the page is being unloaded; failures are
+ * ignored because the server also drops queue entries that stop polling.
+ */
+function cancelMatchmakingOnPageHide() {
+  cancelGeoBattleMatchmaking({ keepalive: true }).catch(() => {});
 }
 
 function normalizeRoomCode(code) {
@@ -60,6 +67,10 @@ function GeoBattleHubPage() {
   const [matchmaking, setMatchmaking] = useState({ status: "idle" });
   const [busyAction, setBusyAction] = useState("");
   const [error, setError] = useState("");
+  // Set once a match is found so leaving for the room does not cancel it.
+  const matchedRef = useRef(false);
+  const queuedRef = useRef(false);
+  queuedRef.current = matchmaking.status === "queued";
 
   useEffect(() => {
     saveNickname(nickname);
@@ -70,12 +81,35 @@ function GeoBattleHubPage() {
     if (!res.success || !res.data) return;
 
     if (res.data.status === "matched" && res.data.room?.room_id) {
+      matchedRef.current = true;
       navigate(`/guess/online/${res.data.room.room_id}`, { replace: true });
       return;
     }
 
     setMatchmaking(res.data);
   }, [navigate]);
+
+  // Leaving the hub while queued must take this player out of the queue,
+  // otherwise someone else gets matched against a player who is gone.
+  useEffect(
+    () => () => {
+      if (queuedRef.current && !matchedRef.current) {
+        cancelGeoBattleMatchmaking();
+      }
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (matchmaking.status !== "queued") return undefined;
+    const handlePageHide = () => {
+      if (!matchedRef.current) cancelMatchmakingOnPageHide();
+    };
+    window.addEventListener("pagehide", handlePageHide);
+    return () => {
+      window.removeEventListener("pagehide", handlePageHide);
+    };
+  }, [matchmaking.status]);
 
   useEffect(() => {
     syncMatchmaking();
@@ -157,6 +191,7 @@ function GeoBattleHubPage() {
     }
 
     if (res.data.status === "matched" && res.data.room?.room_id) {
+      matchedRef.current = true;
       navigate(`/guess/online/${res.data.room.room_id}`);
       return;
     }

@@ -52,4 +52,33 @@ describe("single-player round state", () => {
     });
     expect(reducer(state, { type: "LOCK_IN" })).toBe(state);
   });
+  it("keeps the game and scores when a round target fails, until retried", () => {
+    const scores = [{ playerScore: 4200 }, { playerScore: 3100 }];
+    let state = {
+      ...initialState,
+      phase: "LOADING",
+      round: 3,
+      scores,
+      roundPlan: [],
+    };
+    state = reducer(state, { type: "TARGET_FAILED" });
+    expect(state.phase).toBe("LOADING");
+    expect(state.targetError).toBe(true);
+    expect(state.scores).toBe(scores);
+    expect(state.round).toBe(3);
+
+    state = reducer(state, { type: "RETRY_TARGET" });
+    expect(state.targetError).toBe(false);
+    expect(reducer(state, { type: "RETRY_TARGET" })).toBe(state);
+
+    state = reducer(state, { type: "TARGET_FAILED" });
+    state = reducer(state, {
+      type: "SET_TARGET",
+      payload: { lat: 1, lng: 2 },
+    });
+    expect(state.phase).toBe("PLAYING");
+    expect(state.targetError).toBe(false);
+
+    expect(reducer(state, { type: "TARGET_FAILED" })).toBe(state);
+  });
 });

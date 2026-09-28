@@ -106,6 +106,8 @@ export default function GeoGamePage() {
 
   // ─── Handlers ───
   const handleNextRound = useCallback(() => {
+    // Atlas must finish (or fail/time out) first, or its round would count 0.
+    if (stateRef.current.aiLoading) return;
     cleanupMarkers();
     cancelSatelliteZoomTransition();
     dispatch({ type: "NEXT_ROUND" });
@@ -138,6 +140,9 @@ export default function GeoGamePage() {
     showFeedbackBubble(t("geo.feedback_gave_up"), "warning");
     dispatch({ type: "GIVE_UP" });
   }, [cancelSatelliteZoomTransition, playFeedback, showFeedbackBubble, t]);
+  const handleRetryTarget = useCallback(() => {
+    dispatch({ type: "RETRY_TARGET" });
+  }, []);
   const handleStartGame = useCallback(
     (options) => {
       clearPreloadedTargets();
@@ -190,6 +195,8 @@ export default function GeoGamePage() {
               panelRef={satelliteElRef}
               phase={state.phase}
               hasTarget={Boolean(state.target)}
+              targetError={state.targetError}
+              onRetryTarget={handleRetryTarget}
               zoomSteps={state.zoomSteps}
               satelliteUrl={satelliteUrl}
               imgLoaded={imgLoaded}

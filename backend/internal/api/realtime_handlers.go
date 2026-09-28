@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -14,6 +15,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -30,20 +32,49 @@ const (
 type RealtimeHandlers struct {
 	httpClient        *http.Client
 	doubaoTTSClient   *http.Client
+	webRTCEnabled     bool
 	connectionsMu     sync.Mutex
 	connections       map[string]int
 	activeConnections int
+}
+
+// RealtimeOption configures optional Realtime behaviour.
+type RealtimeOption func(*RealtimeHandlers)
+
+// WithRealtimeWebRTC enables the legacy WebRTC path (/client-secret and /calls).
+// Ephemeral client secrets bypass the WebSocket relay's connection budgets and
+// client event filtering, so the path is off unless explicitly configured.
+func WithRealtimeWebRTC(enabled bool) RealtimeOption {
+	return func(h *RealtimeHandlers) {
+		h.webRTCEnabled = enabled
+	}
 }
 
 var realtimeWSUpgrader = websocket.Upgrader{
 	CheckOrigin: isAllowedRealtimeOrigin,
 }
 
-func NewRealtimeHandlers() *RealtimeHandlers {
-	return &RealtimeHandlers{
+func NewRealtimeHandlers(options ...RealtimeOption) *RealtimeHandlers {
+	h := &RealtimeHandlers{
 		httpClient:      newRealtimeHTTPClient(),
 		doubaoTTSClient: newDoubaoTTSHTTPClient(),
 	}
+	for _, option := range options {
+		option(h)
+	}
+	return h
+}
+
+func (h *RealtimeHandlers) rejectDisabledWebRTC(c *gin.Context) bool {
+	if h.webRTCEnabled {
+		return false
+	}
+	c.JSON(http.StatusNotFound, gin.H{
+		"success": false,
+		"code":    "realtime_webrtc_disabled",
+		"error":   "Realtime WebRTC transport is disabled on this server; use the WebSocket transport (/api/v1/realtime/ws) or set REALTIME_WEBRTC_ENABLED=true",
+	})
+	return true
 }
 
 type realtimeClientSecretRequest struct {
@@ -96,6 +127,9 @@ type realtimeAudioOutput struct {
 }
 
 func (h *RealtimeHandlers) CreateClientSecret(c *gin.Context) {
+	if h.rejectDisabledWebRTC(c) {
+		return
+	}
 	apiKey := realtimeAPIKey()
 	if apiKey == "" {
 		c.JSON(http.StatusServiceUnavailable, gin.H{
@@ -202,6 +236,7 @@ func (h *RealtimeHandlers) CreateClientSecret(c *gin.Context) {
 
 	var payload map[string]any
 	if err := json.Unmarshal(body, &payload); err != nil {
+		log.Printf("[ATLAS_VOICE] client_secret_error provider=%s model=%s status=%s err=non_json_response", atlasVoiceProvider(), model, resp.Status)
 		c.JSON(http.StatusBadGateway, gin.H{
 			"success": false,
 			"error":   "OpenAI Realtime API returned a non-JSON response",
@@ -210,10 +245,22 @@ func (h *RealtimeHandlers) CreateClientSecret(c *gin.Context) {
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		log.Printf("[ATLAS_VOICE] client_secret_error provider=%s model=%s status=%s", atlasVoiceProvider(), model, resp.Status)
-		c.JSON(resp.StatusCode, gin.H{
+		// Upstream messages can describe the server key or organisation; keep
+		// them in the server log and give anonymous callers a generic error.
+		log.Printf(
+			"[ATLAS_VOICE] client_secret_error provider=%s model=%s status=%s message=%q",
+			atlasVoiceProvider(),
+			model,
+			resp.Status,
+			PublicErrorMessage(errors.New(upstreamErrorMessage(payload))),
+		)
+		status := http.StatusBadGateway
+		if resp.StatusCode == http.StatusTooManyRequests {
+			status = http.StatusTooManyRequests
+		}
+		c.JSON(status, gin.H{
 			"success": false,
-			"error":   upstreamErrorMessage(payload),
+			"error":   fmt.Sprintf("OpenAI Realtime API request failed (HTTP %d)", resp.StatusCode),
 		})
 		return
 	}
@@ -226,6 +273,9 @@ func (h *RealtimeHandlers) CreateClientSecret(c *gin.Context) {
 }
 
 func (h *RealtimeHandlers) ProxyCallSDP(c *gin.Context) {
+	if h.rejectDisabledWebRTC(c) {
+		return
+	}
 	authHeader := strings.TrimSpace(c.GetHeader("Authorization"))
 	if !strings.HasPrefix(authHeader, "Bearer ") {
 		c.String(http.StatusUnauthorized, "Missing Realtime bearer token")
@@ -343,24 +393,23 @@ func (h *RealtimeHandlers) ConnectWebSocket(c *gin.Context) {
 	log.Printf("[ATLAS_VOICE] ws_connect_ok provider=%s model=%s status=%s", atlasVoiceProvider(), realtimeModel(), status)
 
 	trace := newRealtimeWSTrace()
+	activity := newRealtimeActivity()
+	clientFilter := newRealtimeClientEventFilter()
 	errCh := make(chan realtimeRelayResult, 2)
-	go relayRealtimeWS("browser_to_openai", upstreamConn, clientConn, errCh, trace)
-	go relayRealtimeWS("openai_to_browser", clientConn, upstreamConn, errCh, trace)
-	timer := time.NewTimer(realtimeMaxSessionDuration)
-	defer timer.Stop()
-	var result realtimeRelayResult
-	select {
-	case result = <-errCh:
-	case <-timer.C:
-		result = realtimeRelayResult{Direction: "session_limit", Err: fmt.Errorf("voice session duration limit reached")}
+	go relayRealtimeWS("browser_to_openai", upstreamConn, clientConn, errCh, trace, activity, clientFilter.filter)
+	go relayRealtimeWS("openai_to_browser", clientConn, upstreamConn, errCh, trace, activity, nil)
+	result := waitRealtimeRelay(errCh, activity, realtimeIdleTimeout, realtimeMaxSessionDuration, c.Request.Context().Done())
+	switch {
+	case errors.Is(result.Err, errRealtimeSessionLimit):
 		_ = clientConn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, "Voice session time limit; reconnect to continue"), time.Now().Add(time.Second))
-	case <-c.Request.Context().Done():
-		result = realtimeRelayResult{Direction: "request_cancelled", Err: c.Request.Context().Err()}
+	case errors.Is(result.Err, errRealtimeIdle):
+		_ = clientConn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, "Voice session idle; reconnect to continue"), time.Now().Add(time.Second))
 	}
 	log.Printf(
-		"[ATLAS_VOICE] ws_closed direction=%s duration=%s err=%v",
+		"[ATLAS_VOICE] ws_closed direction=%s duration=%s dropped_client_events=%d err=%v",
 		result.Direction,
 		time.Since(startedAt).Round(time.Millisecond),
+		clientFilter.droppedCount(),
 		result.Err,
 	)
 }
@@ -370,15 +419,132 @@ type realtimeRelayResult struct {
 	Err       error
 }
 
-func relayRealtimeWS(direction string, dst, src *websocket.Conn, errCh chan<- realtimeRelayResult, trace *realtimeWSTrace) {
+var (
+	errRealtimeSessionLimit = errors.New("voice session duration limit reached")
+	errRealtimeIdle         = errors.New("voice session idle timeout")
+)
+
+// realtimeActivity is shared by both relay directions, so either side's
+// traffic keeps the session alive. A user who listens silently while the
+// browser streams microphone audio must not be cut off because OpenAI has
+// nothing to say.
+type realtimeActivity struct {
+	lastNanos atomic.Int64
+}
+
+func newRealtimeActivity() *realtimeActivity {
+	activity := &realtimeActivity{}
+	activity.touch()
+	return activity
+}
+
+func (a *realtimeActivity) touch() {
+	a.lastNanos.Store(time.Now().UnixNano())
+}
+
+func (a *realtimeActivity) idleFor(now time.Time) time.Duration {
+	return now.Sub(time.Unix(0, a.lastNanos.Load()))
+}
+
+// waitRealtimeRelay blocks until a relay direction fails, the session reaches
+// its maximum duration, both directions stay silent for idleTimeout, or done
+// is closed.
+func waitRealtimeRelay(
+	errCh <-chan realtimeRelayResult,
+	activity *realtimeActivity,
+	idleTimeout time.Duration,
+	maxDuration time.Duration,
+	done <-chan struct{},
+) realtimeRelayResult {
+	sessionTimer := time.NewTimer(maxDuration)
+	defer sessionTimer.Stop()
+	checkEvery := idleTimeout / 6
+	if checkEvery < 10*time.Millisecond {
+		checkEvery = 10 * time.Millisecond
+	}
+	idleTicker := time.NewTicker(checkEvery)
+	defer idleTicker.Stop()
+
 	for {
-		_ = src.SetReadDeadline(time.Now().Add(realtimeIdleTimeout))
+		select {
+		case result := <-errCh:
+			return result
+		case <-sessionTimer.C:
+			return realtimeRelayResult{Direction: "session_limit", Err: errRealtimeSessionLimit}
+		case now := <-idleTicker.C:
+			if activity.idleFor(now) >= idleTimeout {
+				return realtimeRelayResult{Direction: "idle_timeout", Err: errRealtimeIdle}
+			}
+		case <-done:
+			return realtimeRelayResult{Direction: "request_cancelled", Err: errors.New("request cancelled")}
+		}
+	}
+}
+
+// realtimeFrameFilter returns the payload to forward, or false to drop the frame.
+type realtimeFrameFilter func(messageType int, payload []byte) (forward []byte, eventType string, ok bool)
+
+// realtimeClientEventFilter applies the client event allowlist and rate-limits
+// its own logging so a hostile client cannot flood the logs.
+type realtimeClientEventFilter struct {
+	dropped   atomic.Int64
+	sanitized atomic.Int64
+}
+
+func newRealtimeClientEventFilter() *realtimeClientEventFilter {
+	return &realtimeClientEventFilter{}
+}
+
+func (f *realtimeClientEventFilter) droppedCount() int64 {
+	return f.dropped.Load()
+}
+
+func (f *realtimeClientEventFilter) filter(messageType int, payload []byte) ([]byte, string, bool) {
+	if messageType != websocket.TextMessage {
+		if f.dropped.Add(1) <= realtimeMaxLoggedClientEvents {
+			log.Printf("[ATLAS_VOICE] client_event_dropped type=binary reason=binary_frame_not_allowed")
+		}
+		return nil, "", false
+	}
+	out, eventType, note, err := sanitizeRealtimeClientEvent(payload)
+	if err != nil {
+		if f.dropped.Add(1) <= realtimeMaxLoggedClientEvents {
+			log.Printf("[ATLAS_VOICE] client_event_dropped type=%q reason=%s", truncateRealtimeNote(eventType), err)
+		}
+		return nil, eventType, false
+	}
+	if note != "" && f.sanitized.Add(1) <= realtimeMaxLoggedClientEvents {
+		log.Printf("[ATLAS_VOICE] client_event_sanitized type=%s removed=%s", eventType, note)
+	}
+	return out, eventType, true
+}
+
+func relayRealtimeWS(
+	direction string,
+	dst, src *websocket.Conn,
+	errCh chan<- realtimeRelayResult,
+	trace *realtimeWSTrace,
+	activity *realtimeActivity,
+	filter realtimeFrameFilter,
+) {
+	for {
+		// No per-direction read deadline: idleness is judged across both
+		// directions by waitRealtimeRelay, which closes both connections.
 		messageType, payload, err := src.ReadMessage()
 		if err != nil {
 			errCh <- realtimeRelayResult{Direction: direction, Err: err}
 			return
 		}
-		trace.observe(direction, payload)
+		activity.touch()
+		eventType := ""
+		if filter != nil {
+			var ok bool
+			payload, eventType, ok = filter(messageType, payload)
+			if !ok {
+				continue
+			}
+		}
+		trace.observeTyped(direction, eventType, payload)
 		_ = dst.SetWriteDeadline(time.Now().Add(realtimeWriteTimeout))
 		if err := dst.WriteMessage(messageType, payload); err != nil {
 			errCh <- realtimeRelayResult{Direction: direction, Err: err}
@@ -439,8 +605,47 @@ func newRealtimeWSTrace() *realtimeWSTrace {
 	}
 }
 
-func (t *realtimeWSTrace) observe(direction string, payload []byte) {
-	if t == nil || !json.Valid(payload) {
+// High-volume audio events carry large base64 payloads and are never traced;
+// skipping them avoids a full JSON decode per audio frame.
+var realtimeTraceSkippedTypes = map[string]bool{
+	"input_audio_buffer.append":              true,
+	"response.output_audio.delta":            true,
+	"response.audio.delta":                   true,
+	"response.output_audio_transcript.delta": true,
+	"response.audio_transcript.delta":        true,
+}
+
+// realtimeEventTypeHint cheaply reads a leading "type" field. It is only used
+// to skip tracing, so a miss simply falls back to a full decode.
+func realtimeEventTypeHint(payload []byte) string {
+	head := payload
+	if len(head) > 160 {
+		head = head[:160]
+	}
+	marker := []byte(`"type":"`)
+	start := bytes.Index(head, marker)
+	if start < 0 {
+		return ""
+	}
+	rest := head[start+len(marker):]
+	end := bytes.IndexByte(rest, '"')
+	if end < 0 {
+		return ""
+	}
+	return string(rest[:end])
+}
+
+// observeTyped traces one relayed event. knownType, when set, is the event type
+// already established by the client filter.
+func (t *realtimeWSTrace) observeTyped(direction string, knownType string, payload []byte) {
+	if t == nil {
+		return
+	}
+	eventType := knownType
+	if eventType == "" {
+		eventType = realtimeEventTypeHint(payload)
+	}
+	if realtimeTraceSkippedTypes[eventType] {
 		return
 	}
 

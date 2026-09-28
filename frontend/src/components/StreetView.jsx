@@ -113,6 +113,7 @@ export default function StreetView({
   heading = 0,
   onPovChanged,
   onViewChanged,
+  paused = false,
 }) {
   const panoramaRef = useRef(null);
   const panoramaInstanceRef = useRef(null); // 存储街景实例的引用
@@ -125,8 +126,10 @@ export default function StreetView({
   const viewSourceRef = useRef("initial");
   const latestHeadingRef = useRef(heading);
   const lastNotifiedHeadingRef = useRef(null);
-  const cleanupFunctionsRef = useRef([]); // 存储所有需要清理的函数
   const mountedRef = useRef(true); // 跟踪组件是否已挂载
+  // 被其他全屏层遮挡时暂停自动旋转（IntersectionObserver 检测不到遮挡）
+  const pausedRef = useRef(paused);
+  // 保存翻译键而不是译文，切换语言时不需要重建街景
   const [error, setError] = useState(null);
   const [isNetworkError, setIsNetworkError] = useState(false);
   const [showInteractionTip, setShowInteractionTip] = useState(false);
@@ -146,6 +149,7 @@ export default function StreetView({
 
   const canAutoRotate = () =>
     mountedRef.current &&
+    !pausedRef.current &&
     isDocumentVisible() &&
     isPageFocused() &&
     isContainerVisibleRef.current;
@@ -326,6 +330,22 @@ export default function StreetView({
     }
   };
 
+  useEffect(() => {
+    pausedRef.current = paused;
+    if (paused) {
+      stopAutoRotate();
+      if (userInteractionTimerRef.current) {
+        clearTimeout(userInteractionTimerRef.current);
+        userInteractionTimerRef.current = null;
+      }
+      return;
+    }
+    if (panoramaInstanceRef.current) {
+      scheduleAutoRotateResume(AUTO_ROTATE_VISIBILITY_RESUME_DELAY_MS);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 辅助函数只读写 ref，每次渲染都会重建，只在暂停状态变化时执行
+  }, [paused]);
+
   // 组件卸载时的清理
   useEffect(() => {
     mountedRef.current = true;
@@ -338,9 +358,6 @@ export default function StreetView({
         clearTimeout(userInteractionTimerRef.current);
         userInteractionTimerRef.current = null;
       }
-      // 清理所有注册的清理函数
-      cleanupFunctionsRef.current.forEach((fn) => fn());
-      cleanupFunctionsRef.current = [];
     };
   }, []);
 
@@ -404,7 +421,10 @@ export default function StreetView({
     let cleanup = null;
     let loadTimeoutId = null;
     let tipTimeoutId = null;
+    let hideTipTimeoutId = null;
+    let hasScheduledTip = false;
     let autoRotateTimeoutId = null;
+    const visibilityController = new AbortController();
 
     const initStreetView = async () => {
       try {
@@ -419,11 +439,17 @@ export default function StreetView({
         const lng = Number(longitude);
 
         if (isNaN(lat) || isNaN(lng)) {
-          throw new Error(t("error.invalidCoordinateValues"));
+          const invalidCoordinates = new Error(
+            "Invalid Street View coordinates",
+          );
+          invalidCoordinates.errorKey = "error.invalidCoordinateValues";
+          throw invalidCoordinates;
         }
 
         // Load Google Maps when the panorama container is visible
-        const maps = await loadGoogleMapsWhenVisible(panoramaRef.current);
+        const maps = await loadGoogleMapsWhenVisible(panoramaRef.current, {
+          signal: visibilityController.signal,
+        });
         if (!isMounted) return;
 
         if (!panoramaRef.current) return;
@@ -454,7 +480,7 @@ export default function StreetView({
         // 设置加载超时
         loadTimeoutId = setTimeout(() => {
           if (isMounted && mountedRef.current) {
-            setError(t("error.networkConnectionFailed"));
+            setError("error.networkConnectionFailed");
             setIsNetworkError(true);
             stopAutoRotate();
           }
@@ -466,8 +492,12 @@ export default function StreetView({
 
           const status = panorama.getStatus();
           if (status !== "OK") {
-            // 街景数据不可用
-            setError(t("error.streetViewNotAvailable"));
+            // 街景数据不可用：已有明确结论，不能再被加载超时改写成网络错误
+            if (loadTimeoutId) {
+              clearTimeout(loadTimeoutId);
+              loadTimeoutId = null;
+            }
+            setError("error.streetViewNotAvailable");
             setIsNetworkError(false);
             stopAutoRotate(); // 如果街景加载失败，停止自动旋转
           }
@@ -508,20 +538,18 @@ export default function StreetView({
             }
           }, AUTO_ROTATE_START_DELAY_MS); // 街景加载完成后等待2秒再开始旋转
 
-          // 延迟显示操作提示
+          // 每个位置只提示一次，沿路走动（pano_changed）不再重复弹出
+          if (hasScheduledTip) return;
+          hasScheduledTip = true;
           tipTimeoutId = setTimeout(() => {
             if (isMounted && mountedRef.current) {
               setShowInteractionTip(true);
               // 8秒后自动隐藏提示
-              const hideTipTimeoutId = setTimeout(() => {
+              hideTipTimeoutId = setTimeout(() => {
                 if (isMounted && mountedRef.current) {
                   setShowInteractionTip(false);
                 }
               }, 8000);
-              // 添加到清理列表
-              cleanupFunctionsRef.current.push(() =>
-                clearTimeout(hideTipTimeoutId),
-              );
             }
           }, 3000); // 街景加载完成后等待3秒再显示提示
         });
@@ -580,6 +608,7 @@ export default function StreetView({
           // 清理所有定时器
           if (loadTimeoutId) clearTimeout(loadTimeoutId);
           if (tipTimeoutId) clearTimeout(tipTimeoutId);
+          if (hideTipTimeoutId) clearTimeout(hideTipTimeoutId);
           if (autoRotateTimeoutId) clearTimeout(autoRotateTimeoutId);
           if (userInteractionTimerRef.current) {
             clearTimeout(userInteractionTimerRef.current);
@@ -593,9 +622,15 @@ export default function StreetView({
           panoramaInstanceRef.current = null;
         };
       } catch (err) {
-        if (isMounted) {
+        if (isMounted && err.name !== "AbortError") {
           console.error("StreetView initialization error:", err);
           stopAutoRotate();
+
+          if (err.errorKey) {
+            setError(err.errorKey);
+            setIsNetworkError(false);
+            return;
+          }
 
           // 判断是否为网络相关错误
           const isNetworkIssue =
@@ -607,10 +642,10 @@ export default function StreetView({
             !navigator.onLine;
 
           if (isNetworkIssue) {
-            setError(t("error.networkConnectionFailed"));
+            setError("error.networkConnectionFailed");
             setIsNetworkError(true);
           } else {
-            setError(t("error.streetViewLoadFailed"));
+            setError("error.streetViewLoadFailed");
             setIsNetworkError(false);
           }
         }
@@ -625,6 +660,8 @@ export default function StreetView({
     return () => {
       isMounted = false;
       mountedRef.current = false;
+      // 还在等容器可见时，断开 IntersectionObserver
+      visibilityController.abort();
 
       // 停止所有动画
       stopAutoRotate();
@@ -632,6 +669,7 @@ export default function StreetView({
       // 清理所有定时器
       if (loadTimeoutId) clearTimeout(loadTimeoutId);
       if (tipTimeoutId) clearTimeout(tipTimeoutId);
+      if (hideTipTimeoutId) clearTimeout(hideTipTimeoutId);
       if (autoRotateTimeoutId) clearTimeout(autoRotateTimeoutId);
       if (userInteractionTimerRef.current) {
         clearTimeout(userInteractionTimerRef.current);
@@ -646,13 +684,9 @@ export default function StreetView({
       if (cleanup) {
         cleanup();
       }
-
-      // 清理所有注册的清理函数
-      cleanupFunctionsRef.current.forEach((fn) => fn());
-      cleanupFunctionsRef.current = [];
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- 只在坐标或语言变化时重建街景，辅助函数只读写 ref
-  }, [latitude, longitude, t]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 只在坐标变化时重建街景（切换语言不重建），辅助函数只读写 ref
+  }, [latitude, longitude]);
 
   return (
     <div style={styles.container}>
@@ -668,11 +702,11 @@ export default function StreetView({
       {error && (
         <div style={styles.errorContainer}>
           <div style={styles.errorIcon}>{isNetworkError ? "🌐" : "⚠️"}</div>
-          <div style={styles.errorText}>{error}</div>
+          <div style={styles.errorText}>{t(error)}</div>
           <div style={styles.errorSubText}>
             {isNetworkError
               ? t("error.checkNetworkConnection")
-              : error === t("error.streetViewNotAvailable")
+              : error === "error.streetViewNotAvailable"
                 ? t("error.tryOtherLocationOrLater")
                 : ""}
           </div>

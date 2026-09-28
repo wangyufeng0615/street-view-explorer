@@ -40,4 +40,38 @@ describe("GlobalMap", () => {
     rerender(<GlobalMap />);
     expect(screen.getByText("loading_location")).toBeTruthy();
   });
+
+  it("creates the map once and only recenters it when the location changes", async () => {
+    const maps = {
+      Map: vi.fn(function Map() {
+        this.setCenter = vi.fn();
+        this.addListener = vi.fn(() => ({ remove: vi.fn() }));
+      }),
+      marker: {
+        AdvancedMarkerElement: vi.fn(function Marker(options) {
+          this.position = options.position;
+          this.map = options.map;
+        }),
+      },
+      event: { trigger: vi.fn() },
+    };
+    vi.mocked(loadGoogleMapsScript).mockResolvedValue(maps);
+    const flush = () =>
+      act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      });
+
+    const { rerender } = render(<GlobalMap latitude={10} longitude={20} />);
+    await flush();
+    expect(maps.Map).toHaveBeenCalledTimes(1);
+
+    rerender(<GlobalMap latitude={30} longitude={40} />);
+    await flush();
+
+    expect(maps.Map).toHaveBeenCalledTimes(1);
+    const map = maps.Map.mock.instances[0];
+    expect(map.setCenter).toHaveBeenLastCalledWith({ lat: 30, lng: 40 });
+    const marker = maps.marker.AdvancedMarkerElement.mock.instances[0];
+    expect(marker.position).toEqual({ lat: 30, lng: 40 });
+  });
 });

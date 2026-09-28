@@ -62,8 +62,63 @@ function rememberRoomSnapshot(room, latest) {
   }
 }
 
+// Offsets further than this from the current estimate are adopted directly
+// (server clock jump, first sample after a stall) instead of being smoothed.
+const CLOCK_OFFSET_RESET_MS = 5000;
+const CLOCK_OFFSET_SMOOTHING = 0.25;
+
+/**
+ * Server-minus-local clock offset from one request, assuming the server
+ * stamped `server_time` halfway through the round trip.
+ * @param {string | null | undefined} serverTime
+ * @param {number} requestStartedAt
+ * @param {number} responseReceivedAt
+ */
+function estimateClockOffset(serverTime, requestStartedAt, responseReceivedAt) {
+  const serverMs = parseSnapshotTime(serverTime);
+  if (serverMs == null) return null;
+  const midpoint =
+    requestStartedAt + Math.max(0, responseReceivedAt - requestStartedAt) / 2;
+  return serverMs - midpoint;
+}
+
+/**
+ * Blend a new offset sample into the current estimate so latency jitter does
+ * not make the countdown jump around.
+ * @param {number | null} current @param {number | null} sample
+ */
+function smoothClockOffset(current, sample) {
+  if (sample == null) return current;
+  if (current == null || Math.abs(sample - current) > CLOCK_OFFSET_RESET_MS) {
+    return sample;
+  }
+  return current + (sample - current) * CLOCK_OFFSET_SMOOTHING;
+}
+
+/**
+ * Keeps a countdown for the same deadline from ticking back up after an
+ * offset correction.
+ * @param {{deadlineAt: string | null, seconds: number | null}} previous
+ * @param {string | null | undefined} deadlineAt
+ * @param {number | null} seconds
+ */
+function clampRemainingSeconds(previous, deadlineAt, seconds) {
+  if (
+    seconds != null &&
+    previous.seconds != null &&
+    previous.deadlineAt === deadlineAt &&
+    seconds > previous.seconds
+  ) {
+    return previous.seconds;
+  }
+  return seconds;
+}
+
 export {
   getRemainingSeconds,
+  estimateClockOffset,
+  smoothClockOffset,
+  clampRemainingSeconds,
   parseSnapshotTime,
   isOlderRoomSnapshot,
   rememberRoomSnapshot,

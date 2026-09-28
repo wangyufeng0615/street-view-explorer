@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strings"
@@ -192,6 +193,23 @@ func (h *Handlers) SearchLocation(c *gin.Context) {
 	svc := h.servicesForMode(c)
 	loc, place, err := svc.LocationService.SearchLocationWithContext(c.Request.Context(), query, language)
 	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(c.Request.Context().Err(), context.Canceled) {
+			return
+		}
+		if !isSearchNotFound(place, err) {
+			CaptureHandlerError(c, err, http.StatusBadGateway, map[string]interface{}{
+				"operation": "search_location",
+				"language":  language,
+			})
+			c.JSON(http.StatusBadGateway, gin.H{
+				"success": false,
+				"error":   "地点搜索暂时不可用，请稍后再试",
+				"data": gin.H{
+					"place": place,
+				},
+			})
+			return
+		}
 		c.JSON(http.StatusNotFound, gin.H{
 			"success": false,
 			"error":   PublicErrorMessage(err),
@@ -225,6 +243,22 @@ func (h *Handlers) SearchLocation(c *gin.Context) {
 			"place":    place,
 		},
 	})
+}
+
+// isSearchNotFound separates "no such place / no Street View nearby" from
+// infrastructure failures (lookup errors, database writes). The service layer
+// reports not-found cases with plain error strings, so they are matched here.
+func isSearchNotFound(place *services.PlaceResolution, err error) bool {
+	if place != nil || errors.Is(err, services.ErrStreetViewNotFound) {
+		return true
+	}
+	message := err.Error()
+	for _, marker := range []string{"未找到地点", "地点解析结果无效", "缺少地点关键词"} {
+		if strings.Contains(message, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func normalizeVisitSource(source string) string {

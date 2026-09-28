@@ -83,13 +83,14 @@ func (gh *GeoHandlers) SatelliteImage(c *gin.Context) {
 		return
 	}
 
-	lat, err := strconv.ParseFloat(latStr, 64)
-	if err != nil || lat < -90 || lat > 90 {
+	// parseCoordinate also rejects NaN/Inf, which pass plain range checks.
+	lat, err := parseCoordinate(latStr, -90, 90)
+	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "invalid lat"})
 		return
 	}
-	lng, err := strconv.ParseFloat(lngStr, 64)
-	if err != nil || lng < -180 || lng > 180 {
+	lng, err := parseCoordinate(lngStr, -180, 180)
+	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "invalid lng"})
 		return
 	}
@@ -218,8 +219,11 @@ func (gh *GeoHandlers) AIGuess(c *gin.Context) {
 
 	imageURL := geoSatelliteImageURL(gh.googleAPIKey, lat, lng, zoom, width, height)
 
-	resp, err := gh.httpClient.Get(imageURL)
+	resp, err := gh.getSatelliteImage(c, imageURL)
 	if err != nil {
+		if c.Request.Context().Err() != nil {
+			return
+		}
 		log.Printf("[GEO] Failed to fetch satellite image: %s", gh.redactMapError(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "Failed to fetch satellite image"})
 		return
@@ -366,8 +370,11 @@ func maxInt(a, b int) int {
 func (gh *GeoHandlers) proxySatelliteImage(c *gin.Context, lat, lng float64, zoom int, width, height int, cacheControl string) {
 	imageURL := geoSatelliteImageURL(gh.googleAPIKey, lat, lng, zoom, width, height)
 
-	resp, err := gh.httpClient.Get(imageURL)
+	resp, err := gh.getSatelliteImage(c, imageURL)
 	if err != nil {
+		if c.Request.Context().Err() != nil {
+			return
+		}
 		log.Printf("[GEO] satellite image fetch failed: %s", gh.redactMapError(err))
 		c.JSON(http.StatusBadGateway, gin.H{"success": false, "error": "image fetch failed"})
 		return
@@ -385,6 +392,16 @@ func (gh *GeoHandlers) proxySatelliteImage(c *gin.Context, lat, lng float64, zoo
 	c.Header("Cache-Control", cacheControl)
 	c.Status(http.StatusOK)
 	io.Copy(c.Writer, resp.Body)
+}
+
+// getSatelliteImage fetches a Static Maps image tied to the browser request, so
+// an abandoned request stops the upstream fetch instead of running to timeout.
+func (gh *GeoHandlers) getSatelliteImage(c *gin.Context, imageURL string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(c.Request.Context(), http.MethodGet, imageURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	return gh.httpClient.Do(req)
 }
 
 func (gh *GeoHandlers) geoBattleStatusCode(err error) int {

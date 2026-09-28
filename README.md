@@ -128,6 +128,7 @@ Backend variables live in `backend/.env`.
 | `OPENAI_REALTIME_VAD_TYPE`, `OPENAI_REALTIME_VAD_EAGERNESS` | No | Realtime turn detection tuning, default `semantic_vad` with `high` eagerness for faster voice replies. |
 | `OPENAI_REALTIME_VAD_THRESHOLD`, `OPENAI_REALTIME_VAD_PREFIX_PADDING_MS`, `OPENAI_REALTIME_VAD_SILENCE_DURATION_MS` | No | Optional `server_vad` tuning when `OPENAI_REALTIME_VAD_TYPE=server_vad`. Defaults are `0.5`, `250`, and `350`. |
 | `OPENAI_REALTIME_ALLOWED_ORIGINS`, `REALTIME_ALLOWED_ORIGINS` | No | Comma-separated browser origins allowed to open the backend Realtime WebSocket. Same-origin and local dev hosts are allowed automatically. |
+| `REALTIME_WEBRTC_ENABLED` | No | Enables the legacy WebRTC endpoints (`/realtime/client-secret`, `/realtime/calls`). Default `false`; enable only with `VITE_REALTIME_TRANSPORT=webrtc`. |
 | `ATLAS_VOICE_PROVIDER` | No | Atlas Voice audio provider, default `openai`. Set to `doubao` to keep OpenAI Realtime for text/tools and synthesize speech with Doubao TTS. |
 | `DOUBAO_TTS_API_KEY` | No | Doubao TTS API key for the new Volcengine console. Alternative to app ID plus access token. |
 | `DOUBAO_TTS_APP_ID` / `DOUBAO_TTS_APPID`, `DOUBAO_TTS_ACCESS_KEY` / `DOUBAO_TTS_TOKEN` | No | Doubao TTS app credentials when not using `DOUBAO_TTS_API_KEY`. |
@@ -163,7 +164,7 @@ Frontend variables live in `frontend/.env`.
 | `VITE_API_BASE_URL` | No | Historical config value; current browser API wrappers call same-origin `/api/v1`. |
 | `VITE_GOOGLE_MAPS_API_KEY` | Yes | Google Maps JavaScript API key for browser maps. |
 | `VITE_GOOGLE_MAPS_MAP_ID` | No | Optional Google Maps map ID for configured maps. |
-| `VITE_REALTIME_TRANSPORT` | No | Atlas Voice transport, default `backend-ws`; set to another value to use the WebRTC path. |
+| `VITE_REALTIME_TRANSPORT` | No | Atlas Voice transport, default `backend-ws`; set to another value to use the WebRTC path (requires backend `REALTIME_WEBRTC_ENABLED=true`). |
 | `VITE_REALTIME_TRANSCRIPTION_MODEL` | No | Browser session-update override for input transcription, default `gpt-4o-mini-transcribe`. |
 | `VITE_REALTIME_VOICE` | No | Browser session-update output voice, default `cedar`. |
 | `VITE_REALTIME_OUTPUT_SPEED` | No | Browser session-update output speed, default `1`. |
@@ -219,8 +220,8 @@ All standard JSON endpoints return a `{ "success": boolean, "data": ..., "error"
 ### Atlas Voice / Realtime
 
 - `GET /api/v1/realtime/voice-config` - returns the active speech provider and Doubao TTS readiness.
-- `GET /api/v1/realtime/client-secret` - creates a short-lived OpenAI Realtime session for the WebRTC path.
-- `POST /api/v1/realtime/calls` - proxies WebRTC SDP offers to OpenAI Realtime.
+- `GET /api/v1/realtime/client-secret` - creates a short-lived OpenAI Realtime session for the WebRTC path (disabled unless `REALTIME_WEBRTC_ENABLED=true`).
+- `POST /api/v1/realtime/calls` - proxies WebRTC SDP offers to OpenAI Realtime (same switch).
 - `GET /api/v1/realtime/ws` - same-origin WebSocket relay for the default voice transport.
 - `POST /api/v1/realtime/doubao-tts` - streams Doubao TTS PCM chunks as NDJSON when `ATLAS_VOICE_PROVIDER=doubao`.
 

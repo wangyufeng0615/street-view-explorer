@@ -4,6 +4,7 @@ import {
   setExplorationPreference,
 } from "../services/api";
 import useStore from "../store/useStore";
+import { removeLocalStorage, writeLocalStorage } from "./safeStorage";
 import { formatAtlasLocation, truncateAtlasText } from "./atlasPersona";
 import {
   normalizeHeading,
@@ -91,16 +92,33 @@ function terminalFailure(error, extra = {}) {
   };
 }
 
+// Store loaders return { success, error }; a missing result (older callers or
+// test doubles) falls back to checking whether a panorama is now loaded.
+function didLoadPanorama(result) {
+  const nextLocation = useStore.getState().location;
+  const loaded = result ? result.success : Boolean(nextLocation?.pano_id);
+  return loaded && Boolean(nextLocation?.pano_id);
+}
+
+// Voice navigation keeps the current place on failure so the page (and the
+// live voice session under it) never switches to the full-page error view.
+const KEEP_CURRENT_LOCATION = { preserveLocation: true };
+
 async function navigateRandom({ language, noLocationMessage, sendScene }) {
   await deleteExplorationPreference(language);
-  window.localStorage?.setItem("exploration_mode", "random");
-  window.localStorage?.removeItem("exploration_interest");
+  writeLocalStorage("exploration_mode", "random");
+  removeLocalStorage("exploration_interest");
   useStore.setState({
     explorationMode: "random",
     explorationInterest: "",
     preferenceError: null,
   });
-  await useStore.getState().loadRandomLocation(true);
+  const result = await useStore
+    .getState()
+    .loadRandomLocation(true, KEEP_CURRENT_LOCATION);
+  if (result && !result.success) {
+    return terminalFailure(result.error || "Could not load a new location");
+  }
   sendScene();
   return {
     success: true,
@@ -132,14 +150,19 @@ async function applyExplorationTheme(
     );
   }
 
-  window.localStorage?.setItem("exploration_mode", "custom");
-  window.localStorage?.setItem("exploration_interest", interest);
+  writeLocalStorage("exploration_mode", "custom");
+  writeLocalStorage("exploration_interest", interest);
   useStore.setState({
     explorationMode: "custom",
     explorationInterest: interest,
     preferenceError: null,
   });
-  await useStore.getState().loadRandomLocation(true);
+  const result = await useStore
+    .getState()
+    .loadRandomLocation(true, KEEP_CURRENT_LOCATION);
+  if (result && !result.success) {
+    return terminalFailure(result.error || "Could not load a themed location");
+  }
   sendScene();
   return {
     success: true,
@@ -185,9 +208,12 @@ async function loadCoordinates(
   state,
   { noLocationMessage, sendScene },
 ) {
-  await state.loadLocationFromURL(lat, lng);
-  const nextLocation = useStore.getState().location;
-  if (!nextLocation?.pano_id) {
+  const result = await state.loadLocationFromURL(
+    lat,
+    lng,
+    KEEP_CURRENT_LOCATION,
+  );
+  if (!didLoadPanorama(result)) {
     return terminalFailure("Could not find Street View near those coordinates");
   }
   sendScene();
@@ -220,14 +246,8 @@ async function loadPlaceSearch(
     latitude: locLat,
     longitude: locLng,
   };
-  useStore.setState({
-    location: locationData,
-    currentLocationRef: locationData,
-    locationError: null,
-    description: null,
-    descriptionError: null,
-    streetViewView: null,
-  });
+  // Supersedes any in-flight random/URL load so it cannot overwrite this place.
+  useStore.getState().applyNavigatedLocation(locationData);
   sendScene();
 
   return {
@@ -272,9 +292,10 @@ async function walkNearbyAttempts(
 
   for (const [bearing, distance] of attempts) {
     const next = destinationPoint(startLat, startLng, bearing, distance);
-    await useStore.getState().loadLocationFromURL(next.lat, next.lng);
-    const nextLocation = useStore.getState().location;
-    if (nextLocation?.pano_id) {
+    const result = await useStore
+      .getState()
+      .loadLocationFromURL(next.lat, next.lng, KEEP_CURRENT_LOCATION);
+    if (didLoadPanorama(result)) {
       sendScene();
       return {
         success: true,

@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, renderHook } from "@testing-library/react";
 
-import { useGeoGameAtlasGuess } from "./useGeoGameAtlasGuess";
+import {
+  ATLAS_GUESS_TIMEOUT_MS,
+  useGeoGameAtlasGuess,
+} from "./useGeoGameAtlasGuess";
 import { calculateScore, haversineDistance } from "../utils/geoGameUtils";
 
 const TARGET = { lat: 48.8566, lng: 2.3522 };
@@ -213,5 +216,26 @@ describe("useGeoGameAtlasGuess", () => {
       lat: 35.68,
       lng: 139.69,
     });
+  });
+
+  it("gives up with an empty guess when Atlas does not answer in time", async () => {
+    vi.useFakeTimers();
+    try {
+      const { dispatch } = setup();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(ATLAS_GUESS_TIMEOUT_MS - 1);
+      });
+      expect(aiGuessActions(dispatch)).toEqual([]);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1);
+      });
+      expect(requests[0].options.signal.aborted).toBe(true);
+      expect(aiGuessActions(dispatch)).toEqual([
+        { type: "SET_AI_GUESS", payload: null },
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

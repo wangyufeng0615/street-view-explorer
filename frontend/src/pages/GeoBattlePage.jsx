@@ -22,9 +22,10 @@ import { useGeoBattleSatelliteImage } from "../hooks/useGeoBattleSatelliteImage"
 import "../styles/GeoBattle.css";
 
 // Hook call order below mirrors the original single-component effect order:
-// feedback -> room sync (clock, ticker, reset, load, deadline, polling) ->
-// guess map (load, create, resize, pending pin, results, round reset) ->
-// transition feedback -> satellite image. Keep it when editing.
+// feedback -> room sync (ticker, reset, load, visibility, deadline, polling)
+// -> guess map (load, create, resize, pending pin, round reset, results) ->
+// transition feedback -> satellite image. Keep it when editing; the guess map
+// round reset must stay before its result overlays.
 function GeoBattleRoomPage({ roomId }) {
   const { t } = useTranslation();
   const navigate = useNavigate();

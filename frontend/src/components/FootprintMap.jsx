@@ -119,63 +119,81 @@ export default function FootprintMap({ onClose }) {
         setMapLoading(false);
       });
 
+      // Rebuild only after the map settles (idle), only for the visible
+      // viewport, and reuse markers whose cluster did not change.
+      const markersByKey = new Map();
+      const createMarker = (group) => {
+        const position = { lat: group.lat, lng: group.lng };
+        const count = group.visits.length;
+        const title =
+          count > 1 ? `${count}` : group.visits[0].formatted_address || "";
+        const onClick = () => {
+          if (count === 1) openVisitInNewTab(group.lat, group.lng);
+          else {
+            map.setCenter(position);
+            map.setZoom(Math.min(21, (map.getZoom() || 2) + 3));
+          }
+        };
+        if (
+          maps.marker?.AdvancedMarkerElement &&
+          import.meta.env.VITE_GOOGLE_MAPS_MAP_ID
+        ) {
+          const dot = document.createElement("button");
+          dot.type = "button";
+          dot.textContent = count > 1 ? String(count) : "";
+          dot.setAttribute("aria-label", title);
+          Object.assign(dot.style, {
+            minWidth: count > 1 ? "28px" : "12px",
+            height: count > 1 ? "28px" : "12px",
+            borderRadius: "50%",
+            background: "#FFD54F",
+            color: "#222",
+            border: "2px solid white",
+            cursor: "pointer",
+          });
+          dot.addEventListener("click", onClick);
+          return new maps.marker.AdvancedMarkerElement({
+            map,
+            position,
+            content: dot,
+            title,
+          });
+        }
+        const marker = new maps.Marker({
+          map,
+          position,
+          title,
+          label: count > 1 ? String(count) : undefined,
+        });
+        marker.addListener("click", onClick);
+        return marker;
+      };
+
       const renderMarkers = () => {
-        markersRef.current.forEach(removeMarker);
-        markersRef.current = [];
+        const bounds = map.getBounds?.();
+        const nextKeys = new Set();
         for (const group of clusterFootprints(
           uniqueVisits,
           map.getZoom() || 2,
         )) {
-          const position = { lat: group.lat, lng: group.lng };
-          const count = group.visits.length;
-          const title =
-            count > 1 ? `${count}` : group.visits[0].formatted_address || "";
-          let marker;
-          const onClick = () => {
-            if (count === 1) openVisitInNewTab(group.lat, group.lng);
-            else {
-              map.setCenter(position);
-              map.setZoom(Math.min(21, (map.getZoom() || 2) + 3));
-            }
-          };
-          if (
-            maps.marker?.AdvancedMarkerElement &&
-            import.meta.env.VITE_GOOGLE_MAPS_MAP_ID
-          ) {
-            const dot = document.createElement("button");
-            dot.type = "button";
-            dot.textContent = count > 1 ? String(count) : "";
-            dot.setAttribute("aria-label", title);
-            Object.assign(dot.style, {
-              minWidth: count > 1 ? "28px" : "12px",
-              height: count > 1 ? "28px" : "12px",
-              borderRadius: "50%",
-              background: "#FFD54F",
-              color: "#222",
-              border: "2px solid white",
-              cursor: "pointer",
-            });
-            dot.addEventListener("click", onClick);
-            marker = new maps.marker.AdvancedMarkerElement({
-              map,
-              position,
-              content: dot,
-              title,
-            });
-          } else {
-            marker = new maps.Marker({
-              map,
-              position,
-              title,
-              label: count > 1 ? String(count) : undefined,
-            });
-            marker.addListener("click", onClick);
+          if (bounds && !bounds.contains({ lat: group.lat, lng: group.lng })) {
+            continue;
           }
-          markersRef.current.push(marker);
+          const markerKey = `${group.key}:${group.visits.length}`;
+          nextKeys.add(markerKey);
+          if (!markersByKey.has(markerKey)) {
+            markersByKey.set(markerKey, createMarker(group));
+          }
         }
+        for (const [markerKey, marker] of markersByKey) {
+          if (!nextKeys.has(markerKey)) {
+            removeMarker(marker);
+            markersByKey.delete(markerKey);
+          }
+        }
+        markersRef.current = Array.from(markersByKey.values());
       };
-      renderMarkers();
-      map.addListener("zoom_changed", renderMarkers);
+      map.addListener("idle", renderMarkers);
     } catch (err) {
       console.error("FootprintMap init error:", err);
       setError(t("error.mapLoadFailed"));

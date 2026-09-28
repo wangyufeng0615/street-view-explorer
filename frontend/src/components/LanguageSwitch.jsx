@@ -1,6 +1,7 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
 import "../styles/LanguageSwitch.css";
+import { writeLocalStorage } from "../utils/safeStorage";
 
 const LANGUAGES = [
   { code: "en", label: "EN" },
@@ -19,9 +20,7 @@ export default function LanguageSwitch({ className = "", tone = "light" }) {
 
   const handleLanguageChange = (language) => {
     if (currentLanguage === language) return;
-    if (typeof window !== "undefined") {
-      window.localStorage?.setItem("i18nextLng", language);
-    }
+    writeLocalStorage("i18nextLng", language);
 
     i18n.changeLanguage(language).then(() => {
       if (typeof window !== "undefined") {

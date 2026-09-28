@@ -196,3 +196,27 @@ func TestRandomLocationPenaltyUsesPanoAndDistance(t *testing.T) {
 		t.Fatalf("novel penalty = %d, want 0", got)
 	}
 }
+
+func TestValidateRegionsKeepsAntimeridianRegionAndDropsInvalidOnes(t *testing.T) {
+	region := func(north, south, west, east float64, info string) models.Region {
+		var r models.Region
+		r.Coordinates.North, r.Coordinates.South = north, south
+		r.Coordinates.West, r.Coordinates.East = west, east
+		r.RegionInfo = info
+		return r
+	}
+	fiji := region(-15, -20, 177, -178, "Fiji")
+	tooWide := region(10, 0, -170, 170, "Too wide")
+	outOfRange := region(95, 0, 0, 10, "Out of range")
+
+	valid, err := validateRegions([]models.Region{fiji, tooWide, outOfRange})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(valid) != 1 || valid[0].RegionInfo != "Fiji" {
+		t.Fatalf("valid regions = %+v, want only Fiji", valid)
+	}
+	if _, err := validateRegions([]models.Region{tooWide}); err == nil {
+		t.Fatal("only invalid regions should fail validation")
+	}
+}

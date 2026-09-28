@@ -204,11 +204,23 @@ export function loadGoogleMapsScript() {
   return googleMapsPromise;
 }
 
+function abortError() {
+  const error = new Error("Google Maps visibility wait was cancelled");
+  error.name = "AbortError";
+  return error;
+}
+
 /**
  * Load Google Maps when element becomes visible
- * Uses IntersectionObserver for viewport-based loading
+ * Uses IntersectionObserver for viewport-based loading.
+ * Pass `signal` to stop waiting (the observer is disconnected and the promise
+ * rejects with an AbortError) when the caller no longer needs the map.
  */
-export function loadGoogleMapsWhenVisible(element) {
+export function loadGoogleMapsWhenVisible(element, { signal } = {}) {
+  if (signal?.aborted) {
+    return Promise.reject(abortError());
+  }
+
   if (!element) {
     return loadGoogleMapsScript();
   }
@@ -220,12 +232,19 @@ export function loadGoogleMapsWhenVisible(element) {
       return;
     }
 
+    let observer = null;
+    const handleAbort = () => {
+      observer?.disconnect();
+      reject(abortError());
+    };
+
     // Create observer
-    const observer = new IntersectionObserver(
+    observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
           if (entry.isIntersecting) {
             observer.disconnect();
+            signal?.removeEventListener("abort", handleAbort);
             loadGoogleMapsScript().then(resolve).catch(reject);
           }
         });
@@ -237,6 +256,7 @@ export function loadGoogleMapsWhenVisible(element) {
       },
     );
 
+    signal?.addEventListener("abort", handleAbort, { once: true });
     observer.observe(element);
   });
 }

@@ -85,8 +85,8 @@ Atlas Voice uses `frontend/src/components/AtlasVoicePanel.jsx` on the home route
 Realtime route surface:
 
 - `GET /api/v1/realtime/voice-config` returns the active voice provider plus Doubao TTS readiness and stream shape.
-- `GET /api/v1/realtime/client-secret` creates short-lived OpenAI Realtime sessions for the WebRTC path.
-- `POST /api/v1/realtime/calls` proxies WebRTC SDP offers to OpenAI Realtime.
+- `GET /api/v1/realtime/client-secret` creates short-lived OpenAI Realtime sessions for the WebRTC path. Disabled (404) unless `REALTIME_WEBRTC_ENABLED=true`, because direct sessions bypass the WebSocket relay limits and event filter.
+- `POST /api/v1/realtime/calls` proxies WebRTC SDP offers to OpenAI Realtime (same switch).
 - `GET /api/v1/realtime/ws` is the default WebSocket relay. Vite enables `ws: true`, and production Nginx has a dedicated upgrade location with long read/write timeouts.
 - `POST /api/v1/realtime/doubao-tts` accepts final Atlas text and returns newline-delimited PCM chunks when Doubao output is enabled.
 

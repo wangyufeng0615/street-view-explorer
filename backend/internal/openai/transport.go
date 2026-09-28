@@ -152,6 +152,9 @@ func readChatCompletionStream(body io.Reader, onDelta func(string) error) (chatR
 	var usage completionUsage
 	var generationID, provider string
 	completed := false
+	// OpenRouter ends every stream with [DONE] and repeats finish_reason on
+	// the last chunks. Either one proves the answer was not cut off.
+	finished := false
 
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -184,6 +187,9 @@ func readChatCompletionStream(body io.Reader, onDelta func(string) error) (chatR
 			usage = chunk.Usage
 		}
 		for _, choice := range chunk.Choices {
+			if choice.FinishReason != "" {
+				finished = true
+			}
 			delta := choice.Delta.Content
 			if delta == "" && choice.Message.Content != "" {
 				delta = choice.Message.Content
@@ -202,6 +208,9 @@ func readChatCompletionStream(body io.Reader, onDelta func(string) error) (chatR
 	}
 	if err := scanner.Err(); err != nil && !completed {
 		return chatResponse{}, fmt.Errorf("读取流式响应失败: %w", err)
+	}
+	if !completed && !finished {
+		return chatResponse{}, fmt.Errorf("流式响应在完成前中断: %w", io.ErrUnexpectedEOF)
 	}
 
 	var result chatResponse

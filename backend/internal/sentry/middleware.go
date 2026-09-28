@@ -1,6 +1,8 @@
 package sentry
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"net/http"
 	"time"
@@ -35,10 +37,12 @@ func Middleware(repanic bool) gin.HandlerFunc {
 		hub.Scope().SetTag("http.url", c.Request.URL.Path)
 		hub.Scope().SetTag("user_agent", c.Request.UserAgent())
 
-		// Add session ID if available
+		// Add a hashed session ID if available. The raw ID is the only
+		// credential for duel rooms and preferences, so it never leaves the
+		// server; the hash still groups events by visitor.
 		if sessionID := c.GetHeader("X-Session-ID"); sessionID != "" {
 			hub.Scope().SetUser(sentry.User{
-				ID: sessionID,
+				ID: HashSessionID(sessionID),
 			})
 		}
 
@@ -179,4 +183,10 @@ func TestSentry() gin.HandlerFunc {
 			},
 		})
 	}
+}
+
+// HashSessionID returns a stable, non-reversible identifier for a session ID.
+func HashSessionID(sessionID string) string {
+	sum := sha256.Sum256([]byte("streetview-session:" + sessionID))
+	return "session_" + hex.EncodeToString(sum[:8])
 }

@@ -410,10 +410,17 @@ function RoundResult({ state, t, onNext }) {
         )}
       </div>
 
-      <button className="geo-result-btn" onClick={onNext}>
-        {state.round >= TOTAL_ROUNDS
-          ? t("geo.see_results")
-          : t("geo.next_round")}
+      <button
+        className="geo-result-btn"
+        onClick={onNext}
+        disabled={state.aiLoading}
+        aria-busy={state.aiLoading}
+      >
+        {state.aiLoading
+          ? t("geo.waiting_for_atlas")
+          : state.round >= TOTAL_ROUNDS
+            ? t("geo.see_results")
+            : t("geo.next_round")}
       </button>
     </div>
   );

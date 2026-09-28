@@ -271,6 +271,28 @@ func TestGeoBattleMatchmakingDropsStaleQueueEntries(t *testing.T) {
 	}
 }
 
+func TestGeoBattleMatchmakingSkipsQueuedPlayerWhoStoppedPolling(t *testing.T) {
+	svc := newBlockingGeoBattleService()
+	offline := time.Now().Add(-geoBattleOnlineThreshold - time.Second)
+	svc.queue["player-closed"] = &geoBattleQueueEntry{
+		SessionID:  "player-closed",
+		Nickname:   "Closed",
+		QueuedAt:   offline,
+		LastSeenAt: offline,
+	}
+
+	snapshot, err := svc.JoinMatchmaking("player-b", "B")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.Status != models.GeoBattleQueueQueued {
+		t.Fatalf("status = %s, want queued instead of matching a closed page", snapshot.Status)
+	}
+	if _, ok := svc.queue["player-closed"]; ok {
+		t.Fatal("offline queue entry should be removed")
+	}
+}
+
 func TestGeoBattleMatchmakingStatusAndCancel(t *testing.T) {
 	svc := newBlockingGeoBattleService()
 
