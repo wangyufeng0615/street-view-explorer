@@ -328,7 +328,7 @@ Use `--skip-proxy-check` only when the proxy health check itself is unreliable b
 
 ### SG production target (verified 2026-09-05)
 
-The active target is `sg:/opt/street-view-explorer` (SSH user `ubuntu`, sudo for Docker), behind Caddy on `earth.wangyufeng.org`. KR's Docker service is inactive. The original archive matched commit `106364f` before its Git metadata was restored; local `.env` files and the existing `street-view-explorer_sqlite_data` volume are retained.
+The active target is `sg:/opt/street-view-explorer` (SSH user `ubuntu`, sudo for Docker), behind Cloudflare and then Caddy on `earth.wangyufeng.org`. The host Caddyfile (`/etc/caddy/Caddyfile`, Caddy 2.6, not in this repo) sets `X-Forwarded-For`/`X-Real-IP` from `CF-Connecting-IP` only when the peer matches a static list of Cloudflare ranges (https://www.cloudflare.com/ips/), and from the direct peer otherwise, so per-IP limits see real clients. Refresh that list when Cloudflare publishes new ranges; validate with `caddy validate --adapter caddyfile` and apply with `systemctl reload caddy`. KR's Docker service is inactive. The original archive matched commit `106364f` before its Git metadata was restored; local `.env` files and the existing `street-view-explorer_sqlite_data` volume are retained.
 
 The host requires Git, GNU Make, curl, and Docker with Compose v2 and a running daemon. The deployment script checks these before changing the checkout. GNU Make was installed on SG on 2026-09-05; no host reboot is needed for application deployment.
 
