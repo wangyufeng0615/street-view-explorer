@@ -38,7 +38,7 @@ The frontend is React 18 with Vite. `frontend/vite.config.js` sets:
 Routes:
 
 - `/` uses `HomePage` for random Street View exploration.
-- `/footprints` uses `HomePage` with the Atlas footprint map open.
+- `/footprints` opened from the home page is a background-location overlay: `HomePage` stays mounted (street view paused) and closing returns to it. A direct visit renders only `FootprintPage`, without loading the home page, a random location or a description.
 - `/agent` uses `AgentPage` for Odyssey journey setup.
 - `/agent/letter/:id` uses `LetterPage` for public letters.
 - `/guess` uses `GeoGamePage` for solo satellite guessing.
@@ -131,7 +131,7 @@ Round selection:
 Image and scoring:
 
 - Satellite images are fetched through `GET /api/v1/geo/satellite` to keep the Google Static Maps key on the backend path.
-- Both the satellite image proxy and AI guess endpoint accept zoom levels 2-14. Static images use Google Static Maps `scale=2` and `maptype=satellite`; width and height default to `640x480`, but the frontend sends panel-aware dimensions clamped to 120-640 pixels per side.
+- Both the satellite image proxy and AI guess endpoint accept zoom levels 2-14. Static images use Google Static Maps `scale=2`, `maptype=satellite` and `format=jpg` (3-6x smaller than PNG); the AI guess path re-encodes the annotated image as PNG so the red reticle is not blurred by JPEG chroma subsampling; width and height default to `640x480`, but the frontend sends panel-aware dimensions clamped to 120-640 pixels per side.
 - Optional AI guessing calls `POST /api/v1/geo/ai-guess`. The frontend sends the current locked zoom and UI language; the backend fetches exactly that one satellite image and the AI prompt asks for the center point of the image only.
 - The satellite panel keeps a center pin visible. Zoom-out fetches the next static image before handing over to the same short reveal animation used by online duel.
 - Scoring uses exponential decay by zoom-outs and distance:
@@ -224,4 +224,4 @@ The Compose service binds Nginx to `127.0.0.1:3000`.
 
 SQLite PRAGMAs are applied using the modernc driver syntax on every connection. Rate-limit commit errors fail closed and explicitly roll back the leased connection before it returns to the pool. Internal random-selection history reads omit all-history count queries. Footprints paginate distinct panoramas and render zoom-based clusters.
 
-Forwarding headers are trusted only for configured `TRUSTED_PROXY_CIDRS`. Realtime WebSockets enforce per-IP/global connection budgets, message/read/write limits and maximum duration. The browser keeps cancellation and timeouts attached until response bodies finish, including streamed Doubao TTS. Preference synchronization finishes before initial exploration and failed changes preserve the prior mode. Duel preparation is cancellable and deadline validation happens inside mutation locks.
+Forwarding headers are trusted only for configured `TRUSTED_PROXY_CIDRS`. Realtime WebSockets enforce per-IP/global connection budgets, message/read/write limits and maximum duration. The browser keeps cancellation and timeouts attached until response bodies finish, including streamed Doubao TTS. In custom-interest mode, preference synchronization finishes before initial exploration; in random mode with no stored interest the first random location is requested immediately (the backend has no preference to clear). Failed changes preserve the prior mode. Duel preparation is cancellable and deadline validation happens inside mutation locks.

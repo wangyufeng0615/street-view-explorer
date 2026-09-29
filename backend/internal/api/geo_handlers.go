@@ -163,9 +163,11 @@ func validateGeoSatelliteImageSize(width, height int) (int, int, error) {
 	return width, height, nil
 }
 
+// geoSatelliteImageURL requests JPEG: satellite photos are 3-6x smaller than
+// the default PNG (e.g. 0.43MB vs 1.15MB at 544x640@2x) with no visible loss.
 func geoSatelliteImageURL(apiKey string, lat, lng float64, zoom int, width, height int) string {
 	return fmt.Sprintf(
-		"https://maps.googleapis.com/maps/api/staticmap?center=%.6f,%.6f&zoom=%d&size=%dx%d&scale=%d&maptype=satellite&key=%s",
+		"https://maps.googleapis.com/maps/api/staticmap?center=%.6f,%.6f&zoom=%d&size=%dx%d&scale=%d&maptype=satellite&format=jpg&key=%s",
 		lat,
 		lng,
 		zoom,
@@ -286,6 +288,8 @@ func annotateGeoAICenterReticle(imageBytes []byte) ([]byte, error) {
 	cy := bounds.Min.Y + bounds.Dy()/2
 	drawGeoAICenterReticle(rgba, cx, cy)
 
+	// Re-encode as PNG even though the source is JPEG: JPEG chroma subsampling
+	// washes out the thin red reticle the model relies on.
 	var buf bytes.Buffer
 	if err := png.Encode(&buf, rgba); err != nil {
 		return nil, err

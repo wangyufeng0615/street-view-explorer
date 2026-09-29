@@ -522,6 +522,7 @@ export async function getVisitHistory(
   offset = 0,
   source = null,
   distinct = false,
+  fields = null,
 ) {
   try {
     const params = new URLSearchParams({
@@ -530,6 +531,8 @@ export async function getVisitHistory(
     });
     if (source) params.set("source", source);
     if (distinct) params.set("distinct", "1");
+    // fields=map 时后端只返回地图需要的字段，外层统计不变
+    if (fields) params.set("fields", fields);
     const resp = await fetchWithTimeout(
       `${API_V1}/visits?${params.toString()}`,
       {

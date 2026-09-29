@@ -199,3 +199,35 @@ func TestWantsDescriptionStream(t *testing.T) {
 		}
 	}
 }
+
+func TestGetVisitHistoryMapFieldsReturnsCompactPoints(t *testing.T) {
+	r, repo := setupVisitAndPreferenceHandlers(t, "viewer")
+	loc := models.Location{PanoID: "pano-1", Latitude: 1.5, Longitude: 2.5, FormattedAddress: "Somewhere", Country: "X"}
+	if err := repo.RecordVisit("session-a", loc, models.VisitSourceRandom); err != nil {
+		t.Fatalf("RecordVisit: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/visits?distinct=1&fields=map", nil))
+	var body struct {
+		Data struct {
+			Visits []map[string]interface{} `json:"visits"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil || w.Code != http.StatusOK {
+		t.Fatalf("status=%d err=%v body=%s", w.Code, err, w.Body.String())
+	}
+	if len(body.Data.Visits) != 1 {
+		t.Fatalf("visits = %+v", body.Data.Visits)
+	}
+	got := body.Data.Visits[0]
+	want := map[string]interface{}{"pano_id": "pano-1", "latitude": 1.5, "longitude": 2.5, "formatted_address": "Somewhere"}
+	if len(got) != len(want) {
+		t.Fatalf("compact point has fields %v, want only %v", got, want)
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Fatalf("%s = %v, want %v", k, got[k], v)
+		}
+	}
+}

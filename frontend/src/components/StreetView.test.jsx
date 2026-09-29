@@ -21,11 +21,26 @@ class MockStreetViewPanorama {
     const node = document.createElement("div");
     node.dataset.testid = "mock-panorama";
     _element.appendChild(node);
+    this.options = options;
     this.setVisible = vi.fn();
     this.pov = { ...options.pov };
+    this.pano = options.pano || "";
+    this.position = options.position || null;
+    this.zoom = options.zoom;
     this.listeners = new Map();
     this.setPovCalls = 0;
     this.status = "OK";
+    this.setPano = vi.fn((pano) => {
+      this.pano = pano;
+      // 和 Maps 的 MVCObject 一样，设置属性会同步触发 *_changed
+      this.emit("pano_changed");
+    });
+    this.setPosition = vi.fn((position) => {
+      this.position = position;
+    });
+    this.setZoom = vi.fn((zoom) => {
+      this.zoom = zoom;
+    });
     MockStreetViewPanorama.instances.push(this);
   }
 
@@ -48,6 +63,14 @@ class MockStreetViewPanorama {
     this.setPovCalls += 1;
     this.pov = { ...this.pov, ...nextPov };
     this.emit("pov_changed");
+  }
+
+  getPano() {
+    return this.pano;
+  }
+
+  getZoom() {
+    return this.zoom;
   }
 
   getStatus() {
@@ -86,19 +109,6 @@ async function advanceTimers(ms) {
 }
 
 describe("StreetView auto-rotation", () => {
-  it("removes the old panorama DOM and hides its instance when location changes", async () => {
-    const { rerender, container } = render(
-      <StreetView latitude={1} longitude={2} />,
-    );
-    await advanceTimers(250);
-    const old = MockStreetViewPanorama.instances[0];
-    rerender(<StreetView latitude={3} longitude={4} />);
-    await advanceTimers(250);
-    expect(old.setVisible).toHaveBeenCalledWith(false);
-    expect(
-      container.querySelectorAll('[data-testid="mock-panorama"]'),
-    ).toHaveLength(1);
-  });
   beforeEach(() => {
     vi.useFakeTimers();
     MockStreetViewPanorama.instances = [];
@@ -310,5 +320,199 @@ describe("StreetView auto-rotation", () => {
     await act(async () => panorama.emit("pano_changed"));
     await advanceTimers(3500);
     expect(screen.queryByText("streetview.interactionTip")).toBeNull();
+  });
+});
+
+describe("StreetView location switching", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    MockStreetViewPanorama.instances = [];
+    setDocumentVisibility("visible");
+    setDocumentFocus(true);
+    loadGoogleMapsWhenVisible.mockResolvedValue({
+      StreetViewPanorama: MockStreetViewPanorama,
+    });
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+    vi.clearAllMocks();
+  });
+
+  it("opens the panorama by ID when the location has one", async () => {
+    render(<StreetView panoId="uploaded-pano" latitude={1} longitude={2} />);
+    await advanceTimers(250);
+
+    const [panorama] = MockStreetViewPanorama.instances;
+    expect(panorama.options.pano).toBe("uploaded-pano");
+    expect(panorama.options.position).toBeUndefined();
+  });
+
+  it("falls back to coordinates without a panorama ID", async () => {
+    render(<StreetView latitude={1} longitude={2} />);
+    await advanceTimers(250);
+
+    const [panorama] = MockStreetViewPanorama.instances;
+    expect(panorama.options.position).toEqual({ lat: 1, lng: 2 });
+    expect(panorama.options.pano).toBeUndefined();
+  });
+
+  it("reuses the panorama and switches by ID when the location changes", async () => {
+    const onViewChanged = vi.fn();
+    const { rerender, container } = render(
+      <StreetView
+        panoId="pano-a"
+        latitude={1}
+        longitude={2}
+        heading={40}
+        onViewChanged={onViewChanged}
+      />,
+    );
+    await advanceTimers(250);
+    const panorama = MockStreetViewPanorama.instances[0];
+    await act(async () => panorama.emit("status_changed"));
+    panorama.pov = { heading: 200, pitch: 12 };
+    panorama.zoom = 3;
+    onViewChanged.mockClear();
+
+    rerender(
+      <StreetView
+        panoId="pano-b"
+        latitude={3}
+        longitude={4}
+        heading={40}
+        onViewChanged={onViewChanged}
+      />,
+    );
+    await advanceTimers(250);
+
+    expect(MockStreetViewPanorama.instances).toHaveLength(1);
+    expect(panorama.setVisible).not.toHaveBeenCalled();
+    expect(
+      container.querySelectorAll('[data-testid="mock-panorama"]'),
+    ).toHaveLength(1);
+    expect(panorama.setPano).toHaveBeenCalledWith("pano-b");
+    expect(panorama.setPosition).not.toHaveBeenCalled();
+    expect(panorama.getPov()).toMatchObject({ heading: 40, pitch: 0 });
+    expect(panorama.setZoom).toHaveBeenCalledWith(1);
+    // setPano 自己触发的 pano_changed 不算加载完成，也不上报视野
+    expect(onViewChanged).not.toHaveBeenCalled();
+
+    await act(async () => panorama.emit("status_changed"));
+    expect(onViewChanged).toHaveBeenLastCalledWith(
+      expect.objectContaining({ panoId: "pano-b" }),
+    );
+  });
+
+  it("reuses the panorama and moves by coordinates without an ID", async () => {
+    const { rerender } = render(<StreetView latitude={1} longitude={2} />);
+    await advanceTimers(250);
+    const panorama = MockStreetViewPanorama.instances[0];
+
+    rerender(<StreetView latitude={3} longitude={4} />);
+    await advanceTimers(250);
+
+    expect(MockStreetViewPanorama.instances).toHaveLength(1);
+    expect(panorama.setPosition).toHaveBeenCalledWith({ lat: 3, lng: 4 });
+    expect(panorama.setPano).not.toHaveBeenCalled();
+  });
+
+  it("keeps the unavailable message for a missing panorama ID after switching", async () => {
+    const { rerender } = render(<StreetView panoId="pano-a" />);
+    await advanceTimers(250);
+    const panorama = MockStreetViewPanorama.instances[0];
+    await act(async () => panorama.emit("status_changed"));
+
+    rerender(<StreetView panoId="missing-pano" />);
+    await advanceTimers(250);
+    await act(async () => {
+      panorama.status = "ZERO_RESULTS";
+      panorama.emit("status_changed");
+    });
+    await advanceTimers(12000);
+
+    expect(screen.getByText("error.streetViewNotAvailable")).toBeTruthy();
+    expect(screen.queryByText("error.networkConnectionFailed")).toBeNull();
+    expect(panorama.setPovCalls).toBe(1);
+  });
+
+  it("reports a network error when a new location never loads", async () => {
+    const { rerender } = render(<StreetView latitude={1} longitude={2} />);
+    await advanceTimers(250);
+    const panorama = MockStreetViewPanorama.instances[0];
+    await act(async () => {
+      panorama.pano = "pano-a";
+      panorama.emit("pano_changed");
+    });
+
+    rerender(<StreetView latitude={3} longitude={4} />);
+    await advanceTimers(10500);
+
+    expect(screen.getByText("error.networkConnectionFailed")).toBeTruthy();
+  });
+
+  it("does not report a timeout when the reused panorama already shows the target", async () => {
+    const { rerender } = render(<StreetView panoId="pano-a" />);
+    await advanceTimers(250);
+    const panorama = MockStreetViewPanorama.instances[0];
+    await act(async () => panorama.emit("status_changed"));
+
+    // 状态一直是 OK，status_changed 没有再次触发
+    rerender(<StreetView panoId="pano-b" />);
+    await advanceTimers(10500);
+
+    expect(screen.queryByText("error.networkConnectionFailed")).toBeNull();
+  });
+
+  it("treats position_changed as loaded when a reused panorama stays OK", async () => {
+    const onViewChanged = vi.fn();
+    const { rerender } = render(
+      <StreetView panoId="pano-a" onViewChanged={onViewChanged} />,
+    );
+    await advanceTimers(250);
+    const panorama = MockStreetViewPanorama.instances[0];
+    await act(async () => panorama.emit("status_changed"));
+    await advanceTimers(12000);
+    onViewChanged.mockClear();
+
+    // 状态保持 OK：只有新全景元数据到达时的 position_changed
+    rerender(<StreetView panoId="pano-b" onViewChanged={onViewChanged} />);
+    await advanceTimers(250);
+    expect(onViewChanged).not.toHaveBeenCalled();
+    await act(async () => panorama.emit("position_changed"));
+    expect(onViewChanged).toHaveBeenLastCalledWith(
+      expect.objectContaining({ panoId: "pano-b" }),
+    );
+    // 加载完成的后续动作按正常节奏到来，不用等 10 秒超时
+    await advanceTimers(3000);
+    expect(screen.getByText("streetview.interactionTip")).toBeTruthy();
+  });
+
+  it("shows the interaction tip again for the next location", async () => {
+    const { rerender } = render(<StreetView panoId="pano-a" />);
+    await advanceTimers(250);
+    const panorama = MockStreetViewPanorama.instances[0];
+    await act(async () => panorama.emit("status_changed"));
+    await advanceTimers(3000);
+    expect(screen.getByText("streetview.interactionTip")).toBeTruthy();
+
+    rerender(<StreetView panoId="pano-b" />);
+    await advanceTimers(250);
+    expect(screen.queryByText("streetview.interactionTip")).toBeNull();
+    await act(async () => panorama.emit("status_changed"));
+    await advanceTimers(3000);
+    expect(screen.getByText("streetview.interactionTip")).toBeTruthy();
+  });
+
+  it("destroys the panorama on unmount", async () => {
+    const { unmount } = render(<StreetView panoId="pano-a" />);
+    await advanceTimers(250);
+    const panorama = MockStreetViewPanorama.instances[0];
+
+    unmount();
+
+    expect(panorama.setVisible).toHaveBeenCalledWith(false);
+    expect(panorama.listeners.get("pano_changed").size).toBe(0);
   });
 });

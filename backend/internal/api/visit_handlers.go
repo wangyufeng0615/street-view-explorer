@@ -57,13 +57,35 @@ func (h *Handlers) GetVisitHistory(c *gin.Context) {
 		return
 	}
 
+	var payload interface{} = visits
+	if c.Query("fields") == "map" {
+		payload = mapVisitPoints(visits)
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data": gin.H{
-			"visits":        visits,
+			"visits":        payload,
 			"total":         totalVisits,
 			"total_visits":  totalVisits,
 			"unique_places": uniquePlaces,
 		},
 	})
+}
+
+// mapVisitPoint is the footprint map's view of a visit. With fields=map the
+// 5000-point footprint payload drops from ~390KB to ~120KB; the default
+// response keeps every field for other API consumers.
+type mapVisitPoint struct {
+	PanoID           string  `json:"pano_id"`
+	Latitude         float64 `json:"latitude"`
+	Longitude        float64 `json:"longitude"`
+	FormattedAddress string  `json:"formatted_address"`
+}
+
+func mapVisitPoints(visits []models.VisitRecord) []mapVisitPoint {
+	points := make([]mapVisitPoint, len(visits))
+	for i, v := range visits {
+		points[i] = mapVisitPoint{PanoID: v.PanoID, Latitude: v.Latitude, Longitude: v.Longitude, FormattedAddress: v.FormattedAddress}
+	}
+	return points
 }

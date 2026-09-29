@@ -83,7 +83,7 @@ backend/
 ## UI 路由
 
 - `/` - 随机街景探索首页。
-- `/footprints` - 可直接访问的 Atlas 足迹地图。
+- `/footprints` - Atlas 足迹地图。从首页打开时是背景路由浮层，首页保持挂载、街景暂停；直接访问只渲染 `FootprintPage`，不跑首页。
 - `/agent` - Odyssey，给外部 AI 复制旅行 skill 和旅程入口。
 - `/agent/letter/:id` - 公开旅程来信。
 - `/guess` - 单人卫星图猜地理。
@@ -100,7 +100,7 @@ backend/
 - `GET /api/v1/locations/search` - 通过 Google Places/Geocoding 搜索具体地点或地标，并跳到附近街景。
 - `GET /api/v1/locations/:panoId/description` - AI 简短描述。
 - `GET /api/v1/locations/:panoId/detailed-description` - AI 详细描述。
-- `GET /api/v1/visits` - 全站共享的 Atlas 足迹历史；写入仍保留 session 作为账本字段，读取不按用户过滤。
+- `GET /api/v1/visits` - 全站共享的 Atlas 足迹历史；写入仍保留 session 作为账本字段，读取不按用户过滤。`fields=map` 只返回 pano_id/latitude/longitude/formatted_address，足迹页使用；默认返回完整字段。
 - `POST /api/v1/preferences/exploration` - 设置探索偏好。
 - `POST /api/v1/preferences/exploration/remove` - 删除探索偏好。
 
@@ -148,7 +148,7 @@ backend/
 
 - 单人局总轮数来自 `frontend/src/utils/geoGameUtils.js` 的 `TOTAL_ROUNDS = 5`。
 - 单人局起始 zoom 是 14，最小 zoom 是 2；后端 `GET /api/v1/geo/satellite` 和 `POST /api/v1/geo/ai-guess` 也校验 `zoom` 必须在 2-14。
-- `GET /api/v1/geo/satellite` 可带 `width,height`，两者必须同时提供且每边在 120-640；单人和 AI 猜测会按当前卫星面板比例请求图片，缺省仍是 640x480。
+- `GET /api/v1/geo/satellite` 可带 `width,height`，两者必须同时提供且每边在 120-640；单人和 AI 猜测会按当前卫星面板比例请求图片，缺省仍是 640x480。卫星图用 `format=jpg`（比 PNG 小 3-6 倍）；AI 猜测给图画准星后重新编码为 PNG，避免 JPEG 色度下采样把红色准星冲淡。
 - `generateRoundPlan()` 会从 `geoDatabase.js` 选 2 或 3 个题库点，其余使用后端随机位置；题库点会经过 `jitterCoord()` 小偏移。
 - `useGeoGameRoundTargets` 的 loading effect 使用 `langRef` 读取语言，避免语言切换重新抽题。
 - 单人卫星图中心图钉必须始终可见；拉远时先加载下一张静态图，再用约 760ms 的 handoff 动画切换，避免闪烁。

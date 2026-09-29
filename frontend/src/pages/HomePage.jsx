@@ -9,11 +9,12 @@ import React, {
   Suspense,
 } from "react";
 import { useTranslation } from "react-i18next";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import TopBar from "../components/TopBar";
 import Sidebar from "../components/Sidebar";
 import StreetView from "../components/StreetView";
 import GlobalLoading from "../components/GlobalLoading";
+import { preloadGoogleMaps } from "../utils/googleMaps";
 import "../styles/animations.css";
 import "../styles/HomePage.css";
 import "../styles/responsive.css";
@@ -21,7 +22,6 @@ import "../styles/responsive.css";
 // Lazy load components that are not immediately visible
 const ErrorDisplay = lazy(() => import("../components/ErrorDisplay"));
 const Toast = lazy(() => import("../components/Toast"));
-const FootprintMap = lazy(() => import("../components/FootprintMap"));
 
 // 自定义钩子
 import useLocationData from "../hooks/useLocationData";
@@ -35,11 +35,12 @@ import useStore from "../store/useStore";
 // Memoized StreetViewContainer wrapper
 // 朝向在这里订阅，拖动或自动旋转时只重渲染街景，不牵动整个首页
 const StreetViewContainer = memo(
-  ({ latitude, longitude, paused, onPovChanged, onViewChanged }) => {
+  ({ panoId, latitude, longitude, paused, onPovChanged, onViewChanged }) => {
     const heading = useStore((state) => state.heading);
     return (
       <div className="street-view-container">
         <StreetView
+          panoId={panoId}
           latitude={latitude}
           longitude={longitude}
           heading={heading}
@@ -52,6 +53,7 @@ const StreetViewContainer = memo(
   },
   (prevProps, nextProps) => {
     return (
+      prevProps.panoId === nextProps.panoId &&
       prevProps.latitude === nextProps.latitude &&
       prevProps.longitude === nextProps.longitude &&
       prevProps.paused === nextProps.paused
@@ -84,7 +86,8 @@ function updateURL(lat, lng) {
   const url = new URL(window.location.href);
   url.searchParams.set("lat", lat.toFixed(5));
   url.searchParams.set("lng", lng.toFixed(5));
-  window.history.replaceState(null, "", url.toString());
+  // 保留路由写在 history.state 里的 key 和足迹浮层的 backgroundLocation
+  window.history.replaceState(window.history.state, "", url.toString());
 }
 
 function getCurrentRouteTarget(pathname) {
@@ -95,9 +98,11 @@ function getCurrentRouteTarget(pathname) {
   };
 }
 
-export default function HomePage({ showFootprintFromRoute = false }) {
+// footprintOverlayOpen：足迹浮层叠在首页上时为 true，首页保持挂载但暂停街景自动旋转
+export default function HomePage({ footprintOverlayOpen = false }) {
   const { i18n, t } = useTranslation();
   const navigate = useNavigate();
+  const routeLocation = useLocation();
   const loadLocationFromURL = useStore((state) => state.loadLocationFromURL);
   const loadLocationFromMapPick = useStore(
     (state) => state.loadLocationFromMapPick,
@@ -180,13 +185,18 @@ export default function HomePage({ showFootprintFromRoute = false }) {
     loadRandomLocation();
   }, [loadRandomLocation]);
 
+  // 足迹作为浮层打开，首页留在底下；地址参数由 updateURL 直接写入，从 window.location 读取
   const handleOpenFootprint = useCallback(() => {
-    navigate(getCurrentRouteTarget("/footprints"));
-  }, [navigate]);
-
-  const handleCloseFootprint = useCallback(() => {
-    navigate(getCurrentRouteTarget("/"));
-  }, [navigate]);
+    navigate(getCurrentRouteTarget("/footprints"), {
+      state: {
+        backgroundLocation: {
+          ...routeLocation,
+          search: window.location.search,
+          hash: window.location.hash,
+        },
+      },
+    });
+  }, [navigate, routeLocation]);
 
   const clearMapPickResetTimer = useCallback(() => {
     if (mapPickResetTimerRef.current) {
@@ -253,6 +263,11 @@ export default function HomePage({ showFootprintFromRoute = false }) {
       clearMapPickResetTimer();
     };
   }, [clearMapPickResetTimer]);
+
+  // 街景脚本和偏好、随机位置请求并行加载；只加载脚本，不创建地图
+  useEffect(() => {
+    preloadGoogleMaps();
+  }, []);
 
   // Start Atlas research as soon as a concrete panorama and UI language exist.
   // The store already deduplicates identical requests and aborts stale ones.
@@ -407,9 +422,10 @@ export default function HomePage({ showFootprintFromRoute = false }) {
         {/* 街景容器 */}
         <div style={styles.streetViewWrapper} className="street-view-wrapper">
           <StreetViewContainer
+            panoId={location?.pano_id}
             latitude={location?.latitude}
             longitude={location?.longitude}
-            paused={showFootprintFromRoute}
+            paused={footprintOverlayOpen}
             onPovChanged={handlePovChanged}
             onViewChanged={handleViewChanged}
           />
@@ -443,13 +459,6 @@ export default function HomePage({ showFootprintFromRoute = false }) {
       {showToast && (
         <Suspense fallback={null}>
           <Toast message={toastMessage} visible />
-        </Suspense>
-      )}
-
-      {/* 全球足迹地图 */}
-      {showFootprintFromRoute && (
-        <Suspense fallback={null}>
-          <FootprintMap onClose={handleCloseFootprint} />
         </Suspense>
       )}
     </div>

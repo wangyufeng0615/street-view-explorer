@@ -1,12 +1,14 @@
-import React, { useEffect, lazy, Suspense } from "react";
+import React, { useEffect, useState, lazy, Suspense } from "react";
 import {
   BrowserRouter as Router,
   Routes,
   Route,
   Navigate,
   useLocation,
+  type Location,
 } from "react-router-dom";
 import HomePage from "./pages/HomePage";
+import FootprintPage from "./pages/FootprintPage";
 import { getOrCreateSessionId } from "./utils/session";
 import { testSentry } from "./services/sentryLazy";
 
@@ -38,17 +40,21 @@ declare global {
   }
 }
 
-function App() {
-  useEffect(() => {
-    // 确保有会话ID
-    getOrCreateSessionId();
+// 从首页打开足迹时带上 backgroundLocation：首页留在底下，足迹作为浮层叠在上面。
+// history.state 在刷新后仍保留，所以页面刚加载时的那条记录一律按直接访问处理。
+function useBackgroundLocation(location: Location): Location | null {
+  const [initialKey] = useState(location.key);
+  const state = location.state as { backgroundLocation?: Location } | null;
+  if (!state?.backgroundLocation || location.key === initialKey) return null;
+  return state.backgroundLocation;
+}
 
-    // Make testSentry available globally for manual testing
-    window.testSentry = testSentry;
-  }, []);
+function AppRoutes() {
+  const location = useLocation();
+  const backgroundLocation = useBackgroundLocation(location);
 
   return (
-    <Router {...router}>
+    <>
       <div
         style={{
           width: "100vw",
@@ -60,12 +66,12 @@ function App() {
           flexDirection: "column",
         }}
       >
-        <Routes>
-          <Route path="/" element={<HomePage />} />
+        <Routes location={backgroundLocation || location}>
           <Route
-            path="/footprints"
-            element={<HomePage showFootprintFromRoute />}
+            path="/"
+            element={<HomePage footprintOverlayOpen={!!backgroundLocation} />}
           />
+          <Route path="/footprints" element={<FootprintPage />} />
           <Route
             path="/agent"
             element={
@@ -177,6 +183,27 @@ function App() {
           />
         </Routes>
       </div>
+      {backgroundLocation && (
+        <Routes>
+          <Route path="/footprints" element={<FootprintPage isOverlay />} />
+        </Routes>
+      )}
+    </>
+  );
+}
+
+function App() {
+  useEffect(() => {
+    // 确保有会话ID
+    getOrCreateSessionId();
+
+    // Make testSentry available globally for manual testing
+    window.testSentry = testSentry;
+  }, []);
+
+  return (
+    <Router {...router}>
+      <AppRoutes />
     </Router>
   );
 }

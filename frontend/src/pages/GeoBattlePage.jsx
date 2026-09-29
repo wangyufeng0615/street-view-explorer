@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useParams } from "react-router-dom";
 
@@ -19,6 +19,7 @@ import { useGeoBattleRoomActions } from "../hooks/useGeoBattleRoomActions";
 import { useGeoBattleRoomFeedback } from "../hooks/useGeoBattleRoomFeedback";
 import { useGeoBattleRoomSync } from "../hooks/useGeoBattleRoomSync";
 import { useGeoBattleSatelliteImage } from "../hooks/useGeoBattleSatelliteImage";
+import { loadNotoSerifSC } from "../utils/pageFonts";
 import "../styles/GeoBattle.css";
 
 // Hook call order below mirrors the original single-component effect order:
@@ -193,6 +194,10 @@ function GeoBattleRoomPage({ roomId }) {
 
 export default function GeoBattlePage() {
   const { roomId } = useParams();
+
+  useEffect(() => {
+    loadNotoSerifSC();
+  }, []);
 
   if (roomId) {
     return <GeoBattleRoomPage roomId={roomId} />;

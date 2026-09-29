@@ -1,4 +1,10 @@
-import React, { useReducer, useRef, useCallback, useMemo } from "react";
+import React, {
+  useReducer,
+  useRef,
+  useCallback,
+  useEffect,
+  useMemo,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { initialState, reducer } from "../utils/geoGameState";
@@ -23,6 +29,7 @@ import { useGeoGameGuessMap } from "../hooks/useGeoGameGuessMap";
 import { useGeoGameSatelliteZoom } from "../hooks/useGeoGameSatelliteZoom";
 import { useGeoGameAtlasGuess } from "../hooks/useGeoGameAtlasGuess";
 import { useGeoGamePhaseFeedback } from "../hooks/useGeoGamePhaseFeedback";
+import { loadNotoSerifSC } from "../utils/pageFonts";
 import "../styles/GeoGame.css";
 
 // ─── Component ──────────────────────────────────────────────
@@ -32,6 +39,10 @@ export default function GeoGamePage() {
   const navigate = useNavigate();
   const [state, dispatch] = useReducer(reducer, initialState);
   const activeGeoLanguage = getGeoLanguage(i18n);
+
+  useEffect(() => {
+    loadNotoSerifSC();
+  }, []);
   const countryCodeFromUrl = useMemo(
     () =>
       getCountryCodeFromSearch(

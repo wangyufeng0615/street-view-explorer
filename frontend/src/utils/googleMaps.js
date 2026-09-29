@@ -27,10 +27,8 @@ function cleanupExistingScripts() {
   });
 }
 
-/**
- * Preload Google Maps API (just establish connection, don't execute)
- */
-export function preloadGoogleMaps() {
+// 生产环境提前建立到地图域名的连接；本地开发的浏览器出网走代理，不做预连接
+function preconnectGoogleMaps() {
   if (
     window.location.hostname === "localhost" ||
     window.location.hostname === "127.0.0.1"
@@ -38,7 +36,6 @@ export function preloadGoogleMaps() {
     return;
   }
 
-  // Only preconnect, don't actually load the script
   const link = document.createElement("link");
   link.rel = "preconnect";
   link.href = "https://maps.googleapis.com";
@@ -48,6 +45,16 @@ export function preloadGoogleMaps() {
   tileLink.rel = "preconnect";
   tileLink.href = "https://streetviewpixels-pa.googleapis.com";
   document.head.appendChild(tileLink);
+}
+
+/**
+ * 页面挂载时提前加载 Maps JS 脚本，和业务接口请求并行。
+ * 只加载脚本、不创建地图或街景，不产生地图加载计费；之后的
+ * loadGoogleMapsScript / loadGoogleMapsWhenVisible 复用同一个加载过程。
+ * 失败不抛出，真正用到地图的组件会重试并展示自己的错误。
+ */
+export function preloadGoogleMaps() {
+  return loadGoogleMapsScript().catch(() => undefined);
 }
 
 /**
@@ -266,7 +273,7 @@ export function loadGoogleMapsWhenVisible(element, { signal } = {}) {
 // Preload Google Maps connections early but non-blocking
 if (typeof window !== "undefined") {
   const schedulePreload = () => {
-    preloadGoogleMaps();
+    preconnectGoogleMaps();
   };
 
   // Start preloading as soon as DOM is ready (earlier than 'load' event)

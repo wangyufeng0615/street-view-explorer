@@ -197,6 +197,21 @@ describe("visit history client", () => {
       "/api/v1/visits?limit=5000&offset=0&source=random",
     );
   });
+
+  it("asks for the slim map fields when requested", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      json: async () => ({
+        success: true,
+        data: { visits: [], unique_places: 0 },
+      }),
+    });
+
+    await getVisitHistory(5000, 0, "random", true, "map");
+
+    expect(fetchMock.mock.calls[0][0]).toContain(
+      "/api/v1/visits?limit=5000&offset=0&source=random&distinct=1&fields=map",
+    );
+  });
 });
 
 describe("Agent journey authentication", () => {

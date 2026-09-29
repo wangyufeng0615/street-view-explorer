@@ -56,7 +56,7 @@ export default function FootprintMap({ onClose }) {
     async function fetchVisits() {
       // Atlas footprints represent random exploration. Shared links, manual
       // searches, and map picks are useful history but not Atlas travel.
-      const resp = await getVisitHistory(5000, 0, "random", true);
+      const resp = await getVisitHistory(5000, 0, "random", true, "map");
       if (cancelled) return;
 
       if (resp.success && resp.data) {
@@ -236,7 +236,12 @@ export default function FootprintMap({ onClose }) {
   };
 
   return (
-    <div style={styles.overlay}>
+    <div
+      style={styles.overlay}
+      role="dialog"
+      aria-modal="true"
+      aria-label={t("footprint.title")}
+    >
       {/* Close button */}
       <button
         style={styles.closeButton}

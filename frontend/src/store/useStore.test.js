@@ -86,6 +86,67 @@ describe("exploration preference synchronization", () => {
     expect(setExplorationPreference).toHaveBeenCalledTimes(1);
     expect(getRandomLocation).toHaveBeenCalledTimes(1);
   });
+
+  it.each([
+    ["a first visit", null],
+    ["a saved random mode", "random"],
+  ])(
+    "starts the first random location without syncing preferences on %s",
+    async (_label, savedMode) => {
+      if (savedMode) localStorage.setItem("exploration_mode", savedMode);
+      getRandomLocation.mockResolvedValue({
+        success: true,
+        data: { latitude: 1, longitude: 2 },
+      });
+
+      const init = useStore.getState().initializeExplorationMode();
+      expect(useStore.getState()).toMatchObject({
+        isExplorationInitialized: true,
+        isSavingPreference: false,
+        explorationMode: "random",
+        explorationInterest: "",
+      });
+      await init;
+      await useStore.getState().loadRandomLocation(true);
+
+      expect(deleteExplorationPreference).not.toHaveBeenCalled();
+      expect(setExplorationPreference).not.toHaveBeenCalled();
+      expect(getRandomLocation).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it.each([
+    ["custom mode without an interest", { exploration_mode: "custom" }],
+    ["an interest without custom mode", { exploration_interest: "mountains" }],
+  ])(
+    "clears the backend preference before exploring with %s",
+    async (_label, saved) => {
+      for (const [key, value] of Object.entries(saved)) {
+        localStorage.setItem(key, value);
+      }
+      let resolve;
+      deleteExplorationPreference.mockImplementation(
+        () =>
+          new Promise((r) => {
+            resolve = r;
+          }),
+      );
+      getRandomLocation.mockResolvedValue({
+        success: true,
+        data: { latitude: 1, longitude: 2 },
+      });
+
+      const load = useStore.getState().loadRandomLocation(true);
+      await Promise.resolve();
+      expect(deleteExplorationPreference).toHaveBeenCalledTimes(1);
+      expect(getRandomLocation).not.toHaveBeenCalled();
+      resolve({ success: true });
+      await load;
+
+      expect(useStore.getState().explorationMode).toBe("random");
+      expect(getRandomLocation).toHaveBeenCalledTimes(1);
+    },
+  );
 });
 
 describe("location loading errors", () => {

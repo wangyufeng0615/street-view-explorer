@@ -2,6 +2,7 @@ package openai
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -73,7 +74,7 @@ func (c *client) GuessLocationFromImage(parentCtx context.Context, imageBase64 s
 
 	prompt := geoGuessUserPrompt(zoom, language)
 
-	dataURI := "data:image/png;base64," + imageBase64
+	dataURI := "data:" + sniffImageContentType(imageBase64) + ";base64," + imageBase64
 
 	reqBody := visionChatRequest{
 		Model:     c.visionModel(),
@@ -184,4 +185,18 @@ func isValidCoordinates(coords struct {
 	}
 
 	return true
+}
+
+// sniffImageContentType reports image/jpeg or image/png from the payload's
+// magic bytes. The annotated guess image is PNG, but the unannotated fallback
+// is the raw satellite JPEG.
+func sniffImageContentType(imageBase64 string) string {
+	head := imageBase64
+	if len(head) > 16 {
+		head = head[:16]
+	}
+	if raw, err := base64.StdEncoding.DecodeString(head[:len(head)/4*4]); err == nil && len(raw) >= 3 && raw[0] == 0xFF && raw[1] == 0xD8 && raw[2] == 0xFF {
+		return "image/jpeg"
+	}
+	return "image/png"
 }

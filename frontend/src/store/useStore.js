@@ -447,14 +447,25 @@ const useStore = create(
       // Exploration Mode Actions
       initializeExplorationMode: () => {
         if (preferenceInitialization) return preferenceInitialization;
+        const savedMode = readLocalStorage(EXPLORATION_MODE_KEY);
+        const savedInterest = readLocalStorage(EXPLORATION_INTEREST_KEY) || "";
+        const custom =
+          savedMode === EXPLORATION_MODES.CUSTOM && Boolean(savedInterest);
+        // 后端只在设置兴趣成功后才有偏好，前端随后写入本地兴趣；本地完全没有
+        // 兴趣记录时后端也没有偏好，首屏不必等删除请求。本地记录残缺时仍先清理。
+        if (savedMode !== EXPLORATION_MODES.CUSTOM && !savedInterest) {
+          set({
+            explorationMode: EXPLORATION_MODES.RANDOM,
+            explorationInterest: "",
+            isExplorationInitialized: true,
+            preferenceError: null,
+            locationError: null,
+          });
+          return Promise.resolve();
+        }
         set({ isSavingPreference: true, preferenceError: null });
         preferenceInitialization = (async () => {
           try {
-            const savedMode = readLocalStorage(EXPLORATION_MODE_KEY);
-            const savedInterest =
-              readLocalStorage(EXPLORATION_INTEREST_KEY) || "";
-            const custom =
-              savedMode === EXPLORATION_MODES.CUSTOM && Boolean(savedInterest);
             const response = custom
               ? await setExplorationPreference(savedInterest)
               : await deleteExplorationPreference();
