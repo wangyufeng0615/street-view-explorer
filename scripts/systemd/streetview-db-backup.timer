@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily Street View Explorer SQLite backup
+
+[Timer]
+# 02:00 Asia/Shanghai, the quietest hour; Persistent catches up after downtime.
+OnCalendar=*-*-* 18:00:00 UTC
+RandomizedDelaySec=10min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

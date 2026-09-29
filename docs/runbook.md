@@ -204,6 +204,20 @@ curl -s -o /dev/null -w '%{http_code}\n' \
 
 The second command should return `400` after a release containing the geo zoom validation.
 
+### Scheduled Database Backups
+
+`scripts/backup_sqlite.sh` takes an online SQLite backup of the `sqlite_data` volume, checks `PRAGMA integrity_check`, and writes `/var/backups/streetview/daily/streetview-<UTC timestamp>.db.gz` (mode 640, group `streetview-backup`), keeping 14 days. Install once on the host:
+
+```bash
+sudo groupadd --system streetview-backup
+sudo cp scripts/systemd/streetview-db-backup.{service,timer} /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now streetview-db-backup.timer
+sudo systemctl start streetview-db-backup.service   # first run, then check journalctl -u streetview-db-backup
+```
+
+The timer runs daily at 18:00 UTC. An off-host machine pulls the directory over SSH as the `streetview-backup` user, whose only authorized key is restricted to `restrict,command="/usr/bin/rrsync -ro /var/backups/streetview/daily"`; the host holds no credentials for the off-host machine. Restore by stopping the backend, `gunzip`-ing a snapshot over `streetview.db` in the volume (remove stale `-wal`/`-shm` files), and starting the backend again.
+
 ## Proxy Operation
 
 The backend supports shared and service-specific outbound proxy settings.
@@ -336,4 +350,4 @@ The host requires Git, GNU Make, curl, and Docker with Compose v2 and a running 
 make deploy-remote REMOTE_HOST=sg REMOTE_DIR=/opt/street-view-explorer REMOTE_BRANCH=main REMOTE_SUDO=1
 ```
 
-Before changing a release, record its commit and container image IDs and create an online SQLite backup plus a protected source/config archive under `/var/backups/streetview/`. For rollback, use the recorded prior image IDs for both services, retain the same Compose project and data volume, and repeat health and API checks. `make clean` now retains volumes but still stops services; never use `make destroy-data` during rollback. A database restore requires stopping the backend and separately confirming data retention; application rollback alone does not restore an older database.
+Before changing a release, record its commit and container image IDs and create an online SQLite backup plus a protected source/config archive under `/var/backups/streetview/`. For rollback, use the recorded prior image IDs for both services (the deploy script also tags the images that were serving before the release as `streetview-backend:previous` and `streetview-nginx:previous`, and after a healthy release prunes only untagged images and builder cache beyond 3GB), retain the same Compose project and data volume, and repeat health and API checks. `make clean` now retains volumes but still stops services; never use `make destroy-data` during rollback. A database restore requires stopping the backend and separately confirming data retention; application rollback alone does not restore an older database.

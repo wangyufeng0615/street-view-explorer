@@ -1,0 +1,10 @@
+[Unit]
+Description=Street View Explorer SQLite online backup
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/street-view-explorer/scripts/backup_sqlite.sh
+Nice=10
+IOSchedulingClass=idle

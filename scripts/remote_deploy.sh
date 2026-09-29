@@ -142,6 +142,16 @@ else
   log "backend/.env not found; SENTRY_RELEASE was not updated"
 fi
 
+# Keep the images that are serving traffic right now reachable by tag. The
+# rebuild moves :latest, and the prune after a healthy release only removes
+# untagged images, so :previous stays available for rollback.
+if [[ -n "$backend_image_before" ]]; then
+  run docker tag "$backend_image_before" streetview-backend:previous
+fi
+if [[ -n "$nginx_image_before" ]]; then
+  run docker tag "$nginx_image_before" streetview-nginx:previous
+fi
+
 deploy_started_at="$(timestamp)"
 log "starting make deploy; this can take a while on the VPS"
 run make deploy
@@ -209,6 +219,14 @@ fi
 log "checking satellite zoom validation through nginx"
 zoom_code="$(curl -sS --max-time 8 -o /dev/null -w '%{http_code}' 'http://127.0.0.1:3000/api/v1/geo/satellite?lat=0&lng=0&zoom=21')"
 [[ "$zoom_code" == "400" ]] || { log "invalid zoom returned $zoom_code instead of 400"; exit 1; }
+
+# Every build on the VPS leaves untagged images and legacy builder cache
+# behind (about 16GB had piled up by 2026-09). Prune only after the release is
+# healthy; :latest and :previous stay tagged, and some cache keeps rebuilds fast.
+log "pruning untagged images and builder cache"
+docker image prune -f </dev/null | tail -1
+docker builder prune -f --keep-storage 3GB </dev/null | tail -1
+docker system df </dev/null
 
 log "deployment summary"
 printf '  commit: %s -> %s\n' "$before_commit" "$after_commit"
