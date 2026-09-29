@@ -216,7 +216,7 @@ sudo systemctl enable --now streetview-db-backup.timer
 sudo systemctl start streetview-db-backup.service   # first run, then check journalctl -u streetview-db-backup
 ```
 
-The timer runs daily at 18:00 UTC. An off-host machine pulls the directory over SSH as the `streetview-backup` user, whose only authorized key is restricted to `restrict,command="/usr/bin/rrsync -ro /var/backups/streetview/daily"`; the host holds no credentials for the off-host machine. Restore by stopping the backend, `gunzip`-ing a snapshot over `streetview.db` in the volume (remove stale `-wal`/`-shm` files), and starting the backend again.
+The timer runs daily at 18:00 UTC. An off-host machine pulls the directory over SSH as the `streetview-backup` user, whose only authorized key is restricted to `restrict,command="/usr/bin/tar -C /var/backups/streetview/daily -cf - ."`, so it can only stream that directory (the puller runs `ssh -T <host> | tar -x -k -C <dest> -f -`); the host holds no credentials for the off-host machine. A tar forced command is used instead of `rrsync` because macOS ships openrsync, which rrsync rejects. Restore by stopping the backend, `gunzip`-ing a snapshot over `streetview.db` in the volume (remove stale `-wal`/`-shm` files), and starting the backend again.
 
 ## Proxy Operation
 
