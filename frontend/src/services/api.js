@@ -254,21 +254,29 @@ export function streamLocationDetailedDescription(
   );
 }
 
-// 获取随机位置
+// 获取随机位置。第二个参数也可以是选项对象：
+// { prefetch: true, signal } 用于首页预取下一站，后端存位置但不写足迹。
 export async function getRandomLocation(
   language = null,
-  source = null,
+  sourceOrOptions = null,
   countryCode = null,
 ) {
+  const options =
+    sourceOrOptions && typeof sourceOrOptions === "object"
+      ? sourceOrOptions
+      : { source: sourceOrOptions, countryCode };
   const lang = language || getCurrentLanguage();
   let url = `${API_V1}/locations/random?lang=${lang}`;
-  if (source) url += `&source=${encodeURIComponent(source)}`;
-  if (countryCode) url += `&country=${encodeURIComponent(countryCode)}`;
+  if (options.source) url += `&source=${encodeURIComponent(options.source)}`;
+  if (options.countryCode)
+    url += `&country=${encodeURIComponent(options.countryCode)}`;
+  if (options.prefetch) url += "&prefetch=1";
 
   try {
     const resp = await fetchWithTimeout(url, {
       method: "GET",
       headers: getHeaders(),
+      ...(options.signal ? { signal: options.signal } : {}),
     });
     const data = await resp.json();
 
@@ -296,6 +304,13 @@ export async function getRandomLocation(
         err.name === "AbortError" ? "请求超时" : err.message || "网络请求失败",
     };
   }
+}
+
+// 预取的地点被用户真正看到时补写一条随机足迹；只有本会话预取过的全景会成功
+export async function markPrefetchedVisit(panoId) {
+  return requestJson(`/locations/${encodeURIComponent(panoId)}/visit`, {
+    method: "POST",
+  });
 }
 
 // 根据坐标查找位置

@@ -155,9 +155,8 @@ export default function HomePage({ footprintOverlayOpen = false }) {
   const toastMessage = useStore((state) => state.toastMessage);
   const showToast = useStore((state) => state.showToast);
   const setStreetViewView = useStore((state) => state.setStreetViewView);
-
-  // 使用键盘导航钩子
-  useKeyboardNavigation(loadRandomLocation, isLoading, loadingRef);
+  const maybePrefetchNext = useStore((state) => state.maybePrefetchNext);
+  const stopPrefetch = useStore((state) => state.stopPrefetch);
 
   // Memoized callbacks to prevent re-renders
   const handlePovChanged = useCallback(
@@ -181,9 +180,13 @@ export default function HomePage({ footprintOverlayOpen = false }) {
     }
   }, [location?.pano_id, loadLocationDescription]);
 
+  // 用户主动探索（按钮、空格、错误页重试），计入预取的触发条件
   const handleExplore = useCallback(() => {
-    loadRandomLocation();
+    loadRandomLocation(false, { userInitiated: true });
   }, [loadRandomLocation]);
+
+  // 使用键盘导航钩子
+  useKeyboardNavigation(handleExplore, isLoading, loadingRef);
 
   // 足迹作为浮层打开，首页留在底下；地址参数由 updateURL 直接写入，从 window.location 读取
   const handleOpenFootprint = useCallback(() => {
@@ -287,6 +290,28 @@ export default function HomePage({ footprintOverlayOpen = false }) {
     locationRef,
     loadLocationDescription,
   ]);
+
+  // 当前讲解结束后在后台预取下一站；是否满足条件由 store 判断
+  const hasDescription = Boolean(description);
+  useEffect(() => {
+    const tryPrefetch = () =>
+      maybePrefetchNext({ overlayOpen: footprintOverlayOpen });
+    tryPrefetch();
+    document.addEventListener("visibilitychange", tryPrefetch);
+    return () => document.removeEventListener("visibilitychange", tryPrefetch);
+  }, [
+    maybePrefetchNext,
+    footprintOverlayOpen,
+    location?.pano_id,
+    isLoading,
+    isLoadingDesc,
+    hasDescription,
+    descError,
+    activeLanguage,
+  ]);
+
+  // 离开首页时中止进行中的预取
+  useEffect(() => stopPrefetch, [stopPrefetch]);
 
   // 监听网络状态变化，重新加载描述
   useEffect(() => {

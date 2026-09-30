@@ -6,8 +6,10 @@ import {
   setExplorationPreference,
   deleteExplorationPreference,
   lookupLocation,
+  markPrefetchedVisit,
 } from "../services/api";
 import i18n from "../i18n";
+import { PREFETCH_NEXT_ENABLED, PREFETCH_TTL_MS } from "./prefetchConfig";
 import {
   readLocalStorage,
   removeLocalStorage,
@@ -25,6 +27,21 @@ let preferenceInitialization = null;
 // 每次位置加载或直接应用新位置都会递增；过期的加载结果不再写入 store
 let locationRequestSequence = 0;
 const SUPERSEDED = "位置已被新的请求替换";
+
+// ===== 预取下一站 =====
+// 槽位放在模块作用域，不进 zustand 状态：预取过程中的写入不会触发重渲染，
+// 也不会碰到当前地点的讲解。最多一份。
+// {
+//   location, language, modeKey, createdAt,
+//   text, citations, researchStatus, done, error,  // 讲解缓冲区
+//   controller,  // 同时控制预取的 /random 和讲解流；接管后成为当前讲解请求的 controller
+//   subscriber,  // 接管后把后续片段和收尾推给 store；接管前为 null
+// }
+const PREFETCH_VIEW = { heading: 0, pitch: 0, fov: 90 };
+let prefetchSlot = null;
+// 由预取接管讲解的全景。首页 effect 为它请求讲解时直接返回，保证只有一条流；
+// 讲解失败后的手动重试、语言变化、换地点或取消都会让它失效。
+let prefetchServedDescription = null;
 
 // 清空当前位置时一并清掉讲解和视角，避免旧地点内容残留
 const CLEARED_LOCATION_STATE = {
@@ -73,6 +90,192 @@ export const EXPLORATION_MODES = {
   CUSTOM: "custom",
 };
 
+// 探索模式加兴趣词；自定义模式还没填兴趣时返回 null，不预取也不使用预取
+function explorationModeKey(state) {
+  if (state.explorationMode === EXPLORATION_MODES.RANDOM) return "random:";
+  if (
+    state.explorationMode === EXPLORATION_MODES.CUSTOM &&
+    state.explorationInterest
+  ) {
+    return `custom:${state.explorationInterest}`;
+  }
+  return null;
+}
+
+// 丢弃还没被接管的预取并中止它的请求；已接管的流归当前讲解请求管理
+function discardPrefetch() {
+  const slot = prefetchSlot;
+  prefetchSlot = null;
+  if (slot && !slot.subscriber) slot.controller.abort();
+}
+
+function isPrefetchCurrent(slot) {
+  return prefetchSlot === slot && !slot.controller.signal.aborted;
+}
+
+async function runPrefetch(slot) {
+  const { signal } = slot.controller;
+  try {
+    const resp = await getRandomLocation(slot.language, {
+      prefetch: true,
+      signal,
+    });
+    if (!isPrefetchCurrent(slot)) return;
+    slot.location = locationFromResponse(resp, "预取位置失败");
+
+    const result = await streamLocationDescription(
+      slot.location.pano_id,
+      slot.language,
+      signal,
+      PREFETCH_VIEW,
+      (delta) => {
+        if (signal.aborted) return;
+        slot.text += delta;
+        slot.subscriber?.({ type: "delta", delta });
+      },
+    );
+    if (signal.aborted) return;
+    if (!result.success || !result.data?.description) {
+      throw new Error(result.error || "预取讲解失败");
+    }
+    slot.text = result.data.description;
+    slot.citations = result.data.citations || null;
+    slot.researchStatus = result.data.research_status || "unverified";
+    slot.done = true;
+    slot.subscriber?.({ type: "done" });
+  } catch (error) {
+    if (signal.aborted) return;
+    slot.error = error;
+    if (slot.subscriber) {
+      slot.subscriber({ type: "error", error });
+    } else if (prefetchSlot === slot) {
+      // 本次不重试，等下一次满足预取条件再试
+      console.warn("预取下一站失败:", error);
+      prefetchSlot = null;
+    }
+  }
+}
+
+// 取出槽位：有效就交给调用方使用，否则中止并丢弃。取出后槽位总是空的。
+function takeUsablePrefetch(state) {
+  const slot = prefetchSlot;
+  if (!slot) return null;
+  const usable =
+    Boolean(slot.location?.pano_id) &&
+    !slot.error &&
+    slot.language === getActiveLanguage() &&
+    slot.modeKey === explorationModeKey(state) &&
+    Date.now() - slot.createdAt <= PREFETCH_TTL_MS &&
+    slot.location.pano_id !== state.location?.pano_id;
+  if (!usable) {
+    discardPrefetch();
+    return null;
+  }
+  prefetchSlot = null;
+  return slot;
+}
+
+function reportPrefetchedVisit(panoId) {
+  // 不等待结果；失败只记一条警告
+  Promise.resolve()
+    .then(() => markPrefetchedVisit(panoId))
+    .then((resp) => {
+      if (!resp?.success) {
+        console.warn("补写预取足迹失败:", resp?.error || resp?.status);
+      }
+    })
+    .catch((error) => console.warn("补写预取足迹失败:", error));
+}
+
+// 把预取的地点和讲解直接应用到 store；还在生成的讲解流由 store 接管
+function applyPrefetchedLocation(slot, set, get) {
+  const locationData = slot.location;
+  const panoId = locationData.pano_id;
+  const language = slot.language;
+
+  // 旧地点的讲解流和重试不能写进新地点；这一步也会清掉旧的接管标记
+  get().cancelLocationDescription();
+  locationRequestSequence += 1;
+  const requestKey = `prefetch:${panoId}:${language}:${++descriptionRequestSequence}`;
+  prefetchServedDescription = { panoId, language };
+
+  set({
+    ...appliedLocationState(locationData),
+    // 与预取讲解使用的画面一致，街景以 0 度初始化
+    heading: 0,
+    lastRefreshTime: Date.now(),
+    description: slot.text || null,
+    descriptionCitations: slot.done ? slot.citations : null,
+    descriptionResearchStatus: slot.done ? slot.researchStatus : null,
+    descriptionError: null,
+    isDescriptionLoading: !slot.done,
+    descriptionRetries: 0,
+    descriptionRequestKey: requestKey,
+  });
+  reportPrefetchedVisit(panoId);
+
+  if (!slot.done) adoptPrefetchStream(slot, requestKey, set, get);
+  return { success: true, data: locationData };
+}
+
+// 接管仍在生成的预取讲解：它成为当前的讲解请求，能被 cancelLocationDescription
+// 和新的 loadLocationDescription 正常中止；写入前核对请求键、全景和语言。
+function adoptPrefetchStream(slot, requestKey, set, get) {
+  const panoId = slot.location.pano_id;
+  const isCurrent = () =>
+    !slot.controller.signal.aborted &&
+    get().descriptionRequestKey === requestKey &&
+    get().currentLocationRef?.pano_id === panoId &&
+    getActiveLanguage() === slot.language;
+
+  let finish;
+  const promise = new Promise((resolve) => {
+    finish = resolve;
+  }).finally(() => {
+    if (activeDescriptionRequest?.requestKey === requestKey) {
+      activeDescriptionRequest = null;
+    }
+  });
+  const onAbort = () => finish();
+  slot.controller.signal.addEventListener("abort", onAbort, { once: true });
+
+  slot.subscriber = (event) => {
+    if (event.type !== "delta") {
+      slot.controller.signal.removeEventListener("abort", onAbort);
+      finish();
+    }
+    if (!isCurrent()) return;
+    if (event.type === "delta") {
+      set((state) => ({
+        description: `${state.description || ""}${event.delta}`,
+      }));
+    } else if (event.type === "done") {
+      set({
+        description: slot.text,
+        descriptionCitations: slot.citations,
+        descriptionResearchStatus: slot.researchStatus,
+        descriptionError: null,
+        isDescriptionLoading: false,
+      });
+    } else {
+      console.error("加载描述失败:", event.error);
+      set({
+        descriptionCitations: null,
+        descriptionResearchStatus: null,
+        descriptionError: i18n.t("ai.descriptionFailed"),
+        isDescriptionLoading: false,
+      });
+    }
+  };
+
+  activeDescriptionRequest = {
+    fingerprint: requestKey,
+    requestKey,
+    controller: slot.controller,
+    promise,
+  };
+}
+
 const useStore = create(
   devtools(
     (set, get) => ({
@@ -82,6 +285,8 @@ const useStore = create(
       isLocationLoading: true,
       isMapLocationLoading: false,
       lastRefreshTime: Date.now() - RATE_LIMIT_MS,
+      // 本次会话用户主动点"去探险"或按空格的次数；第一站不预取
+      userExploreCount: 0,
 
       // ===== Description相关状态 =====
       description: null,
@@ -115,7 +320,7 @@ const useStore = create(
 
       // Location Actions
       loadRandomLocation: async (skipRateLimit = false, options = {}) => {
-        const { preserveLocation = false } = options;
+        const { preserveLocation = false, userInitiated = false } = options;
         if (!get().isExplorationInitialized) {
           await get().initializeExplorationMode();
           if (!get().isExplorationInitialized) {
@@ -141,6 +346,15 @@ const useStore = create(
         // 检查是否正在加载
         if (state.isLoadingLocation) {
           return { success: false, error: i18n.t("mapPicker.busy") };
+        }
+
+        if (PREFETCH_NEXT_ENABLED) {
+          if (userInitiated) {
+            set({ userExploreCount: state.userExploreCount + 1 });
+          }
+          // 手动和语音随机都先看预取；无效或还没取到位置的预取会被中止
+          const prefetched = takeUsablePrefetch(state);
+          if (prefetched) return applyPrefetchedLocation(prefetched, set, get);
         }
 
         const requestId = ++locationRequestSequence;
@@ -290,6 +504,19 @@ const useStore = create(
         const MAX_RETRIES = 1;
         const currentLanguage = getActiveLanguage();
         const currentState = get();
+        if (prefetchServedDescription) {
+          // 讲解由预取提供（已完成或仍在流式追加）时不再发第二个请求；
+          // 失败后的重试、换语言、换地点照常请求
+          if (
+            retryCount === 0 &&
+            prefetchServedDescription.panoId === panoId &&
+            prefetchServedDescription.language === currentLanguage &&
+            !currentState.descriptionError
+          ) {
+            return activeDescriptionRequest?.promise ?? Promise.resolve();
+          }
+          prefetchServedDescription = null;
+        }
         const currentView =
           currentState.streetViewView?.panoId === panoId
             ? currentState.streetViewView
@@ -436,12 +663,69 @@ const useStore = create(
       cancelLocationDescription: () => {
         clearTimeout(descriptionRetryTimer);
         descriptionRetryTimer = null;
+        // 只取消当前讲解（包括已接管的预取流），未接管的预取不受影响
         activeDescriptionRequest?.controller.abort();
         activeDescriptionRequest = null;
+        prefetchServedDescription = null;
         set({
           isDescriptionLoading: false,
           descriptionRequestKey: null,
         });
+      },
+
+      // 首页在讲解状态、位置、浮层或页面可见性变化时调用；满足条件才开始预取
+      maybePrefetchNext: ({ overlayOpen = false } = {}) => {
+        if (!PREFETCH_NEXT_ENABLED) return false;
+        if (
+          prefetchSlot &&
+          Date.now() - prefetchSlot.createdAt > PREFETCH_TTL_MS
+        ) {
+          discardPrefetch();
+        }
+        if (prefetchSlot) return false;
+
+        const state = get();
+        const modeKey = explorationModeKey(state);
+        const descriptionFinished =
+          !state.isDescriptionLoading &&
+          descriptionRetryTimer === null &&
+          Boolean(state.description || state.descriptionError);
+        if (
+          state.userExploreCount < 1 ||
+          overlayOpen ||
+          (typeof document !== "undefined" &&
+            document.visibilityState === "hidden") ||
+          !state.isExplorationInitialized ||
+          state.isSavingPreference ||
+          state.isLoadingLocation ||
+          !modeKey ||
+          !state.location?.pano_id ||
+          !descriptionFinished
+        ) {
+          return false;
+        }
+
+        const slot = {
+          location: null,
+          language: getActiveLanguage(),
+          modeKey,
+          createdAt: Date.now(),
+          text: "",
+          citations: null,
+          researchStatus: null,
+          done: false,
+          error: null,
+          controller: new AbortController(),
+          subscriber: null,
+        };
+        prefetchSlot = slot;
+        runPrefetch(slot);
+        return true;
+      },
+
+      // 离开首页时中止进行中的预取；已经完整取好的预取保留，回来后 15 分钟内仍可用
+      stopPrefetch: () => {
+        if (prefetchSlot && !prefetchSlot.done) discardPrefetch();
       },
 
       // Exploration Mode Actions
@@ -635,5 +919,19 @@ const useStore = create(
     },
   ),
 );
+
+if (PREFETCH_NEXT_ENABLED) {
+  // 探索模式或兴趣变化（包括语音工具直接改 store）后，预取的地点不再符合偏好
+  useStore.subscribe((state, prevState) => {
+    if (
+      state.explorationMode !== prevState.explorationMode ||
+      state.explorationInterest !== prevState.explorationInterest
+    ) {
+      discardPrefetch();
+    }
+  });
+  // 界面语言变化后，预取的讲解语言不再匹配
+  i18n.on?.("languageChanged", () => discardPrefetch());
+}
 
 export default useStore;

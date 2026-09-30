@@ -95,7 +95,8 @@ backend/
 
 ### 基础探索
 
-- `GET /api/v1/locations/random` - 随机街景位置，支持 `lang` 和 `source`。
+- `GET /api/v1/locations/random` - 随机街景位置，支持 `lang` 和 `source`。`prefetch=1` 是首页预取下一站：照常存位置但不写足迹，服务端内存记下"本会话预取过的全景"（15 分钟、每会话最多 2 个）。
+- `POST /api/v1/locations/:panoId/visit` - 预取的地点真正展示时补写 random 足迹；只接受本会话预取过且未过期的全景，一次性，否则 404。
 - `GET /api/v1/locations/lookup` - 根据坐标反查位置。
 - `GET /api/v1/locations/search` - 通过 Google Places/Geocoding 搜索具体地点或地标，并跳到附近街景。
 - `GET /api/v1/locations/:panoId/description` - AI 简短描述。

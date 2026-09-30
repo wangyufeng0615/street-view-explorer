@@ -11,7 +11,9 @@ vi.mock("../i18n", () => ({
 import {
   getAgentJourneyDetail,
   getAgentJourneys,
+  getRandomLocation,
   getVisitHistory,
+  markPrefetchedVisit,
   streamLocationDescription,
   streamLocationDetailedDescription,
 } from "./api";
@@ -211,6 +213,63 @@ describe("visit history client", () => {
     expect(fetchMock.mock.calls[0][0]).toContain(
       "/api/v1/visits?limit=5000&offset=0&source=random&distinct=1&fields=map",
     );
+  });
+});
+
+describe("next-stop prefetch client", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("marks a prefetch request and forwards its abort signal", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      json: async () => ({
+        success: true,
+        data: { location: { pano_id: "p1", latitude: 1, longitude: 2 } },
+      }),
+    });
+    const controller = new AbortController();
+    controller.abort();
+
+    await getRandomLocation("zh", {
+      prefetch: true,
+      signal: controller.signal,
+    });
+
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "/api/v1/locations/random?lang=zh&prefetch=1",
+    );
+    expect(fetchMock.mock.calls[0][1].signal.aborted).toBe(true);
+  });
+
+  it("keeps the positional source and country arguments", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      json: async () => ({ success: false, error: "none" }),
+    });
+
+    await getRandomLocation("en", "geo_game", "JP");
+
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "/api/v1/locations/random?lang=en&source=geo_game&country=JP",
+    );
+  });
+
+  it("posts the footprint backfill with the session header", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: false,
+      status: 404,
+      headers: { get: () => "application/json" },
+      json: async () => ({ success: false, error: "not prefetched" }),
+    });
+
+    const result = await markPrefetchedVisit("pano/1");
+
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/v1/locations/pano%2F1/visit");
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({
+      method: "POST",
+      headers: { "X-Session-ID": "test-session" },
+    });
+    expect(result).toMatchObject({ success: false, status: 404 });
   });
 });
 

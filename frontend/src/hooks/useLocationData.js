@@ -19,13 +19,13 @@ export default function useLocationData() {
 
   // 包装store的loadRandomLocation以保持兼容性
   const loadRandomLocation = useCallback(
-    async (skipRateLimit = false) => {
+    async (skipRateLimit = false, options = undefined) => {
       // 同步ref状态
       loadingRef.current = isLoadingLocation;
       lastRefreshTimeRef.current = lastRefreshTime;
 
       // 调用store的方法
-      await loadRandomLocationFromStore(skipRateLimit);
+      await loadRandomLocationFromStore(skipRateLimit, options);
     },
     [loadRandomLocationFromStore, isLoadingLocation, lastRefreshTime],
   );

@@ -47,6 +47,8 @@ Routes:
 
 `AgentPage`, `LetterPage`, `GeoGamePage`, and `GeoBattlePage` are lazy loaded from `App.tsx`.
 
+Home exploration prefetches the next stop. After the user has explored manually at least once, and once the current description has finished while the page is visible and the footprint overlay is closed, the store requests `/locations/random?prefetch=1` and streams that place's description (view fixed at heading 0) into a module-level buffer outside the rendered state. The next random explore (button, Space or Atlas Voice random navigation) applies the prefetched place immediately, resets the heading to 0 so the view matches the described frame, takes over the buffered or still-streaming description, and calls `POST /locations/:panoId/visit` to write the deferred footprint. The prefetch is discarded on language or exploration-mode change, failure or after 15 minutes; map picks, place search and URL lookups neither use nor discard it. The backend accepts that footprint only for panoramas this session prefetched, once, within 15 minutes, so the shared footprint map cannot be written arbitrarily. At most one prefetched description per exploring session goes unused.
+
 Game feedback shared by solo and online geo modes lives in `frontend/src/hooks/useGameFeedback.js` and `frontend/src/components/GameFeedback.jsx`. It uses Web Audio for short local tones, stores sound toggles in `localStorage` (`geoGameSound` and `geoBattleSound`), and renders accessible `aria-live` feedback bubbles with the same player/opponent/target color language used by map pins.
 
 ## Backend

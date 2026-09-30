@@ -58,9 +58,13 @@ func (h *Handlers) GetRandomLocation(c *gin.Context) {
 		return
 	}
 
-	// Skip visit recording for geo game rounds (source=geo_game)
+	// Skip visit recording for geo game rounds (source=geo_game). A home-page
+	// prefetch (prefetch=1) defers the footprint until the place is shown; see
+	// RecordPrefetchedVisit.
 	source := c.DefaultQuery("source", "")
-	if source != "geo_game" {
+	if source != "geo_game" && c.Query("prefetch") == "1" {
+		h.prefetched.add(sessionID, loc.PanoID)
+	} else if source != "geo_game" {
 		if err := svc.LocationService.RecordVisit(sessionID, loc, models.VisitSourceRandom); err != nil {
 			CaptureHandlerError(c, err, http.StatusInternalServerError, map[string]interface{}{
 				"operation": "record_random_visit",
@@ -81,6 +85,36 @@ func (h *Handlers) GetRandomLocation(c *gin.Context) {
 			"location": loc,
 		},
 	})
+}
+
+// RecordPrefetchedVisit writes the random-exploration footprint for a place
+// that this session prefetched and is now showing. Each prefetch can be
+// recorded once, within prefetchTTL.
+func (h *Handlers) RecordPrefetchedVisit(c *gin.Context) {
+	sessionID := h.getSessionID(c)
+	if sessionID == "" {
+		return
+	}
+	panoID := c.Param("panoId")
+	if !h.prefetched.take(sessionID, panoID) {
+		c.JSON(http.StatusNotFound, gin.H{"success": false, "error": "no pending prefetch for this location"})
+		return
+	}
+
+	svc := h.servicesForMode(c)
+	loc, err := svc.LocationService.GetLocation(panoID)
+	if err == nil {
+		err = svc.LocationService.RecordVisit(sessionID, *loc, models.VisitSourceRandom)
+	}
+	if err != nil {
+		CaptureHandlerError(c, err, http.StatusInternalServerError, map[string]interface{}{
+			"operation": "record_prefetched_visit",
+			"pano_id":   panoID,
+		})
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": PublicErrorMessage(err)})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true})
 }
 
 // LookupLocation 根据坐标查找位置

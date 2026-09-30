@@ -20,6 +20,7 @@ type ModeServices struct {
 type Handlers struct {
 	global            *ModeServices
 	descriptionBudget repositories.RateLimiter
+	prefetched        *prefetchRegistry
 }
 
 func NewHandlers(
@@ -32,6 +33,7 @@ func NewHandlers(
 			LocationService: locationService,
 			AIService:       aiService,
 		},
+		prefetched: newPrefetchRegistry(),
 	}
 	if len(descriptionBudget) > 0 {
 		handlers.descriptionBudget = descriptionBudget[0]

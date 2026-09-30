@@ -14,6 +14,7 @@ func SetupRoutes(r *gin.Engine, h *Handlers, ah *AgentHandlers, rh *RealtimeHand
 			locations.GET("/random", h.GetRandomLocation)
 			locations.GET("/lookup", h.LookupLocation)
 			locations.GET("/search", h.SearchLocation)
+			locations.POST("/:panoId/visit", h.RecordPrefetchedVisit)
 			locations.GET("/:panoId/description", h.GetLocationDescription)
 			locations.GET("/:panoId/detailed-description", h.GetLocationDetailedDescription)
 			locations.GET("/:panoId/streetview-frame", h.GetStreetViewFrame)
