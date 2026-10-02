@@ -138,7 +138,11 @@ func serveMapsRelay(c *gin.Context, client *http.Client, allowed map[string]bool
 	// Retain escaping used by RPC and image paths, without decoding it twice.
 	prefix := "/api/v1/maps-relay/resource/" + host
 	upstream.RawPath = strings.TrimPrefix(c.Request.URL.EscapedPath(), prefix)
-	req, err := http.NewRequestWithContext(c.Request.Context(), c.Request.Method, upstream.String(), http.MaxBytesReader(c.Writer, c.Request.Body, 1<<20))
+	var body io.Reader
+	if c.Request.Method == http.MethodPost {
+		body = http.MaxBytesReader(c.Writer, c.Request.Body, 1<<20)
+	}
+	req, err := http.NewRequestWithContext(c.Request.Context(), c.Request.Method, upstream.String(), body)
 	if err != nil {
 		c.String(http.StatusBadRequest, "Invalid Maps relay request")
 		return
@@ -161,7 +165,8 @@ func serveMapsRelay(c *gin.Context, client *http.Client, allowed map[string]bool
 		}
 	}
 	started := time.Now()
-	res, err := client.Do(req)
+	res, cancel, hedged, err := requestMapsRelay(client, req)
+	defer cancel()
 	if err != nil {
 		// url.Error includes SDK credentials, sometimes nested inside pb=.
 		// Do not log, attach to Gin errors, or return the original error.
@@ -190,6 +195,9 @@ func serveMapsRelay(c *gin.Context, client *http.Client, allowed map[string]bool
 		}
 	}
 	c.Header("X-Maps-Relay", "1")
+	if hedged {
+		c.Header("X-Maps-Relay-Hedged", "1")
+	}
 	// Browser caching is useful; a shared CDN cache must not bypass test access.
 	c.Header("CDN-Cache-Control", "no-store")
 	c.Header("Cloudflare-CDN-Cache-Control", "no-store")
