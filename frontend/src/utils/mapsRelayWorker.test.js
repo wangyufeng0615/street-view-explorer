@@ -118,7 +118,10 @@ it("rejects missing clients and unknown Google hosts without a direct request", 
   const postMessage = vi.fn();
   const fetch = vi.fn();
   const handle = workerHarness(
-    { on: { url: "https://app.test/?mapsRelay=1", postMessage } },
+    {
+      on: { url: "https://app.test/?mapsRelay=1", postMessage },
+      frame: { url: "about:blank", type: "window" },
+    },
     fetch,
   );
   expect(
@@ -141,6 +144,14 @@ it("rejects missing clients and unknown Google hosts without a direct request", 
     type: "maps-relay-blocked-host",
     host: "new.googleapis.com",
   });
+  expect(
+    (
+      await handle(
+        "frame",
+        new Request("https://maps.googleapis.com/maps/api/js"),
+      )
+    ).status,
+  ).toBe(503);
   expect(fetch).not.toHaveBeenCalled();
 });
 

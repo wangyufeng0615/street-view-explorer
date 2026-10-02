@@ -23,7 +23,7 @@ self.addEventListener("fetch", (event) => {
   event.respondWith((async () => {
     const client = await self.clients.get(event.clientId);
     // Missing client context must never silently permit a direct Google call.
-    if (!client || (client.type && client.type !== "window")) return new Response("Maps relay client unavailable", { status: 503 });
+    if (!client || (client.type && client.type !== "window") || new URL(client.url).origin !== self.location.origin) return new Response("Maps relay client unavailable", { status: 503 });
     if (!optedIn(client)) return fetch(event.request);
     if (!enabled) return new Response("Maps relay disabled", { status: 503 });
     if (url.protocol !== "https:" || !hosts.has(url.host)) {

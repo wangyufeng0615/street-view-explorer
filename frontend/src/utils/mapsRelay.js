@@ -1,5 +1,5 @@
 const WORKER_PATH = "/api/v1/maps-relay/service-worker.js";
-const WORKER_VERSION = "2";
+const WORKER_VERSION = "3";
 let preparation = null;
 
 export function isMapsRelayEnabled() {
@@ -26,7 +26,8 @@ export function releaseMapsRelay() {
 
 async function authorizeRelay(signal) {
   const fragment = new URLSearchParams(window.location.hash.slice(1));
-  const key = fragment.get("mapsRelayKey");
+  const key = window.__mapsRelayInvitation || fragment.get("mapsRelayKey");
+  delete window.__mapsRelayInvitation;
   if (key) {
     fragment.delete("mapsRelayKey");
     const url = new URL(window.location.href);

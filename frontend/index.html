@@ -2,6 +2,19 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8" />
+    <!-- Consume a private relay invitation before analytics or SDK scripts run. -->
+    <script>
+        (() => {
+            const url = new URL(window.location.href);
+            const fragment = new URLSearchParams(url.hash.slice(1));
+            const key = fragment.get('mapsRelayKey');
+            if (!key) return;
+            if (url.searchParams.get('mapsRelay') === '1') window.__mapsRelayInvitation = key;
+            fragment.delete('mapsRelayKey');
+            url.hash = fragment.toString();
+            window.history.replaceState(window.history.state, '', url);
+        })();
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
     
     <!-- Primary Meta Tags -->

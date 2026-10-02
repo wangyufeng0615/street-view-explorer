@@ -30,7 +30,7 @@ it("waits for control, shares preparation and can reclaim a refreshed page", asy
   workers.controller = null;
   const postMessage = vi.fn(() => {
     workers.controller = {
-      scriptURL: "http://localhost/api/v1/maps-relay/service-worker.js?v=2",
+      scriptURL: "http://localhost/api/v1/maps-relay/service-worker.js?v=3",
     };
     workers.dispatchEvent(new Event("controllerchange"));
   });
@@ -71,7 +71,7 @@ it("consumes invitations from the fragment without sending them in URLs", async 
   vi.stubGlobal("navigator", {
     serviceWorker: {
       controller: {
-        scriptURL: "http://localhost/api/v1/maps-relay/service-worker.js?v=2",
+        scriptURL: "http://localhost/api/v1/maps-relay/service-worker.js?v=3",
       },
       register: vi.fn().mockResolvedValue({}),
     },
@@ -98,4 +98,24 @@ it("bounds registration itself and rejects unauthorized access", async () => {
   await pending;
   fetch.mockResolvedValue({ ok: false, status: 401 });
   await expect(prepareMapsRelay()).rejects.toThrow("invitation");
+});
+
+it("consumes an invitation captured before analytics without persisting it", async () => {
+  window.history.replaceState(null, "", "/?mapsRelay=1");
+  window.__mapsRelayInvitation = "early-invitation";
+  vi.stubGlobal("isSecureContext", true);
+  vi.stubGlobal("navigator", {
+    serviceWorker: {
+      controller: {
+        scriptURL: "http://localhost/api/v1/maps-relay/service-worker.js?v=3",
+      },
+      register: vi.fn().mockResolvedValue({}),
+    },
+  });
+  const { prepareMapsRelay } = await import("./mapsRelay");
+  await prepareMapsRelay();
+  expect(window.__mapsRelayInvitation).toBeUndefined();
+  expect(fetch.mock.calls[0][1].headers).toEqual({
+    "X-Maps-Relay-Key": "early-invitation",
+  });
 });
