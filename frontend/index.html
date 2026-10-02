@@ -82,7 +82,7 @@
     
     <!-- Production-only external font hints. Local dev keeps browser egress behind the configured proxy. -->
     <script>
-        if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+        if (new URLSearchParams(window.location.search).get('mapsRelay') !== '1' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
             [
                 ['dns-prefetch', 'https://fonts.googleapis.com'],
                 ['dns-prefetch', 'https://fonts.gstatic.com'],

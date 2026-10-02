@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/getsentry/sentry-go"
@@ -15,6 +16,12 @@ import (
 // Middleware returns a Gin middleware for Sentry integration
 func Middleware(repanic bool) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		// High-volume SDK resources carry the browser Maps key inside nested
+		// RPC queries/bodies. Keep these transport requests out of Sentry.
+		if strings.HasPrefix(c.Request.URL.Path, "/api/v1/maps-relay/") {
+			c.Next()
+			return
+		}
 		// Create a hub for this request
 		hub := sentrygin.GetHubFromContext(c)
 		if hub == nil {

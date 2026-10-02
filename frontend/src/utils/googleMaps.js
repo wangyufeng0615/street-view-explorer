@@ -1,4 +1,11 @@
 import i18n from "../i18n";
+import {
+  isMapsRelayEnabled,
+  prepareMapsRelay,
+  releaseMapsRelay,
+} from "./mapsRelay";
+
+releaseMapsRelay();
 
 // 全局状态管理
 let googleMapsPromise = null;
@@ -30,6 +37,7 @@ function cleanupExistingScripts() {
 // 生产环境提前建立到地图域名的连接；本地开发的浏览器出网走代理，不做预连接
 function preconnectGoogleMaps() {
   if (
+    isMapsRelayEnabled() ||
     window.location.hostname === "localhost" ||
     window.location.hostname === "127.0.0.1"
   ) {
@@ -201,7 +209,11 @@ export function loadGoogleMapsScript() {
     };
 
     // Street View is the primary page surface, so load its API immediately.
-    loadScript();
+    if (isMapsRelayEnabled()) {
+      prepareMapsRelay().then(loadScript).catch(reject);
+    } else {
+      loadScript();
+    }
   }).catch((err) => {
     isLoadingScript = false;
     googleMapsPromise = null;

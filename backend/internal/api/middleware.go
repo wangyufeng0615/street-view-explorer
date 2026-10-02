@@ -25,6 +25,7 @@ var (
 func isCostSensitiveEndpoint(endpoint string) bool {
 	switch endpoint {
 	case "/api/v1/locations/random",
+		mapsRelayResourceRoute,
 		"/api/v1/locations/search",
 		"/api/v1/locations/:panoId/description",
 		"/api/v1/locations/:panoId/detailed-description",
@@ -97,6 +98,10 @@ type rateLimitRule struct {
 func rateLimitRuleFor(method, endpoint string) rateLimitRule {
 	minute := 60 * time.Second
 	switch endpoint {
+	case mapsRelayResourceRoute:
+		return rateLimitRule{endpoint, 600, minute} // SDK modules and concurrent panorama tiles share one budget.
+	case mapsRelaySessionRoute:
+		return rateLimitRule{endpoint, 20, minute}
 	case "/api/v1/locations/random":
 		return rateLimitRule{endpoint, 120, minute} // 每分钟120次，约2秒一次
 	case "/api/v1/locations/search":

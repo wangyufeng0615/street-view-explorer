@@ -45,6 +45,7 @@ require_source img-src 'https://*.gstatic.com'
 require_source img-src 'https://*.google.com'
 require_source img-src 'https://*.googleusercontent.com'
 require_source worker-src 'blob:'
+require_source worker-src "'self'"
 require_source frame-src 'https://*.google.com'
 
 printf 'nginx CSP check passed\n'

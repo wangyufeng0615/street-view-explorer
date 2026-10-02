@@ -236,6 +236,10 @@ func main() {
 	geoHandlers := api.NewGeoHandlers(globalAIClient, cfg.GoogleMapsAPIKey(), locationService, geoBattleService, googleMaps.HTTPClient())
 	realtimeHandlers := api.NewRealtimeHandlers(api.WithRealtimeWebRTC(cfg.SecurityConfig().Realtime.WebRTCEnabled))
 	api.SetupRoutes(r, handlers, agentHandlers, realtimeHandlers, geoHandlers)
+	api.SetupMapsRelayRoutes(r, googleMaps.HTTPClient(), api.MapsRelayOptions{
+		Enabled:     os.Getenv("MAPS_RELAY_ENABLED") == "true",
+		AccessToken: os.Getenv("MAPS_RELAY_ACCESS_TOKEN"),
+	})
 
 	addr := cfg.ServerAddress()
 	logger := utils.SystemLogger()
