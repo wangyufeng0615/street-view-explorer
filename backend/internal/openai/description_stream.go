@@ -1,7 +1,7 @@
 package openai
 
 import (
-	"fmt"
+	"errors"
 	"strings"
 	"unicode"
 )
@@ -89,6 +89,19 @@ func stripResearchNarration(text, language string) string {
 	return trimmed
 }
 
+// errWrongDescriptionLanguage marks a description rejected for its language or
+// script mix. Models do this now and then; when nothing has reached the
+// visitor yet, asking once more is invisible apart from the wait.
+var errWrongDescriptionLanguage = errors.New("description language rejected")
+
+type descriptionLanguageError struct{ message string }
+
+func (e *descriptionLanguageError) Error() string { return e.message }
+
+func (e *descriptionLanguageError) Is(target error) bool {
+	return target == errWrongDescriptionLanguage
+}
+
 func validateDescriptionLanguage(text, language string, partial bool) error {
 	if err := validateDescriptionMixedScript(text, language); err != nil {
 		return err
@@ -100,7 +113,7 @@ func validateDescriptionLanguage(text, language string, partial bool) error {
 			minimumHan = 4
 		}
 		if han < minimumHan || (kana >= 4 && kana > han) || (latin >= 20 && latin > han) {
-			return fmt.Errorf("AI 返回的描述语言不符合简体中文要求")
+			return &descriptionLanguageError{"AI 返回的描述语言不符合简体中文要求"}
 		}
 		return nil
 	}
@@ -110,7 +123,7 @@ func validateDescriptionLanguage(text, language string, partial bool) error {
 		minimumLatin = 6
 	}
 	if (latin < minimumLatin && han+kana > latin*2) || (han+kana >= 12 && han+kana > latin) {
-		return fmt.Errorf("AI returned the description in the wrong language")
+		return &descriptionLanguageError{"AI returned the description in the wrong language"}
 	}
 	return nil
 }

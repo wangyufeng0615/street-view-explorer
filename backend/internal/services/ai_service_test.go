@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -38,9 +39,13 @@ type visualDescriptionMaps struct {
 	lastPanoID    string
 	lastFrameView StreetViewView
 	frameErr      error
+	geocodeErr    error
 }
 
 func (m *visualDescriptionMaps) GetLocationInfo(context.Context, float64, float64, string) (map[string]string, error) {
+	if m.geocodeErr != nil {
+		return nil, m.geocodeErr
+	}
 	return map[string]string{"formatted_address": "Test Street, Test City"}, nil
 }
 
@@ -57,6 +62,7 @@ func (m *visualDescriptionMaps) GetStreetViewFrame(_ context.Context, panoID str
 type changingLetterClient struct {
 	calls     int
 	lastScene *openai.SceneImage
+	lastInfo  map[string]string
 }
 
 func (c *changingLetterClient) next(onDelta func(string) error) (string, []openai.Citation, error) {
@@ -70,23 +76,27 @@ func (c *changingLetterClient) next(onDelta func(string) error) (string, []opena
 	return letter, []openai.Citation{{URL: fmt.Sprintf("https://example.com/%d", c.calls)}}, nil
 }
 
-func (c *changingLetterClient) GenerateLocationDescription(_ float64, _ float64, _ map[string]string, scene *openai.SceneImage, _ string) (string, []openai.Citation, error) {
+func (c *changingLetterClient) GenerateLocationDescription(_ float64, _ float64, info map[string]string, scene *openai.SceneImage, _ string) (string, []openai.Citation, error) {
 	c.lastScene = scene
+	c.lastInfo = info
 	return c.next(nil)
 }
 
-func (c *changingLetterClient) GenerateDetailedLocationDescription(_ float64, _ float64, _ map[string]string, scene *openai.SceneImage, _ string) (string, []openai.Citation, error) {
+func (c *changingLetterClient) GenerateDetailedLocationDescription(_ float64, _ float64, info map[string]string, scene *openai.SceneImage, _ string) (string, []openai.Citation, error) {
 	c.lastScene = scene
+	c.lastInfo = info
 	return c.next(nil)
 }
 
-func (c *changingLetterClient) StreamLocationDescription(_ context.Context, _ float64, _ float64, _ map[string]string, scene *openai.SceneImage, _ string, onDelta func(string) error) (string, []openai.Citation, error) {
+func (c *changingLetterClient) StreamLocationDescription(_ context.Context, _ float64, _ float64, info map[string]string, scene *openai.SceneImage, _ string, onDelta func(string) error) (string, []openai.Citation, error) {
 	c.lastScene = scene
+	c.lastInfo = info
 	return c.next(onDelta)
 }
 
-func (c *changingLetterClient) StreamDetailedLocationDescription(_ context.Context, _ float64, _ float64, _ map[string]string, scene *openai.SceneImage, _ string, onDelta func(string) error) (string, []openai.Citation, error) {
+func (c *changingLetterClient) StreamDetailedLocationDescription(_ context.Context, _ float64, _ float64, info map[string]string, scene *openai.SceneImage, _ string, onDelta func(string) error) (string, []openai.Citation, error) {
 	c.lastScene = scene
+	c.lastInfo = info
 	return c.next(onDelta)
 }
 
@@ -144,6 +154,27 @@ func TestDescriptionFetchesCurrentStreetViewFrame(t *testing.T) {
 	}
 }
 
+func TestDescriptionFallsBackToSavedAddressWhenGeocodingFails(t *testing.T) {
+	maps := &visualDescriptionMaps{geocodeErr: fmt.Errorf("geocoding timeout")}
+	client := &changingLetterClient{}
+	service := NewAIService(visualDescriptionConfig{}, nil, maps, client)
+
+	desc, _, err := service.GetDescriptionForLocation(
+		models.Location{PanoID: "pano", Latitude: 1, Longitude: 2, FormattedAddress: "Saved Road, Saved Town", Country: "Chile", CountryCode: "CL"},
+		"en",
+		StreetViewView{Heading: 90, FOV: 80},
+	)
+	if err != nil || desc == "" {
+		t.Fatalf("GetDescriptionForLocation() = %q, %v; want a description from the saved address", desc, err)
+	}
+	if client.lastInfo["formatted_address"] != "Saved Road, Saved Town" || client.lastInfo["country_code"] != "CL" {
+		t.Fatalf("location info passed to AI = %#v", client.lastInfo)
+	}
+	if client.lastScene == nil {
+		t.Fatal("scene should still be attached when only geocoding fails")
+	}
+}
+
 func TestDescriptionFailsClosedWhenStreetViewFrameFails(t *testing.T) {
 	maps := &visualDescriptionMaps{frameErr: fmt.Errorf("maps unavailable")}
 	service := NewAIService(visualDescriptionConfig{}, nil, maps, &changingLetterClient{})
@@ -155,5 +186,49 @@ func TestDescriptionFailsClosedWhenStreetViewFrameFails(t *testing.T) {
 	)
 	if err == nil || !strings.Contains(err.Error(), "获取街景画面失败") {
 		t.Fatalf("GetDescriptionForLocation() error = %v, want visible frame failure", err)
+	}
+}
+
+func TestDescriptionRefundableWhenVisitorLeavesBeforeTheAIRequest(t *testing.T) {
+	// 画面和地址都立即就绪（相当于命中缓存），但访客已经离开
+	maps := &visualDescriptionMaps{}
+	client := &changingLetterClient{}
+	service := NewAIService(visualDescriptionConfig{}, nil, maps, client)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, _, err := service.generateDescription(ctx, models.Location{PanoID: "pano", Latitude: 1, Longitude: 2}, "en", StreetViewView{}, false, nil)
+	if !errors.Is(err, ErrCanceledBeforeUpstream) {
+		t.Fatalf("generateDescription() error = %v, want ErrCanceledBeforeUpstream so the budget is returned", err)
+	}
+	if client.calls != 0 {
+		t.Fatalf("AI requests = %d, want none after the visitor left", client.calls)
+	}
+}
+
+type regionsErrorClient struct {
+	changingLetterClient
+	err error
+}
+
+func (c *regionsErrorClient) GenerateRegionsForInterest(string) ([]models.Region, error) {
+	return nil, c.err
+}
+
+func TestInterestErrorsTellUnclearInterestsFromAIOutages(t *testing.T) {
+	setWith := func(err error) error {
+		ai := NewAIService(noCacheTestConfig{}, nil, nil, &regionsErrorClient{err: err})
+		return NewLocationService(nil, ai, nil).SetExplorationPreference("session", "castles")
+	}
+
+	unclear := fmt.Errorf("%w: no regions", openai.ErrRegionsNotUnderstood)
+	if err := setWith(unclear); !errors.Is(err, ErrInterestNotUnderstood) {
+		t.Fatalf("unclear interest error = %v, want ErrInterestNotUnderstood", err)
+	}
+
+	outage := errors.New("upstream 503")
+	err := setWith(outage)
+	if errors.Is(err, ErrInterestNotUnderstood) || !errors.Is(err, outage) {
+		t.Fatalf("AI outage error = %v, want the upstream failure, not an unclear interest", err)
 	}
 }

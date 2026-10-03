@@ -8,24 +8,40 @@ import (
 	randv2 "math/rand/v2"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/my-streetview-project/backend/internal/models"
+	"github.com/my-streetview-project/backend/internal/openai"
 	"github.com/my-streetview-project/backend/internal/repositories"
 	"github.com/my-streetview-project/backend/internal/utils"
 )
 
 var ErrStreetViewNotFound = errors.New("该坐标附近没有可用街景")
 
+// 探索兴趣校验失败的原因，handler 按界面语言给出提示
+var (
+	ErrInterestTooShort      = errors.New("探索兴趣太短")
+	ErrInterestTooLong       = errors.New("探索兴趣太长")
+	ErrInterestInvalidChars  = errors.New("探索兴趣包含无效字符")
+	ErrInterestNotUnderstood = errors.New("无法理解该探索兴趣")
+)
+
+// maxInterestRunes 按字符计：中文兴趣按字节算 50 只能写十几个字
+const maxInterestRunes = 50
+
 const (
 	randomCandidateCount      = 12
 	randomSearchRadiusMeters  = 25000
 	randomCandidateTimeout    = 4 * time.Second
 	randomFallbackGrace       = 300 * time.Millisecond
+	randomGeocodeConcurrency  = 2
+	penalizedGeocodeDelay     = 500 * time.Millisecond
 	randomReservoirMaxWait    = 1500 * time.Millisecond
 	randomRecentHistoryLimit  = 100
 	randomRecentQueryLimit    = 250
 	randomNearbyAvoidanceKm   = 50.0
 	randomReservoirQueryLimit = 500
+	localizeAddressTimeout    = 1500 * time.Millisecond
 )
 
 type randomCandidateResult struct {
@@ -139,7 +155,9 @@ func (ls *LocationService) generateRandomLocation(ctx context.Context, regions [
 	searchCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	results := make(chan randomCandidateResult, len(candidates))
-	geocodeSlots := make(chan struct{}, 4)
+	// 反向地理编码要计费：第一个合格结果一到就会取消其余候选，但已经发出的请求照样计费，
+	// 所以并发压到 2
+	geocodeSlots := make(chan struct{}, randomGeocodeConcurrency)
 	for i, candidate := range candidates {
 		go func(attempt int, candidate utils.RandomCoordinateCandidate) {
 			candidateCtx, candidateCancel := context.WithTimeout(searchCtx, randomCandidateTimeout)
@@ -173,7 +191,7 @@ func (ls *LocationService) generateRandomLocation(ctx context.Context, regions [
 				"pano_id":    reservoir.PanoID,
 				"session_id": sessionID,
 			})
-			return reservoir, nil
+			return ls.localizeLocation(ctx, reservoir, language), nil
 		case result := <-results:
 			if result.err != nil {
 				lastErr = result.err
@@ -208,7 +226,7 @@ func (ls *LocationService) generateRandomLocation(ctx context.Context, regions [
 			"pano_id":    reservoir.PanoID,
 			"session_id": sessionID,
 		})
-		return reservoir, nil
+		return ls.localizeLocation(ctx, reservoir, language), nil
 	}
 	if lastErr != nil {
 		return models.Location{}, fmt.Errorf("无法生成可用位置: %w", lastErr)
@@ -227,6 +245,19 @@ func (ls *LocationService) resolveRandomCandidate(ctx context.Context, candidate
 	snapDistance := utils.CalculateDistance(candidate.Latitude, candidate.Longitude, validLat, validLng)
 	if snapDistance > float64(randomSearchRadiusMeters)/1000.0+0.25 {
 		return randomCandidateResult{err: fmt.Errorf("街景吸附距离超出限制")}
+	}
+
+	// 重复或离最近足迹太近的候选只在没有更好结果时才用：先等一会儿，
+	// 让无惩罚的候选先去查地址；那边成功后这里会被取消，省下一次计费
+	penalty := randomLocationPenalty(models.Location{PanoID: panoID, Latitude: validLat, Longitude: validLng}, recent)
+	if penalty > 0 {
+		timer := time.NewTimer(penalizedGeocodeDelay)
+		select {
+		case <-timer.C:
+		case <-ctx.Done():
+			timer.Stop()
+			return randomCandidateResult{err: ctx.Err()}
+		}
 	}
 
 	select {
@@ -261,7 +292,7 @@ func (ls *LocationService) resolveRandomCandidate(ctx context.Context, candidate
 		CreatedAt:         time.Now(),
 		IsMock:            false,
 	}
-	return randomCandidateResult{location: location, penalty: randomLocationPenalty(location, recent)}
+	return randomCandidateResult{location: location, penalty: penalty}
 }
 
 func (ls *LocationService) recentRandomVisits(sessionID string) ([]models.VisitRecord, error) {
@@ -300,6 +331,45 @@ func randomLocationPenalty(location models.Location, recent []models.VisitRecord
 	return 0
 }
 
+// localizeLocation rewrites a stored panorama's address in the requested
+// language. Reservoir panoramas keep the language of whoever visited them
+// first, so without this an English visitor can get a Chinese address. The
+// stored address is kept when the lookup is slow or fails.
+func (ls *LocationService) localizeLocation(ctx context.Context, location models.Location, language string) models.Location {
+	if ls.maps == nil || strings.TrimSpace(language) == "" {
+		return location
+	}
+	lookupCtx, cancel := context.WithTimeout(ctx, localizeAddressTimeout)
+	defer cancel()
+	info, err := ls.maps.GetLocationInfo(lookupCtx, location.Latitude, location.Longitude, language)
+	if err != nil {
+		utils.LocationLogger().Error("localize_address_failed", "Kept the stored address for a reused panorama", err, map[string]interface{}{
+			"pano_id":  location.PanoID,
+			"language": language,
+		})
+		return location
+	}
+	return applyLocationInfo(location, info)
+}
+
+// applyLocationInfo overwrites the address fields that a geocoding result
+// provides and keeps the stored value for any field it leaves empty.
+func applyLocationInfo(location models.Location, info map[string]string) models.Location {
+	if value := strings.TrimSpace(info["formatted_address"]); value != "" {
+		location.FormattedAddress = value
+	}
+	if value := strings.TrimSpace(info["country"]); value != "" {
+		location.Country = value
+	}
+	if value := strings.ToUpper(strings.TrimSpace(info["country_code"])); value != "" {
+		location.CountryCode = value
+	}
+	if value := strings.TrimSpace(info["city"]); value != "" {
+		location.City = value
+	}
+	return location
+}
+
 func (ls *LocationService) verifiedReservoirFallback(recent []models.VisitRecord) (models.Location, bool) {
 	if ls.repo == nil {
 		return models.Location{}, false
@@ -312,6 +382,10 @@ func (ls *LocationService) verifiedReservoirFallback(recent []models.VisitRecord
 	seen := make(map[string]struct{})
 	for _, visit := range visits {
 		if _, exists := seen[visit.PanoID]; exists {
+			continue
+		}
+		// Older visits include user photospheres; never hand those out again.
+		if !IsOfficialPanoID(visit.PanoID) {
 			continue
 		}
 		seen[visit.PanoID] = struct{}{}
@@ -362,16 +436,17 @@ func (ls *LocationService) saveRandomLocation(location models.Location, sessionI
 // SetExplorationPreference 设置用户的探索偏好
 func (ls *LocationService) SetExplorationPreference(sessionID, interest string) error {
 	// 输入验证
+	// 按字节判断下限：单个汉字可以，单个英文字母不行
 	if len(interest) < 2 {
-		return fmt.Errorf("探索兴趣太短")
+		return ErrInterestTooShort
 	}
-	if len(interest) > 50 {
-		return fmt.Errorf("探索兴趣太长")
+	if utf8.RuneCountInString(interest) > maxInterestRunes {
+		return ErrInterestTooLong
 	}
 
 	// 检查是否包含敏感字符
 	if containsSensitiveChars(interest) {
-		return fmt.Errorf("探索兴趣包含无效字符")
+		return ErrInterestInvalidChars
 	}
 
 	// 移除了过于严格的100ms检查，现在由中间件处理速率限制
@@ -379,13 +454,17 @@ func (ls *LocationService) SetExplorationPreference(sessionID, interest string) 
 	// 通过 AI 获取相关区域
 	regions, err := ls.aiService.openAI.GenerateRegionsForInterest(interest)
 	if err != nil {
-		return fmt.Errorf("无法理解该探索兴趣")
+		if errors.Is(err, openai.ErrRegionsNotUnderstood) {
+			return ErrInterestNotUnderstood
+		}
+		// AI 服务本身出错（超时、上游故障）不是用户的问题，交给 handler 上报并提示稍后再试
+		return fmt.Errorf("生成探索区域失败: %w", err)
 	}
 
 	// 验证返回的区域数据，只保存合法区域
 	regions, err = validateRegions(regions)
 	if err != nil {
-		return fmt.Errorf("无法理解该探索兴趣")
+		return ErrInterestNotUnderstood
 	}
 
 	// 创建探索偏好
@@ -510,6 +589,19 @@ func (ls *LocationService) LookupLocationWithContext(ctx context.Context, lat, l
 		return nil, fmt.Errorf("保存位置记录失败: %w", err)
 	}
 
+	return &location, nil
+}
+
+// LocalizedAddress returns only the address fields for a coordinate in the
+// requested language. The UI uses it when the visitor switches language on a
+// panorama it already shows, so it neither moves to another panorama nor
+// records a visit.
+func (ls *LocationService) LocalizedAddress(ctx context.Context, lat, lng float64, language string) (*models.Location, error) {
+	info, err := ls.maps.GetLocationInfo(ctx, lat, lng, language)
+	if err != nil {
+		return nil, fmt.Errorf("获取位置信息失败: %w", err)
+	}
+	location := applyLocationInfo(models.Location{Latitude: lat, Longitude: lng}, info)
 	return &location, nil
 }
 

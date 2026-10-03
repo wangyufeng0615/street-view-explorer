@@ -197,7 +197,7 @@ func TestFindRandomStreetViewUsesOneBoundedRadius(t *testing.T) {
 				return &http.Response{
 					StatusCode: http.StatusOK,
 					Body: io.NopCloser(strings.NewReader(
-						`{"status":"OK","location":{"lat":1.1,"lng":2.2},"pano_id":"bounded"}`,
+						`{"status":"OK","location":{"lat":1.1,"lng":2.2},"pano_id":"bounded","copyright":"© Google"}`,
 					)),
 					Header: make(http.Header),
 				}, nil
@@ -239,5 +239,29 @@ func TestFindRandomStreetViewFailsClosedAfterBoundedMiss(t *testing.T) {
 	}
 	if requests != 1 {
 		t.Fatalf("metadata requests = %d, want one bounded attempt", requests)
+	}
+}
+
+func TestFindRandomStreetViewRejectsUserPhotospheres(t *testing.T) {
+	service := &MapsService{
+		apiKey: "test-key",
+		httpClient: &http.Client{
+			Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body: io.NopCloser(strings.NewReader(
+						`{"status":"OK","location":{"lat":1.1,"lng":2.2},"pano_id":"CAoSF0NJSE0wb2dLRUlDQWdNQ2d0Zl9GNVFF","copyright":"© Viktor Posnov"}`,
+					)),
+					Header: make(http.Header),
+				}, nil
+			}),
+		},
+	}
+
+	if ok, _, _, panoID := service.FindRandomStreetView(context.Background(), 1, 2, 25000); ok {
+		t.Fatalf("FindRandomStreetView() accepted user photosphere %q", panoID)
+	}
+	if ok, _, _, _ := service.FindNearestStreetView(context.Background(), 1, 2); !ok {
+		t.Fatal("FindNearestStreetView() should still return the nearest panorama for explicit lookups")
 	}
 }

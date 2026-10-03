@@ -3,11 +3,17 @@ package openai
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/my-streetview-project/backend/internal/models"
 	"strings"
 	"time"
 )
+
+// ErrRegionsNotUnderstood marks a reply the model did give but that holds no
+// usable region. Network, upstream and API failures are returned as they are,
+// so callers can tell "rephrase your interest" from "try again later".
+var ErrRegionsNotUnderstood = errors.New("无法理解该探索兴趣")
 
 func (c *client) GenerateRegionsForInterest(interest string) ([]models.Region, error) {
 	return c.tryGenerateRegions(interest)
@@ -129,30 +135,30 @@ func (c *client) tryGenerateRegions(interest string) ([]models.Region, error) {
 				// 再次尝试解析清理后的内容
 				if err := json.Unmarshal([]byte(content), &result); err != nil {
 					// 直接返回AI的原始回复内容，让前端展示
-					return nil, fmt.Errorf("%s", responseContent)
+					return nil, fmt.Errorf("%w: %s", ErrRegionsNotUnderstood, responseContent)
 				}
 			} else {
 				// 没有找到完整的JSON结构，直接返回AI的回复
-				return nil, fmt.Errorf("%s", responseContent)
+				return nil, fmt.Errorf("%w: %s", ErrRegionsNotUnderstood, responseContent)
 			}
 		} else {
 			// 没有找到JSON开始标记，直接返回AI的回复
-			return nil, fmt.Errorf("%s", responseContent)
+			return nil, fmt.Errorf("%w: %s", ErrRegionsNotUnderstood, responseContent)
 		}
 	}
 
 	// 检查是否返回了错误信息
 	if result.Error != "" {
 		if result.Explanation != "" {
-			return nil, fmt.Errorf("%s", result.Explanation)
+			return nil, fmt.Errorf("%w: %s", ErrRegionsNotUnderstood, result.Explanation)
 		} else {
-			return nil, fmt.Errorf("%s", result.Error)
+			return nil, fmt.Errorf("%w: %s", ErrRegionsNotUnderstood, result.Error)
 		}
 	}
 
 	// 验证区域数据
 	if len(result.Regions) == 0 {
-		return nil, fmt.Errorf("无法理解该探索兴趣")
+		return nil, ErrRegionsNotUnderstood
 	}
 
 	// 验证每个区域的数据
@@ -173,7 +179,7 @@ func (c *client) tryGenerateRegions(interest string) ([]models.Region, error) {
 
 	// 如果没有有效区域，返回错误
 	if len(validRegions) == 0 {
-		return nil, fmt.Errorf("无法生成有效的探索区域")
+		return nil, fmt.Errorf("%w: 无法生成有效的探索区域", ErrRegionsNotUnderstood)
 	}
 
 	return validRegions, nil

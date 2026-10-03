@@ -1,7 +1,6 @@
 package openai
 
 import (
-	"fmt"
 	"regexp"
 	"strings"
 )
@@ -18,7 +17,7 @@ func validateDescriptionMixedScript(text, language string) error {
 		word := match[1]
 		// Conventional acronyms such as GPS/AI are allowed, not arbitrary prose.
 		if word != strings.ToUpper(word) || len(word) > 8 {
-			return fmt.Errorf("AI 描述包含不自然的中英文混写，请重试")
+			return &descriptionLanguageError{"AI 描述包含不自然的中英文混写，请重试"}
 		}
 	}
 	return nil

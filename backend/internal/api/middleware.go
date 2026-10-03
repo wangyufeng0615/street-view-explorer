@@ -26,6 +26,8 @@ func isCostSensitiveEndpoint(endpoint string) bool {
 	switch endpoint {
 	case "/api/v1/locations/random",
 		"/api/v1/locations/search",
+		"/api/v1/locations/address",
+		"/api/v1/locations/lookup",
 		"/api/v1/locations/:panoId/description",
 		"/api/v1/locations/:panoId/detailed-description",
 		"/api/v1/locations/:panoId/streetview-frame",
@@ -101,6 +103,10 @@ func rateLimitRuleFor(method, endpoint string) rateLimitRule {
 		return rateLimitRule{endpoint, 120, minute} // 每分钟120次，约2秒一次
 	case "/api/v1/locations/search":
 		return rateLimitRule{endpoint, 45, minute} // Google Places/Geocoding 查询，避免语音误触发刷接口
+	case "/api/v1/locations/address":
+		return rateLimitRule{endpoint, 30, minute} // 只在切换界面语言时调用一次反向地理编码
+	case "/api/v1/locations/lookup":
+		return rateLimitRule{endpoint, 30, minute} // 分享链接、地图选点：每次一次计费的反向地理编码，外加最多十次街景元数据查询
 	case "/api/v1/geo/ai-guess":
 		return rateLimitRule{endpoint, 30, minute} // AI 视觉猜测成本较高，限制自动刷接口
 	case "/api/v1/geo/satellite",

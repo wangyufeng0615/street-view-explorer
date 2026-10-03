@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -60,6 +61,16 @@ type locationInfoResult struct {
 	err  error
 }
 
+const (
+	sceneImageTimeout         = 6 * time.Second
+	descriptionAddressTimeout = 1500 * time.Millisecond
+)
+
+// ErrCanceledBeforeUpstream marks a description the visitor abandoned while
+// the scene image and address were still being fetched, before any paid AI
+// call started. Its budget can be returned.
+var ErrCanceledBeforeUpstream = errors.New("description canceled before the AI request started")
+
 type sceneImageResult struct {
 	scene *openai.SceneImage
 	err   error
@@ -70,7 +81,15 @@ func (ai *AIService) generateDescription(ctx context.Context, loc models.Locatio
 	logger := utils.AILogger()
 
 	locationInfo, scene, err := ai.prepareDescriptionContext(ctx, loc, language, view)
+	if err == nil {
+		// 画面已就绪（比如命中缓存）但访客在 AI 请求发出前离开：同样还没花上游的钱
+		err = ctx.Err()
+	}
 	if err != nil {
+		if ctx.Err() != nil {
+			// 访客已经切走：不是故障，不按错误记日志
+			return "", nil, fmt.Errorf("%w: %w", ErrCanceledBeforeUpstream, err)
+		}
 		logger.Error("description_context_failed", "Failed to prepare AI description context", err, map[string]interface{}{
 			"pano_id":  loc.PanoID,
 			"language": language,
@@ -94,6 +113,16 @@ func (ai *AIService) generateDescription(ctx context.Context, loc models.Locatio
 			desc, citations, err = ai.openAI.StreamLocationDescription(ctx, loc.Latitude, loc.Longitude, locationInfo, scene, language, onDelta)
 		}
 		if err != nil {
+			if errors.Is(ctx.Err(), context.Canceled) {
+				// 访客中途切走，上游已经开始计费，额度不退；只记一条普通日志
+				logger.Info("ai_generation_canceled", "Visitor left before the AI description finished", map[string]interface{}{
+					"pano_id":  loc.PanoID,
+					"language": language,
+					"detailed": detailed,
+					"duration": time.Since(startTime).String(),
+				})
+				return "", nil, err
+			}
 			logger.Error("ai_generation_failed", "Failed to generate AI description", err, map[string]interface{}{
 				"pano_id":  loc.PanoID,
 				"language": language,
@@ -137,7 +166,10 @@ func (ai *AIService) prepareDescriptionContext(ctx context.Context, loc models.L
 	sceneCh := make(chan sceneImageResult, 1)
 
 	go func() {
-		info, err := ai.maps.GetLocationInfo(ctx, loc.Latitude, loc.Longitude, language)
+		// 地址只是补充信息，查不到有已保存地址兜底，所以单独限时
+		lookupCtx, cancel := context.WithTimeout(ctx, descriptionAddressTimeout)
+		defer cancel()
+		info, err := ai.maps.GetLocationInfo(lookupCtx, loc.Latitude, loc.Longitude, language)
 		locationCh <- locationInfoResult{info: info, err: err}
 	}()
 
@@ -156,13 +188,24 @@ func (ai *AIService) prepareDescriptionContext(ctx context.Context, loc models.L
 
 	locationResult := <-locationCh
 	sceneResult := <-sceneCh
-	if locationResult.err != nil {
-		return nil, nil, utils.SafeError(utils.ErrorTypeExternal, "获取位置信息失败", locationResult.err)
+	if err := ctx.Err(); err != nil {
+		// 访客已经切走：这里的失败都是取消带来的，不记 ERROR，由调用方退额度
+		return nil, nil, err
 	}
 	if sceneResult.err != nil {
 		return nil, nil, utils.SafeError(utils.ErrorTypeExternal, "获取街景画面失败", sceneResult.err)
 	}
 	info := cloneLocationInfo(locationResult.info)
+	if locationResult.err != nil {
+		// Reverse geocoding only enriches the prompt; the panorama already
+		// carries its saved address, so a flaky lookup should not cost the
+		// visitor the whole narration.
+		utils.AILogger().Error("location_info_fallback", "Reverse geocoding failed; using the saved panorama address", locationResult.err, map[string]interface{}{
+			"pano_id":  loc.PanoID,
+			"language": language,
+		})
+		info = savedLocationInfo(loc)
+	}
 	// Preserve the address the visitor actually sees, even for an older saved
 	// panorama whose newly geocoded locality has changed.
 	info["streetview_address"] = loc.FormattedAddress
@@ -178,7 +221,8 @@ func (ai *AIService) getSceneImageWithContext(parent context.Context, panoID str
 		return nil, nil
 	}
 
-	ctx, cancel := context.WithTimeout(parent, 15*time.Second)
+	// 静态街景图通常 1 秒内返回；卡住时尽早报错，不让访客干等十几秒
+	ctx, cancel := context.WithTimeout(parent, sceneImageTimeout)
 	defer cancel()
 
 	frame, err := ai.maps.GetStreetViewFrame(ctx, panoID, view)
@@ -196,6 +240,21 @@ func (ai *AIService) getSceneImageWithContext(parent context.Context, panoID str
 }
 
 // 生成默认的位置信息
+func savedLocationInfo(loc models.Location) map[string]string {
+	info := map[string]string{}
+	for key, value := range map[string]string{
+		"formatted_address": loc.FormattedAddress,
+		"country":           loc.Country,
+		"country_code":      loc.CountryCode,
+		"city":              loc.City,
+	} {
+		if strings.TrimSpace(value) != "" {
+			info[key] = value
+		}
+	}
+	return info
+}
+
 func getDefaultLocationInfo(loc models.Location) map[string]string {
 	return map[string]string{
 		"formatted_address": fmt.Sprintf("[MOCK DATA] Location at coordinates (%.6f, %.6f)", loc.Latitude, loc.Longitude),

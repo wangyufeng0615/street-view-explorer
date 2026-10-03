@@ -193,6 +193,8 @@ func (s *MapsService) GetStreetViewFrame(ctx context.Context, panoID string, vie
 	query.Set("heading", fmt.Sprintf("%d", view.Heading))
 	query.Set("pitch", fmt.Sprintf("%d", view.Pitch))
 	query.Set("fov", fmt.Sprintf("%d", view.FOV))
+	// 没有画面时返回 404，而不是一张灰色占位图——否则会被当成真实画面喂给视觉模型
+	query.Set("return_error_code", "true")
 	query.Set("key", s.apiKey)
 
 	req, err := http.NewRequestWithContext(
@@ -242,13 +244,13 @@ func (s *MapsService) FindRandomStreetView(ctx context.Context, latitude, longit
 	if maxRadiusMeters < 100 || maxRadiusMeters > 50000 {
 		return false, 0, 0, ""
 	}
-	return s.findStreetView(ctx, latitude, longitude, []int{maxRadiusMeters})
+	return s.findStreetView(ctx, latitude, longitude, []int{maxRadiusMeters}, true)
 }
 
 // FindNearbyStreetView 在有限半径内查找街景，不做全局兜底。
 func (s *MapsService) FindNearbyStreetView(ctx context.Context, latitude, longitude float64) (bool, float64, float64, string) {
 	searchRadii := []int{100, 500, 1000, 5000, 10000}
-	return s.findStreetView(ctx, latitude, longitude, searchRadii)
+	return s.findStreetView(ctx, latitude, longitude, searchRadii, false)
 }
 
 // FindNearestStreetView 从近到远查找街景，尽量返回点击点附近最近的可用全景图。
@@ -265,10 +267,30 @@ func (s *MapsService) FindNearestStreetView(ctx context.Context, latitude, longi
 		5000000,
 		20037500,
 	}
-	return s.findStreetView(ctx, latitude, longitude, searchRadii)
+	return s.findStreetView(ctx, latitude, longitude, searchRadii, false)
 }
 
-func (s *MapsService) findStreetView(ctx context.Context, latitude, longitude float64, searchRadii []int) (bool, float64, float64, string) {
+// IsOfficialStreetView reports whether Street View metadata describes Google's
+// own imagery. User-contributed photospheres carry the uploader's name in the
+// copyright ("© Viktor Posnov") and their tiles are served from
+// lh3.googleusercontent.com, which throttles shared proxy IPs with HTTP 429.
+func IsOfficialStreetView(copyright string) bool {
+	return strings.Contains(copyright, "Google")
+}
+
+// IsOfficialPanoID tells official panoramas apart by ID alone, for stored
+// panoramas whose metadata was not kept. Official IDs are 22 characters;
+// user photospheres use longer IDs (in practice prefixed "CAoS"). Metadata
+// copyright stays the authoritative check wherever it is available.
+func IsOfficialPanoID(panoID string) bool {
+	return panoID != "" && len(panoID) <= 22 && !strings.HasPrefix(panoID, "CIHM0og")
+}
+
+// findStreetView asks the metadata API for the panorama near a point. With
+// officialOnly, a user photosphere counts as no result: random exploration
+// then moves on to its other candidates. Explicit lookups keep whatever is
+// nearest and let the browser pick the nearest official panorama to show.
+func (s *MapsService) findStreetView(ctx context.Context, latitude, longitude float64, searchRadii []int, officialOnly bool) (bool, float64, float64, string) {
 	for _, radius := range searchRadii {
 		streetViewURL := fmt.Sprintf(
 			"https://maps.googleapis.com/maps/api/streetview/metadata"+
@@ -318,7 +340,18 @@ func (s *MapsService) findStreetView(ctx context.Context, latitude, longitude fl
 		}
 
 		if result.Status == "OK" {
+			if officialOnly && !IsOfficialStreetView(result.Copyright) {
+				return false, 0, 0, ""
+			}
 			return true, result.Location.Lat, result.Location.Lng, result.PanoId
+		}
+		if result.Status != "ZERO_RESULTS" && result.Status != "NOT_FOUND" {
+			// 配额、密钥或服务异常不是"附近没街景"，单独记下来，否则只会表现为兜底地点反复出现
+			utils.LocationLogger().Error("streetview_metadata_status", "Street View metadata returned an unexpected status", fmt.Errorf("status %s", result.Status), map[string]interface{}{
+				"status": result.Status,
+				"radius": radius,
+			})
+			return false, 0, 0, ""
 		}
 	}
 

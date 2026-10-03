@@ -1,8 +1,11 @@
 package utils
 
 import (
+	"errors"
 	"log"
 	"time"
+
+	mysentry "github.com/my-streetview-project/backend/internal/sentry"
 )
 
 type LogLevel string
@@ -42,11 +45,23 @@ func (l *Logger) log(level LogLevel, action, message string, fields map[string]i
 	}
 
 	if err != nil {
-		entry.Error = err.Error()
+		entry.Error = mysentry.RedactSensitiveString(errorDetail(err))
+		log.Printf("[%s] %s:%s %s %v error=%q", level, l.service, action, message, fields, entry.Error)
+		return
 	}
 
 	// Always use readable format for development
 	log.Printf("[%s] %s:%s %s %v", level, l.service, action, message, fields)
+}
+
+// errorDetail returns the underlying cause for logs. AppError.Error() only
+// carries the user-facing message, which hides why an upstream call failed.
+func errorDetail(err error) string {
+	var appErr *AppError
+	if errors.As(err, &appErr) && appErr.InternalMsg != "" {
+		return appErr.InternalMsg
+	}
+	return err.Error()
 }
 
 func (l *Logger) Info(action, message string, fields ...map[string]interface{}) {

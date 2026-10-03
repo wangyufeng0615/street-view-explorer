@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -773,4 +774,57 @@ func TestSelectProviderPreferences(t *testing.T) {
 
 func testStartTime() time.Time {
 	return time.Now()
+}
+
+func TestStandardDescriptionAsksAgainWhenTheWholeReplyIsInTheWrongLanguage(t *testing.T) {
+	english := "[Atlas has arrived]\n\n" + strings.Repeat("This reply ignored the requested language entirely. ", 6)
+	chinese := "[Atlas 在地图上抵达这里]\n\n" + strings.Repeat("这是一句包含地点历史与生活信息的完整测试句子。", 6)
+	for _, tt := range []struct {
+		name     string
+		replies  []string
+		wantErr  bool
+		wantCall int32
+	}{
+		{name: "second reply is right", replies: []string{english, chinese}, wantCall: 2},
+		{name: "asks only once more", replies: []string{english, english, chinese}, wantErr: true, wantCall: 2},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var calls atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				reply := tt.replies[calls.Add(1)-1]
+				w.Header().Set("Content-Type", "text/event-stream")
+				payload, _ := json.Marshal(map[string]interface{}{
+					"choices": []map[string]interface{}{{"delta": map[string]string{"content": reply}}},
+				})
+				_, _ = w.Write([]byte("data: " + string(payload) + "\n\n"))
+				_, _ = w.Write([]byte("data: [DONE]\n\n"))
+			}))
+			defer server.Close()
+
+			c := &client{apiKey: "test-key", modelName: "test-model", httpClient: server.Client(), endpoint: server.URL}
+			var visible []string
+			desc, _, err := c.StreamLocationDescription(context.Background(), 1, 2, map[string]string{}, nil, "zh", func(delta string) error {
+				visible = append(visible, delta)
+				return nil
+			})
+			if got := calls.Load(); got != tt.wantCall {
+				t.Fatalf("upstream requests = %d, want %d", got, tt.wantCall)
+			}
+			if strings.Contains(strings.Join(visible, ""), "ignored the requested language") {
+				t.Fatalf("wrong-language reply reached the visitor: %q", visible)
+			}
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("StreamLocationDescription() succeeded with two wrong-language replies")
+				}
+				return
+			}
+			if err != nil || !strings.Contains(desc, "地点历史") {
+				t.Fatalf("StreamLocationDescription() = %q, %v; want the Chinese retry", desc, err)
+			}
+			if got := strings.Join(visible, ""); got != desc {
+				t.Fatalf("visible stream = %q, final description = %q", got, desc)
+			}
+		})
+	}
 }

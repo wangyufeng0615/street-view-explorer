@@ -3,6 +3,7 @@ package openai
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/my-streetview-project/backend/internal/atlas"
 	"log"
@@ -14,7 +15,31 @@ func (c *client) GenerateLocationDescription(latitude, longitude float64, locati
 	return c.StreamLocationDescription(context.Background(), latitude, longitude, locationInfo, scene, language, nil)
 }
 
+// wrongLanguageRetryWindow bounds when a rejected description is retried: the
+// browser waits 45s for a standard description (scene preparation up to 6s,
+// then one 25s model request), so a retry only fits after an early rejection.
+const wrongLanguageRetryWindow = 12 * time.Second
+
 func (c *client) StreamLocationDescription(parent context.Context, latitude, longitude float64, locationInfo map[string]string, scene *SceneImage, language string, onDelta func(string) error) (string, []Citation, error) {
+	started := time.Now()
+	sent := false
+	tracked := onDelta
+	if onDelta != nil {
+		tracked = func(delta string) error {
+			sent = true
+			return onDelta(delta)
+		}
+	}
+	desc, citations, err := c.streamLocationDescriptionOnce(parent, latitude, longitude, locationInfo, scene, language, tracked)
+	// 整段语言不对时流式闸门不会放出任何文字，访客什么都没看到，原地再要一次
+	if err != nil && errors.Is(err, errWrongDescriptionLanguage) && !sent && parent.Err() == nil && time.Since(started) < wrongLanguageRetryWindow {
+		log.Printf("[AI_WARN] action=wrong_language_retry function=GenerateLocationDescription duration=%v error=%v", time.Since(started), err)
+		return c.streamLocationDescriptionOnce(parent, latitude, longitude, locationInfo, scene, language, tracked)
+	}
+	return desc, citations, err
+}
+
+func (c *client) streamLocationDescriptionOnce(parent context.Context, latitude, longitude float64, locationInfo map[string]string, scene *SceneImage, language string, onDelta func(string) error) (string, []Citation, error) {
 	startTime := time.Now()
 	descTimeout := 25 * time.Second
 	descriptionModel := c.modelName

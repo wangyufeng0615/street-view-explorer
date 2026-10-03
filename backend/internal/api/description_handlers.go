@@ -62,14 +62,28 @@ func (r *descriptionBudgetReservation) refund() {
 	r.keys = nil
 }
 
-// refundOnUpstreamFailure returns the budget unless the client went away:
-// refunding cancelled requests would let a client start and abort paid calls
-// for free.
+// refundOnUpstreamFailure returns the budget unless the client went away
+// after the paid AI call started: refunding those would let a client start and
+// abort paid calls for free. A visitor who skips to the next stop while the
+// scene image is still loading never reached the AI, so that budget comes back.
 func (r *descriptionBudgetReservation) refundOnUpstreamFailure(c *gin.Context, err error) {
-	if err == nil || errors.Is(err, context.Canceled) || errors.Is(c.Request.Context().Err(), context.Canceled) {
+	if err == nil {
+		return
+	}
+	if errors.Is(err, services.ErrCanceledBeforeUpstream) {
+		r.refund()
+		return
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(c.Request.Context().Err(), context.Canceled) {
 		return
 	}
 	r.refund()
+}
+
+// clientLeft reports whether the visitor closed the request; that is not a
+// server error and should not be reported as one.
+func clientLeft(c *gin.Context, err error) bool {
+	return errors.Is(err, context.Canceled) || errors.Is(c.Request.Context().Err(), context.Canceled)
 }
 
 func (h *Handlers) reserveDescriptionBudget(c *gin.Context, detailed bool) (*descriptionBudgetReservation, bool) {
@@ -186,6 +200,9 @@ func (h *Handlers) GetLocationDescription(c *gin.Context) {
 	desc, citations, err := svc.AIService.GetDescriptionForLocationContext(ctx, *loc, language, view)
 	if err != nil {
 		budget.refundOnUpstreamFailure(c, err)
+		if clientLeft(c, err) {
+			return
+		}
 		duration := time.Since(startTime)
 		statusCode := descriptionErrorStatus(err)
 
@@ -300,6 +317,9 @@ func (h *Handlers) GetLocationDetailedDescription(c *gin.Context) {
 	desc, citations, err := svc.AIService.GetDetailedDescriptionForLocationContext(ctx, *loc, language, view)
 	if err != nil {
 		budget.refundOnUpstreamFailure(c, err)
+		if clientLeft(c, err) {
+			return
+		}
 		duration := time.Since(startTime)
 		statusCode := descriptionErrorStatus(err)
 
@@ -383,6 +403,9 @@ func (h *Handlers) streamDescription(c *gin.Context, aiService *services.AIServi
 	}
 	if err != nil {
 		budget.refundOnUpstreamFailure(c, err)
+		if clientLeft(c, err) {
+			return
+		}
 		CaptureHandlerError(c, err, descriptionErrorStatus(err), map[string]interface{}{
 			"operation": "stream_description",
 			"pano_id":   loc.PanoID,

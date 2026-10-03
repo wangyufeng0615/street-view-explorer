@@ -227,9 +227,14 @@ func readChatCompletionStream(body io.Reader, onDelta func(string) error) (chatR
 	return result, nil
 }
 
+// maxRetryAfter caps how long one retry waits on an upstream Retry-After.
+// The visitor is waiting on the whole request; sleeping through a 30s hint
+// would only end in our own timeout after a long blank wait.
+const maxRetryAfter = 2 * time.Second
+
 func retryDelay(attempt int, retryAfter time.Duration) time.Duration {
 	if retryAfter > 0 {
-		return retryAfter
+		return min(retryAfter, maxRetryAfter)
 	}
 	return retryBaseDelay * time.Duration(1<<(attempt-1))
 }

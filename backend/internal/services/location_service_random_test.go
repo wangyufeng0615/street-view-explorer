@@ -220,3 +220,166 @@ func TestValidateRegionsKeepsAntimeridianRegionAndDropsInvalidOnes(t *testing.T)
 		t.Fatal("only invalid regions should fail validation")
 	}
 }
+
+// localizingMapProvider answers reverse geocoding in the requested language so
+// tests can tell a re-localized address from a stored one.
+type localizingMapProvider struct {
+	*randomTestMapProvider
+	geocodeErr error
+	languages  []string
+}
+
+func (p *localizingMapProvider) GetLocationInfo(_ context.Context, _, _ float64, language string) (map[string]string, error) {
+	p.languages = append(p.languages, language)
+	if p.geocodeErr != nil {
+		return nil, p.geocodeErr
+	}
+	return map[string]string{
+		"formatted_address": "Shibuya, Tokyo, Japan",
+		"country":           "Japan",
+		"country_code":      "jp",
+		"city":              "",
+	}, nil
+}
+
+func seedChineseReservoirVisit(t *testing.T, provider MapProvider) *LocationService {
+	t.Helper()
+	service, repo := newRandomTestService(t, provider)
+	stored := models.Location{
+		PanoID: "pano-zh", Latitude: 35.66, Longitude: 139.7,
+		Country: "日本", CountryCode: "JP", City: "东京", FormattedAddress: "日本东京都涩谷区",
+	}
+	if err := repo.RecordVisit("other-session", stored, models.VisitSourceRandom); err != nil {
+		t.Fatalf("RecordVisit() error = %v", err)
+	}
+	return service
+}
+
+func TestReservoirFallbackRelocalizesTheStoredAddress(t *testing.T) {
+	requireRandomServiceGeoData(t)
+	provider := &localizingMapProvider{randomTestMapProvider: &randomTestMapProvider{fail: true}}
+	service := seedChineseReservoirVisit(t, provider)
+
+	location, err := service.generateRandomLocation(context.Background(), nil, "en", "session-en", "")
+	if err != nil {
+		t.Fatalf("generateRandomLocation() error = %v", err)
+	}
+	if location.FormattedAddress != "Shibuya, Tokyo, Japan" || location.Country != "Japan" || location.CountryCode != "JP" {
+		t.Fatalf("reservoir address = %#v, want the English address", location)
+	}
+	if location.City != "东京" {
+		t.Fatalf("city = %q, want the stored city kept when geocoding leaves it empty", location.City)
+	}
+	if len(provider.languages) != 1 || provider.languages[0] != "en" {
+		t.Fatalf("geocoding languages = %v, want [en]", provider.languages)
+	}
+}
+
+func TestReservoirFallbackKeepsStoredAddressWhenGeocodingFails(t *testing.T) {
+	requireRandomServiceGeoData(t)
+	provider := &localizingMapProvider{
+		randomTestMapProvider: &randomTestMapProvider{fail: true},
+		geocodeErr:            fmt.Errorf("geocoding timeout"),
+	}
+	service := seedChineseReservoirVisit(t, provider)
+
+	location, err := service.generateRandomLocation(context.Background(), nil, "en", "session-en", "")
+	if err != nil {
+		t.Fatalf("generateRandomLocation() error = %v", err)
+	}
+	if location.PanoID != "pano-zh" || location.FormattedAddress != "日本东京都涩谷区" {
+		t.Fatalf("reservoir location = %#v, want the stored panorama and address", location)
+	}
+}
+
+func TestLocalizedAddressReturnsOnlyAddressFields(t *testing.T) {
+	provider := &localizingMapProvider{randomTestMapProvider: &randomTestMapProvider{}}
+	service, _ := newRandomTestService(t, provider)
+
+	address, err := service.LocalizedAddress(context.Background(), 35.66, 139.7, "en")
+	if err != nil {
+		t.Fatalf("LocalizedAddress() error = %v", err)
+	}
+	if address.FormattedAddress != "Shibuya, Tokyo, Japan" || address.CountryCode != "JP" || address.PanoID != "" {
+		t.Fatalf("LocalizedAddress() = %#v", address)
+	}
+}
+
+func TestOfficialStreetViewChecks(t *testing.T) {
+	if !IsOfficialStreetView("© 2024 Google") || IsOfficialStreetView("© Viktor Posnov") {
+		t.Fatal("copyright check should accept Google imagery only")
+	}
+	for id, want := range map[string]bool{
+		"RVHISCP2VhnDsPJUbAybGQ":               true,
+		"CAoSF0NJSE0wb2dLRUlDQWdNQ2d0Zl9GNVFF": false,
+		"CIHM0ogKEICAgICE7NGm_QE":              false,
+		"":                                     false,
+	} {
+		if got := IsOfficialPanoID(id); got != want {
+			t.Fatalf("IsOfficialPanoID(%q) = %t, want %t", id, got, want)
+		}
+	}
+}
+
+func TestReservoirFallbackSkipsUserPhotospheres(t *testing.T) {
+	requireRandomServiceGeoData(t)
+	service, repo := newRandomTestService(t, &randomTestMapProvider{fail: true})
+	photosphere := models.Location{PanoID: "CAoSF0NJSE0wb2dLRUlDQWdNQ2d0Zl9GNVFF", Latitude: 1, Longitude: 2}
+	if err := repo.RecordVisit("other-session", photosphere, models.VisitSourceRandom); err != nil {
+		t.Fatalf("RecordVisit() error = %v", err)
+	}
+
+	if _, err := service.generateRandomLocation(context.Background(), nil, "en", "session", ""); err == nil {
+		t.Fatal("generateRandomLocation() reused a user photosphere from the reservoir")
+	}
+}
+
+// countingGeocodeProvider records which panoramas got reverse-geocoded, which
+// Google bills.
+type countingGeocodeProvider struct {
+	*randomTestMapProvider
+	panoByCoord     sync.Map
+	repeatGeocodes  atomic.Int32
+	geocodeRequests atomic.Int32
+}
+
+func (p *countingGeocodeProvider) FindRandomStreetView(ctx context.Context, lat, lng float64, radius int) (bool, float64, float64, string) {
+	ok, validLat, validLng, panoID := p.randomTestMapProvider.FindRandomStreetView(ctx, lat, lng, radius)
+	if ok {
+		p.panoByCoord.Store([2]float64{validLat, validLng}, panoID)
+	}
+	return ok, validLat, validLng, panoID
+}
+
+func (p *countingGeocodeProvider) GetLocationInfo(_ context.Context, lat, lng float64, _ string) (map[string]string, error) {
+	p.geocodeRequests.Add(1)
+	if panoID, _ := p.panoByCoord.Load([2]float64{lat, lng}); panoID == "pano-repeat" {
+		p.repeatGeocodes.Add(1)
+	}
+	return map[string]string{"country": "Testland", "formatted_address": "Test Street"}, nil
+}
+
+func TestPenalizedCandidatesDoNotSpendGeocodingWhenAFreshOneWins(t *testing.T) {
+	provider := &countingGeocodeProvider{randomTestMapProvider: &randomTestMapProvider{repeatUntil: 6}}
+	service, repo := newRandomTestService(t, provider)
+	// 已访问点放在测试区域之外很远，只有全景 ID 重复的候选才带惩罚
+	seen := models.Location{PanoID: "pano-repeat", Latitude: 50, Longitude: 50}
+	if err := repo.RecordVisit("session-cost", seen, models.VisitSourceRandom); err != nil {
+		t.Fatalf("RecordVisit() error = %v", err)
+	}
+
+	location, err := service.generateRandomLocation(context.Background(), testPreferenceRegion(), "en", "session-cost", "")
+	if err != nil {
+		t.Fatalf("generateRandomLocation() error = %v", err)
+	}
+	if location.PanoID == "pano-repeat" {
+		t.Fatal("picked the already visited panorama while fresh ones were available")
+	}
+	if provider.geocodeRequests.Load() == 0 {
+		t.Fatal("the fresh panorama was never reverse-geocoded")
+	}
+	// 重复候选先等一会儿再查地址；新鲜候选一成功就取消它们，一次都不该查
+	if got := provider.repeatGeocodes.Load(); got != 0 {
+		t.Fatalf("reverse-geocoded the already visited panorama %d times", got)
+	}
+}

@@ -65,17 +65,13 @@ func (h *Handlers) GetRandomLocation(c *gin.Context) {
 	if source != "geo_game" && c.Query("prefetch") == "1" {
 		h.prefetched.add(sessionID, loc.PanoID)
 	} else if source != "geo_game" {
+		// 足迹只是账本：地点已经选好，写入失败也照常返回，不让访客白等一次
 		if err := svc.LocationService.RecordVisit(sessionID, loc, models.VisitSourceRandom); err != nil {
 			CaptureHandlerError(c, err, http.StatusInternalServerError, map[string]interface{}{
 				"operation": "record_random_visit",
 				"pano_id":   loc.PanoID,
 				"source":    models.VisitSourceRandom,
 			})
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"success": false,
-				"error":   PublicErrorMessage(err),
-			})
-			return
 		}
 	}
 
@@ -115,6 +111,43 @@ func (h *Handlers) RecordPrefetchedVisit(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true})
+}
+
+// GetLocalizedAddress 返回坐标在指定语言下的地址，用于切换界面语言后更新当前地点名。
+func (h *Handlers) GetLocalizedAddress(c *gin.Context) {
+	language := c.DefaultQuery("lang", "en")
+	lat, latErr := parseCoordinate(c.Query("lat"), -90, 90)
+	lng, lngErr := parseCoordinate(c.Query("lng"), -180, 180)
+	if latErr != nil || lngErr != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "Invalid lat or lng parameter",
+		})
+		return
+	}
+
+	address, err := h.servicesForMode(c).LocationService.LocalizedAddress(c.Request.Context(), lat, lng, language)
+	if err != nil {
+		CaptureHandlerError(c, err, http.StatusBadGateway, map[string]interface{}{
+			"operation": "localized_address",
+			"language":  language,
+		})
+		c.JSON(http.StatusBadGateway, gin.H{
+			"success": false,
+			"error":   PublicErrorMessage(err),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data": gin.H{
+			"formatted_address": address.FormattedAddress,
+			"country":           address.Country,
+			"country_code":      address.CountryCode,
+			"city":              address.City,
+		},
+	})
 }
 
 // LookupLocation 根据坐标查找位置
@@ -182,17 +215,13 @@ func (h *Handlers) LookupLocation(c *gin.Context) {
 	sessionID := h.getOptionalSessionID(c)
 	if sessionID != "" {
 		source := normalizeVisitSource(c.DefaultQuery("source", models.VisitSourceLookup))
+		// 足迹写入失败不影响把地点返回给访客
 		if err := svc.LocationService.RecordVisit(sessionID, *loc, source); err != nil {
 			CaptureHandlerError(c, err, http.StatusInternalServerError, map[string]interface{}{
 				"operation": "record_lookup_visit",
 				"pano_id":   loc.PanoID,
 				"source":    source,
 			})
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"success": false,
-				"error":   PublicErrorMessage(err),
-			})
-			return
 		}
 	}
 
