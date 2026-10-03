@@ -5,7 +5,7 @@ vi.mock("../utils/session", () => ({
 }));
 
 vi.mock("../i18n", () => ({
-  default: { language: "zh", resolvedLanguage: "zh" },
+  default: { language: "zh", resolvedLanguage: "zh", t: (key) => key },
 }));
 
 import {

@@ -18,6 +18,7 @@ export default function GeoGameSatellitePanel({
   satelliteUrl,
   imgLoaded,
   imgError,
+  zoomOutFailed,
   zoomTransition,
   zoomTransitionLoading,
   canZoomOut,
@@ -81,6 +82,11 @@ export default function GeoGameSatellitePanel({
       {imgError && phase === "PLAYING" && (
         <div className="geo-loading-overlay">
           <span>{t("geo.image_error")}</span>
+        </div>
+      )}
+      {zoomOutFailed && phase === "PLAYING" && !imgError && (
+        <div className="geo-zoom-out-note" role="status">
+          {t("geo.zoom_out_failed")}
         </div>
       )}
       {hasTarget && (phase === "PLAYING" || phase === "ROUND_RESULT") && (

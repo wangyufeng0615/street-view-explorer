@@ -88,6 +88,7 @@ export default function GeoGamePage() {
     satelliteUrl,
     imgLoaded,
     imgError,
+    zoomOutFailed,
     zoomTransition,
     zoomTransitionLoading,
     canZoomOut,
@@ -212,6 +213,7 @@ export default function GeoGamePage() {
               satelliteUrl={satelliteUrl}
               imgLoaded={imgLoaded}
               imgError={imgError}
+              zoomOutFailed={zoomOutFailed}
               zoomTransition={zoomTransition}
               zoomTransitionLoading={zoomTransitionLoading}
               canZoomOut={canZoomOut}
@@ -240,6 +242,7 @@ export default function GeoGamePage() {
           t={t}
           onRestart={handleRestart}
           onNext={handleNextRound}
+          onHome={() => navigate("/")}
         />
       )}
       <GameFeedbackBubbles bubbles={feedbackBubbles} />

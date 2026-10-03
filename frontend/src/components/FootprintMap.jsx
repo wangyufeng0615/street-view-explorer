@@ -6,7 +6,7 @@ import React, {
   useCallback,
 } from "react";
 import { useTranslation } from "react-i18next";
-import { loadGoogleMapsScript } from "../utils/googleMaps";
+import { loadGoogleMapsScript, loadMarkerLibrary } from "../utils/googleMaps";
 import { getVisitHistory } from "../services/api";
 import { clusterFootprints } from "../utils/footprintClusters";
 
@@ -37,7 +37,18 @@ function openVisitInNewTab(lat, lng) {
 
 const GLOBAL_VIEW = { center: { lat: 20, lng: 0 }, zoom: 2 };
 
+const FOCUSABLE_SELECTOR =
+  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+function getFocusableElements(container) {
+  return Array.from(container.querySelectorAll(FOCUSABLE_SELECTOR)).filter(
+    (el) => el.getClientRects().length > 0 || el === document.activeElement,
+  );
+}
+
 export default function FootprintMap({ onClose }) {
+  const dialogRef = useRef(null);
+  const closeButtonRef = useRef(null);
   const mapRef = useRef(null);
   const mapInstanceRef = useRef(null);
   const markersRef = useRef([]);
@@ -45,6 +56,7 @@ export default function FootprintMap({ onClose }) {
   const [uniquePlaceCount, setUniquePlaceCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [mapLoading, setMapLoading] = useState(true);
+  // 存翻译 key，切换语言时文案跟着变
   const [error, setError] = useState(null);
   const { t } = useTranslation();
   const uniqueVisits = useMemo(() => getUniqueVisits(visits), [visits]);
@@ -68,7 +80,8 @@ export default function FootprintMap({ onClose }) {
             : getUniqueVisits(fetchedVisits).length,
         );
       } else {
-        setError(resp.error);
+        console.warn("Load footprints failed:", resp.error);
+        setError("footprint.load_failed");
       }
       setLoading(false);
     }
@@ -86,6 +99,7 @@ export default function FootprintMap({ onClose }) {
     try {
       setMapLoading(true);
       const maps = await loadGoogleMapsScript();
+      await loadMarkerLibrary(maps);
       if (!mapRef.current) return;
 
       markersRef.current.forEach((marker) => {
@@ -196,10 +210,10 @@ export default function FootprintMap({ onClose }) {
       map.addListener("idle", renderMarkers);
     } catch (err) {
       console.error("FootprintMap init error:", err);
-      setError(t("error.mapLoadFailed"));
+      setError("error.mapLoadFailed");
       setMapLoading(false);
     }
-  }, [uniqueVisits, t]);
+  }, [uniqueVisits]);
 
   useEffect(() => {
     if (!loading && uniqueVisits.length > 0) {
@@ -228,6 +242,46 @@ export default function FootprintMap({ onClose }) {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [onClose]);
 
+  // 打开时把焦点移进浮层，关闭时还给打开它的元素（首页仍挂在下面）
+  useEffect(() => {
+    const previouslyFocused = document.activeElement;
+    closeButtonRef.current?.focus();
+    return () => {
+      if (
+        previouslyFocused instanceof HTMLElement &&
+        previouslyFocused.isConnected
+      ) {
+        previouslyFocused.focus();
+      }
+    };
+  }, []);
+
+  // Tab 在浮层内循环，焦点不会跑到底下的首页
+  const handleDialogKeyDown = (e) => {
+    if (e.key !== "Tab" || !dialogRef.current) return;
+    const focusable = getFocusableElements(dialogRef.current);
+    if (focusable.length === 0) {
+      e.preventDefault();
+      return;
+    }
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    const active = document.activeElement;
+    if (
+      e.shiftKey &&
+      (active === first || !dialogRef.current.contains(active))
+    ) {
+      e.preventDefault();
+      last.focus();
+    } else if (
+      !e.shiftKey &&
+      (active === last || !dialogRef.current.contains(active))
+    ) {
+      e.preventDefault();
+      first.focus();
+    }
+  };
+
   const handleResetView = () => {
     if (mapInstanceRef.current) {
       mapInstanceRef.current.setCenter(GLOBAL_VIEW.center);
@@ -237,19 +291,24 @@ export default function FootprintMap({ onClose }) {
 
   return (
     <div
+      ref={dialogRef}
       style={styles.overlay}
       role="dialog"
       aria-modal="true"
       aria-label={t("footprint.title")}
+      onKeyDown={handleDialogKeyDown}
     >
       {/* Close button */}
       <button
+        ref={closeButtonRef}
+        type="button"
         style={styles.closeButton}
         onClick={onClose}
         className="hover-scale"
         title={t("footprint.close")}
+        aria-label={t("footprint.close")}
       >
-        ✕
+        <span aria-hidden="true">✕</span>
       </button>
 
       {/* Stats badge */}
@@ -266,7 +325,9 @@ export default function FootprintMap({ onClose }) {
       {loading ? (
         <div style={styles.centerMessage}>{t("footprint.loading")}</div>
       ) : error ? (
-        <div style={styles.centerMessage}>{error}</div>
+        <div style={styles.centerMessage} role="alert">
+          {t(error)}
+        </div>
       ) : uniqueVisits.length === 0 ? (
         <div style={styles.centerMessage}>{t("footprint.empty")}</div>
       ) : (
@@ -285,11 +346,12 @@ export default function FootprintMap({ onClose }) {
 
           {/* Reset to global view button */}
           <button
+            type="button"
             style={styles.resetViewButton}
             onClick={handleResetView}
             className="hover-scale"
           >
-            🌐 {t("footprint.reset_view")}
+            <span aria-hidden="true">🌐</span> {t("footprint.reset_view")}
           </button>
         </>
       )}
@@ -348,8 +410,7 @@ const styles = {
   statsText: {
     fontSize: "14px",
     fontWeight: "500",
-    fontFamily:
-      '"PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif',
+    fontFamily: "var(--font-sans)",
   },
   map: {
     width: "100%",
@@ -363,8 +424,7 @@ const styles = {
     justifyContent: "center",
     color: "rgba(255, 255, 255, 0.7)",
     fontSize: "16px",
-    fontFamily:
-      '"PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif',
+    fontFamily: "var(--font-sans)",
   },
   mapLoadingOverlay: {
     position: "absolute",
@@ -392,8 +452,7 @@ const styles = {
   mapLoadingText: {
     color: "rgba(255, 255, 255, 0.8)",
     fontSize: "14px",
-    fontFamily:
-      '"PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif',
+    fontFamily: "var(--font-sans)",
   },
   resetViewButton: {
     position: "absolute",
@@ -409,8 +468,7 @@ const styles = {
     fontSize: "13px",
     fontWeight: "500",
     cursor: "pointer",
-    fontFamily:
-      '"PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif',
+    fontFamily: "var(--font-sans)",
     transition: "background-color 0.2s ease",
   },
 };

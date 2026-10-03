@@ -2,7 +2,8 @@
   position: fixed;
   top: 66px;
   right: 18px;
-  z-index: 90;
+  /* 要盖过单人结算弹窗（z-index 100） */
+  z-index: 110;
   display: grid;
   gap: 8px;
   width: min(360px, calc(100vw - 24px));

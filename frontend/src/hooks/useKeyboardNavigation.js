@@ -19,7 +19,13 @@ export default function useKeyboardNavigation(
         return;
       }
 
-      if (event.code === "Space" && !isLoading && !loadingRef.current) {
+      if (event.code !== "Space") return;
+      // 按住空格的自动重复不算新的一次出发，否则加载一结束就会接连跳站
+      if (event.repeat) {
+        event.preventDefault();
+        return;
+      }
+      if (!isLoading && !loadingRef.current) {
         event.preventDefault();
         loadRandomLocation();
       }

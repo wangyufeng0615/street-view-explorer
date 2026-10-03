@@ -9,6 +9,18 @@ import {
 
 const LOBBY_PATH = "/guess/online";
 const COPY_NOTICE_MS = 1500;
+const IDLE_PHASES = new Set(["lobby", "finished"]);
+
+// 服务端在对局中途有人离开时会直接结束整局，随机匹配房间无论哪个阶段离开都会关闭；
+// 这两种情况会影响对手，离开前要确认。对手不在或已离开时不用问。
+function getLeaveConfirmKey(room) {
+  if (!room?.opponent || room.opponent.left) return null;
+  if (!IDLE_PHASES.has(room.phase)) return "geo_online.leave_confirm_playing";
+  if (room.mode === "matchmaking") {
+    return "geo_online.leave_confirm_matchmaking";
+  }
+  return null;
+}
 
 /**
  * Player actions in a duel room (ready, zoom out, lock guess, give up, leave,
@@ -126,6 +138,9 @@ function useGeoBattleRoomActions({
       return;
     }
 
+    const confirmKey = getLeaveConfirmKey(room);
+    if (confirmKey && !window.confirm(t(confirmKey))) return;
+
     await runAction("leave", () => leaveGeoBattleRoom(room.room_id));
     navigate(LOBBY_PATH);
   };
@@ -161,4 +176,4 @@ function useGeoBattleRoomActions({
   };
 }
 
-export { useGeoBattleRoomActions, LOBBY_PATH };
+export { useGeoBattleRoomActions, getLeaveConfirmKey, LOBBY_PATH };

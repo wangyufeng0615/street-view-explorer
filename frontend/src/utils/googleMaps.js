@@ -48,6 +48,22 @@ function preconnectGoogleMaps() {
 }
 
 /**
+ * 标记库不随主脚本一起加载：街景用不到它，写进 libraries 参数会推迟主脚本的
+ * 回调、拖慢第一张全景。需要标记的地图在放标记前调用；加载失败时返回 null，
+ * 调用方退回普通 Marker。
+ */
+export async function loadMarkerLibrary(maps) {
+  if (maps?.marker?.AdvancedMarkerElement) return maps.marker;
+  if (typeof maps?.importLibrary !== "function") return null;
+  try {
+    return await maps.importLibrary("marker");
+  } catch (error) {
+    console.warn("Google Maps marker library failed to load:", error);
+    return null;
+  }
+}
+
+/**
  * 页面挂载时提前加载 Maps JS 脚本，和业务接口请求并行。
  * 只加载脚本、不创建地图或街景，不产生地图加载计费；之后的
  * loadGoogleMapsScript / loadGoogleMapsWhenVisible 复用同一个加载过程。
@@ -182,7 +198,7 @@ export function loadGoogleMapsScript() {
 
       // Create and append script
       const script = document.createElement("script");
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${import.meta.env.VITE_GOOGLE_MAPS_API_KEY}&callback=${callbackName}&loading=async&libraries=marker&language=${currentLanguage}&v=weekly`;
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${import.meta.env.VITE_GOOGLE_MAPS_API_KEY}&callback=${callbackName}&loading=async&language=${currentLanguage}&v=weekly`;
       script.async = true;
       script.defer = true;
       script.setAttribute("data-google-maps", "true");

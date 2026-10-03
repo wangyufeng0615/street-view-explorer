@@ -10,6 +10,7 @@ const { stableTranslate } = vi.hoisted(() => ({
 
 vi.mock("../utils/googleMaps", () => ({
   loadGoogleMapsScript: vi.fn(),
+  loadMarkerLibrary: vi.fn(async (maps) => maps.marker),
 }));
 
 vi.mock("react-i18next", () => ({
@@ -54,6 +55,7 @@ describe("GlobalMap", () => {
         }),
       },
       event: { trigger: vi.fn() },
+      ControlPosition: { RIGHT_TOP: "right-top" },
     };
     vi.mocked(loadGoogleMapsScript).mockResolvedValue(maps);
     const flush = () =>

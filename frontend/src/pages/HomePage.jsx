@@ -1,7 +1,6 @@
 import React, {
   useEffect,
   useCallback,
-  useMemo,
   useRef,
   useState,
   memo,
@@ -10,17 +9,18 @@ import React, {
 } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate } from "react-router-dom";
-import TopBar from "../components/TopBar";
-import Sidebar from "../components/Sidebar";
 import StreetView from "../components/StreetView";
-import GlobalLoading from "../components/GlobalLoading";
+import HomeNav from "../components/home/HomeNav";
+import HomeMiniMap from "../components/home/HomeMiniMap";
+import HomeDock from "../components/home/HomeDock";
+import AtlasLetter from "../components/home/AtlasLetter";
+import ArrivalOverlay from "../components/home/ArrivalOverlay";
 import { preloadGoogleMaps } from "../utils/googleMaps";
+import { loadNotoSerifSC } from "../utils/pageFonts";
 import "../styles/animations.css";
 import "../styles/HomePage.css";
-import "../styles/responsive.css";
 
 // Lazy load components that are not immediately visible
-const ErrorDisplay = lazy(() => import("../components/ErrorDisplay"));
 const Toast = lazy(() => import("../components/Toast"));
 
 // 自定义钩子
@@ -31,11 +31,23 @@ import useExplorationMode, {
 } from "../hooks/useExplorationMode";
 import useKeyboardNavigation from "../hooks/useKeyboardNavigation";
 import useStore from "../store/useStore";
+import useHomeJourney from "../hooks/useHomeJourney";
+
+// Stop covering the street view even if the panorama never reports ready.
+const LANDING_TIMEOUT_MS = 8000;
 
 // Memoized StreetViewContainer wrapper
 // 朝向在这里订阅，拖动或自动旋转时只重渲染街景，不牵动整个首页
 const StreetViewContainer = memo(
-  ({ panoId, latitude, longitude, paused, onPovChanged, onViewChanged }) => {
+  ({
+    panoId,
+    latitude,
+    longitude,
+    paused,
+    onPovChanged,
+    onViewChanged,
+    onLoadError,
+  }) => {
     const heading = useStore((state) => state.heading);
     return (
       <div className="street-view-container">
@@ -47,6 +59,7 @@ const StreetViewContainer = memo(
           paused={paused}
           onPovChanged={onPovChanged}
           onViewChanged={onViewChanged}
+          onLoadError={onLoadError}
         />
       </div>
     );
@@ -56,6 +69,7 @@ const StreetViewContainer = memo(
       prevProps.panoId === nextProps.panoId &&
       prevProps.latitude === nextProps.latitude &&
       prevProps.longitude === nextProps.longitude &&
+      prevProps.panoId === nextProps.panoId &&
       prevProps.paused === nextProps.paused
     );
   },
@@ -107,6 +121,12 @@ export default function HomePage({ footprintOverlayOpen = false }) {
   const loadLocationFromMapPick = useStore(
     (state) => state.loadLocationFromMapPick,
   );
+  const relocalizeLocationAddress = useStore(
+    (state) => state.relocalizeLocationAddress,
+  );
+  const applyNavigatedLocation = useStore(
+    (state) => state.applyNavigatedLocation,
+  );
   const isMapLocationLoading = useStore((state) => state.isMapLocationLoading);
   const urlLocationRef = useRef(getLocationFromURL());
   const hasLoadedInitialLocationRef = useRef(false);
@@ -157,6 +177,9 @@ export default function HomePage({ footprintOverlayOpen = false }) {
   const setStreetViewView = useStore((state) => state.setStreetViewView);
   const maybePrefetchNext = useStore((state) => state.maybePrefetchNext);
   const stopPrefetch = useStore((state) => state.stopPrefetch);
+  // Only whether the panorama has reported a view matters here; subscribing to
+  // the view itself would re-render the whole page on every drag.
+  const hasStreetViewView = useStore((state) => Boolean(state.streetViewView));
 
   // Memoized callbacks to prevent re-renders
   const handlePovChanged = useCallback(
@@ -186,7 +209,11 @@ export default function HomePage({ footprintOverlayOpen = false }) {
   }, [loadRandomLocation]);
 
   // 使用键盘导航钩子
-  useKeyboardNavigation(handleExplore, isLoading, loadingRef);
+  useKeyboardNavigation(
+    handleExplore,
+    isLoading || isSavingPreference || isMapLocationLoading,
+    loadingRef,
+  );
 
   // 足迹作为浮层打开，首页留在底下；地址参数由 updateURL 直接写入，从 window.location 读取
   const handleOpenFootprint = useCallback(() => {
@@ -236,6 +263,11 @@ export default function HomePage({ footprintOverlayOpen = false }) {
       });
 
       const result = await loadLocationFromMapPick(lat, lng);
+      // 被别的导航（回到旧站、语音）作废：不算失败，静默收起提示
+      if (result?.superseded) {
+        setMapPickStatus({ status: "idle", mapId: null, message: "" });
+        return;
+      }
       if (result?.success) {
         setMapPickStatus({
           status: "success",
@@ -271,6 +303,17 @@ export default function HomePage({ footprintOverlayOpen = false }) {
   useEffect(() => {
     preloadGoogleMaps();
   }, []);
+
+  // Atlas 来信和品牌字用衬线体。字体 CSS 和字形不小，等第一张全景出来再取，
+  // 不和街景图块抢带宽；街景迟迟不来也最多等 3 秒。讲解一般在这之后才到。
+  useEffect(() => {
+    if (hasStreetViewView) {
+      loadNotoSerifSC();
+      return undefined;
+    }
+    const timerId = window.setTimeout(loadNotoSerifSC, 3000);
+    return () => window.clearTimeout(timerId);
+  }, [hasStreetViewView]);
 
   // Start Atlas research as soon as a concrete panorama and UI language exist.
   // The store already deduplicates identical requests and aborts stale ones.
@@ -368,6 +411,19 @@ export default function HomePage({ footprintOverlayOpen = false }) {
     explorationInterest,
   ]);
 
+  // 地址跟着界面语言走：切换语言，或拿到的地点地址是另一种语言时，只重取地址
+  useEffect(() => {
+    if (isLanguageReady && location?.pano_id && location.address_language) {
+      relocalizeLocationAddress();
+    }
+  }, [
+    activeLanguage,
+    isLanguageReady,
+    location?.pano_id,
+    location?.address_language,
+    relocalizeLocationAddress,
+  ]);
+
   // 位置变化时更新 URL
   useEffect(() => {
     if (location && location.latitude != null && location.longitude != null) {
@@ -376,109 +432,118 @@ export default function HomePage({ footprintOverlayOpen = false }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 只在坐标变化时更新地址栏
   }, [location?.latitude, location?.longitude]);
 
-  // Memoized styles to prevent re-creation
-  const styles = useMemo(
-    () => ({
-      container: {
-        width: "100vw",
-        height: "100vh",
-        overflow: "hidden",
-        display: "flex",
-        flexDirection: "column",
-      },
-      mainContent: {
-        flex: 1,
-        display: "flex",
-        position: "relative",
-      },
-      streetViewWrapper: {
-        position: "absolute",
-        top: "var(--top-bar-height, 50px)",
-        left: 0,
-        right: "320px",
-        bottom: 0,
-        width: "auto",
-        height: "auto",
-      },
-    }),
-    [],
+  // 街景超时或报错后不再盖着出发提示，让街景自己的错误说明露出来
+  const [landingTimedOutPano, setLandingTimedOutPano] = useState(null);
+  const locationPanoRef = useRef(null);
+  locationPanoRef.current = location?.pano_id || null;
+  const handleStreetViewError = useCallback(() => {
+    setLandingTimedOutPano(locationPanoRef.current);
+  }, []);
+
+  useEffect(() => {
+    // 每次到站重新计时；回到曾经超时或出错的全景时，遮罩照常盖住旧画面
+    setLandingTimedOutPano(null);
+    if (!location?.pano_id) return undefined;
+    const timerId = window.setTimeout(
+      () => setLandingTimedOutPano(location.pano_id),
+      LANDING_TIMEOUT_MS,
+    );
+    return () => window.clearTimeout(timerId);
+  }, [location?.pano_id]);
+
+  // streetViewView is cleared whenever a new location starts loading and set
+  // again once the panorama reports its first view.
+  const isLanding =
+    Boolean(location?.pano_id) &&
+    !hasStreetViewView &&
+    landingTimedOutPano !== location.pano_id;
+  const showArrival = isLoading || isLanding;
+
+  const journeyStops = useHomeJourney(location, activeLanguage);
+
+  const handlePickRandom = useCallback(() => {
+    handleModeChange(EXPLORATION_MODES.RANDOM);
+  }, [handleModeChange]);
+
+  // 回到旅程里的某一站：直接用记下的全景，不再按坐标重新查找（可能落到别的全景，也会多记一次足迹）
+  const handleRevisit = useCallback(
+    (stop) => {
+      const known = Object.fromEntries(
+        Object.entries(stop.address || {}).filter(([, value]) => value),
+      );
+      applyNavigatedLocation({
+        formatted_address: stop.label,
+        ...known,
+        pano_id: stop.panoId,
+        latitude: stop.lat,
+        longitude: stop.lng,
+      });
+    },
+    [applyNavigatedLocation],
   );
 
-  // 如果有错误，显示错误页面
-  if (error) {
-    return (
-      <Suspense
-        fallback={
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "center",
-              alignItems: "center",
-              height: "100vh",
-            }}
-          >
-            Loading...
-          </div>
-        }
-      >
-        <ErrorDisplay error={error} onRetry={handleExplore} />
-      </Suspense>
-    );
-  }
-
   return (
-    <div style={styles.container}>
-      {/* 顶栏 */}
-      <TopBar
-        location={location}
-        isLoading={isLoading}
-        onExplore={handleExplore}
-        explorationMode={explorationMode}
-        explorationInterest={explorationInterest}
-        onModeChange={handleModeChange}
-        onPreferenceChange={handlePreferenceChange}
-        isSavingPreference={isSavingPreference}
-        preferenceError={preferenceError}
-        onOpenFootprint={handleOpenFootprint}
-      />
+    <div className="home-shell">
+      <div className="home-stage">
+        <StreetViewContainer
+          latitude={location?.latitude}
+          longitude={location?.longitude}
+          panoId={location?.pano_id}
+          paused={footprintOverlayOpen}
+          onPovChanged={handlePovChanged}
+          onViewChanged={handleViewChanged}
+          onLoadError={handleStreetViewError}
+        />
+        <ArrivalOverlay
+          visible={showArrival}
+          error={isLoading ? null : error}
+          busy={isSavingPreference}
+          onRetry={handleExplore}
+          onGoRandom={
+            explorationMode === EXPLORATION_MODES.CUSTOM
+              ? handlePickRandom
+              : null
+          }
+        />
+      </div>
 
-      {/* 主要内容区域 */}
-      <div style={styles.mainContent}>
-        {/* 街景容器 */}
-        <div style={styles.streetViewWrapper} className="street-view-wrapper">
-          <StreetViewContainer
-            panoId={location?.pano_id}
-            latitude={location?.latitude}
-            longitude={location?.longitude}
-            paused={footprintOverlayOpen}
-            onPovChanged={handlePovChanged}
-            onViewChanged={handleViewChanged}
-          />
-        </div>
+      <HomeNav onOpenFootprint={handleOpenFootprint} />
 
-        {/* 侧边栏 */}
-        <Sidebar
+      <aside className="home-side">
+        <HomeMiniMap
           location={location}
-          description={description}
-          descriptionCitations={descriptionCitations}
-          descriptionResearchStatus={descriptionResearchStatus}
-          isLoadingDesc={isLoadingDesc}
-          isLocationLoading={isLoading}
-          descError={descError}
-          descRetries={descRetries}
-          onRetryDescription={handleRetryDescription}
           onMapLocationPick={handleMapLocationPick}
           isMapPickLoading={isMapLocationLoading}
           mapPickStatus={mapPickStatus}
         />
-      </div>
+        <AtlasLetter
+          location={location}
+          description={description}
+          citations={descriptionCitations}
+          researchStatus={descriptionResearchStatus}
+          isLoadingDesc={isLoadingDesc}
+          isLocationLoading={isLoading}
+          descError={descError}
+          descRetries={descRetries}
+          onRetry={handleRetryDescription}
+        />
+      </aside>
 
-      {/* 全局加载动画 - lazy loaded */}
-      {isLoading && (
-        <Suspense fallback={null}>
-          <GlobalLoading />
-        </Suspense>
-      )}
+      <div className="home-bottom">
+        <HomeDock
+          isBusy={isLoading || isSavingPreference || isMapLocationLoading}
+          onNext={handleExplore}
+          explorationMode={explorationMode}
+          explorationInterest={explorationInterest}
+          isSavingPreference={isSavingPreference}
+          preferenceError={preferenceError}
+          onPickRandom={handlePickRandom}
+          onPickInterest={handlePreferenceChange}
+          stops={journeyStops}
+          currentPanoId={location?.pano_id}
+          onRevisit={handleRevisit}
+        />
+      </div>
 
       {/* Toast 通知 - lazy loaded */}
       {showToast && (

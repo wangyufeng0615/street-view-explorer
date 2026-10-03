@@ -1,10 +1,34 @@
+/* 全站字体只用这三组：英文先用系统字体，中文按平台回退到苹方 / 冬青黑体 / 微软雅黑 / 思源黑体。
+   衬线体给 Atlas 的讲述和标题，Noto Serif SC 由需要的页面按需加载（utils/pageFonts.js），
+   没加载时退到系统宋体和 Georgia。 */
+:root {
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", "Helvetica Neue",
+    Arial, sans-serif;
+  --font-serif:
+    "Noto Serif SC", "Source Han Serif SC", "Songti SC", "STSong", Georgia,
+    serif;
+  --font-mono:
+    ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+}
+
 html,
 body {
+  font-family: var(--font-sans);
   margin: 0;
   padding: 0;
   width: 100%;
   height: 100%;
   overflow: hidden;
+}
+
+/* 浏览器默认让表单控件用系统 UI 字体，统一跟随页面 */
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
 }
 
 #root {

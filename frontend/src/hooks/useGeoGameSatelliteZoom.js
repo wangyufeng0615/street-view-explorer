@@ -24,6 +24,8 @@ export function useGeoGameSatelliteZoom({
 }) {
   const [imgLoaded, setImgLoaded] = useState(false);
   const [imgError, setImgError] = useState(false);
+  // 拉远时下一张图加载失败；当前图仍然有效，不能复用 imgError 把它盖住
+  const [zoomOutFailed, setZoomOutFailed] = useState(false);
   const [zoomTransition, setZoomTransition] = useState(null);
   const [zoomTransitionLoading, setZoomTransitionLoading] = useState(false);
   const zoomTransitionRequestRef = useRef(0);
@@ -42,6 +44,7 @@ export function useGeoGameSatelliteZoom({
   useEffect(() => {
     setImgLoaded(false);
     setImgError(false);
+    setZoomOutFailed(false);
     setZoomTransitionLoading(false);
   }, [state.currentZoom, state.target]);
 
@@ -117,7 +120,7 @@ export function useGeoGameSatelliteZoom({
     const requestId = zoomTransitionRequestRef.current + 1;
     zoomTransitionRequestRef.current = requestId;
     setZoomTransitionLoading(true);
-    setImgError(false);
+    setZoomOutFailed(false);
 
     const img = new Image();
     img.onload = () => {
@@ -156,7 +159,7 @@ export function useGeoGameSatelliteZoom({
     img.onerror = () => {
       if (zoomTransitionRequestRef.current !== requestId) return;
       setZoomTransitionLoading(false);
-      setImgError(true);
+      setZoomOutFailed(true);
       playFeedback("error");
       showFeedbackBubble(t("geo.feedback_image_error"), "danger");
     };
@@ -196,6 +199,7 @@ export function useGeoGameSatelliteZoom({
     satelliteUrl,
     imgLoaded,
     imgError,
+    zoomOutFailed,
     zoomTransition,
     zoomTransitionLoading,
     canZoomOut,

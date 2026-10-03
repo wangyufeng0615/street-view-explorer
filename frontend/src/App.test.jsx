@@ -26,17 +26,16 @@ vi.mock("./components/StreetView", () => ({
   },
 }));
 
-vi.mock("./components/TopBar", () => ({
+vi.mock("./components/home/HomeNav", () => ({
   default: ({ onOpenFootprint }) => (
     <button type="button" onClick={onOpenFootprint}>
       open footprints
     </button>
   ),
 }));
-
-vi.mock("./components/Sidebar", () => ({ default: () => null }));
-vi.mock("./components/GlobalLoading", () => ({ default: () => null }));
-
+vi.mock("./components/home/HomeMiniMap", () => ({ default: () => null }));
+vi.mock("./components/home/AtlasLetter", () => ({ default: () => null }));
+vi.mock("./components/home/HomeDock", () => ({ default: () => null }));
 vi.mock("./components/FootprintMap", () => ({
   default: ({ onClose }) => (
     <div data-testid="footprint-map">

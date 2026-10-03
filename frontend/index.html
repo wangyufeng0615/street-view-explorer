@@ -80,7 +80,7 @@
     }
     </script>
     
-    <!-- Production-only external font hints. Local dev keeps browser egress behind the configured proxy. -->
+    <!-- Production-only preconnect for the serif font that pages load on demand (utils/pageFonts.js) and for the Maps script the home page starts right away. Local dev keeps browser egress behind the configured proxy. -->
     <script>
         if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
             [
@@ -88,6 +88,7 @@
                 ['dns-prefetch', 'https://fonts.gstatic.com'],
                 ['preconnect', 'https://fonts.googleapis.com'],
                 ['preconnect', 'https://fonts.gstatic.com', true],
+                ['preconnect', 'https://maps.googleapis.com'],
             ].forEach(([rel, href, crossOrigin]) => {
                 const link = document.createElement('link');
                 link.rel = rel;
@@ -95,20 +96,8 @@
                 if (crossOrigin) link.crossOrigin = '';
                 document.head.appendChild(link);
             });
-            const font = document.createElement('link');
-            font.rel = 'stylesheet';
-            font.href = 'https://fonts.googleapis.com/css2?family=Comfortaa:wght@300;400;500;600;700&display=swap';
-            document.head.appendChild(font);
         }
     </script>
-    
-    <!-- Inline critical font CSS for immediate text rendering -->
-    <style>
-        /* Fallback font stack while Comfortaa loads */
-        body {
-            font-family: 'Comfortaa', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
-        }
-    </style>
     
     <!-- Cloudflare Web Analytics is injected at the edge in production. -->
 </head>

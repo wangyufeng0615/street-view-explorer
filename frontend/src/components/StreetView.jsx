@@ -1,6 +1,10 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { loadGoogleMapsWhenVisible } from "../utils/googleMaps";
+import {
+  isOfficialPanoId,
+  resolveOfficialPanoId,
+} from "../utils/officialStreetView";
 
 const AUTO_ROTATE_FRAME_INTERVAL_MS = 1000 / 24;
 const AUTO_ROTATE_DEGREES_PER_SECOND = 1.8;
@@ -47,11 +51,11 @@ const styles = {
   },
   interactionTip: {
     position: "absolute",
-    top: "20px",
+    top: "var(--streetview-tip-top, 20px)",
     left: "50%",
     transform: "translateX(-50%)",
-    backgroundColor: "rgba(0, 0, 0, 0.75)",
-    color: "rgba(255, 255, 255, 0.95)",
+    backgroundColor: "rgba(33, 26, 20, 0.78)",
+    color: "rgba(255, 245, 230, 0.95)",
     padding: "10px 18px",
     borderRadius: "24px",
     fontSize: "13px",
@@ -80,32 +84,33 @@ const styles = {
     flexDirection: "column",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(255, 255, 255, 0.95)",
+    backgroundColor: "rgba(28, 22, 17, 0.85)",
     padding: "30px 20px",
     textAlign: "center",
-    zIndex: 1000,
-    backdropFilter: "blur(4px)",
-  },
-  errorIcon: {
-    fontSize: "48px",
-    marginBottom: "20px",
-    animation: "pulse 2s infinite",
+    zIndex: 1,
   },
   errorText: {
     fontSize: "18px",
-    color: "#333",
-    marginBottom: "12px",
-    fontWeight: "600",
+    color: "rgba(255, 245, 230, 0.95)",
+    marginBottom: "8px",
+    fontWeight: "500",
     lineHeight: "1.4",
     maxWidth: "400px",
   },
   errorSubText: {
     fontSize: "14px",
-    color: "#666",
+    color: "rgba(255, 245, 230, 0.6)",
     maxWidth: "300px",
     lineHeight: "1.5",
   },
 };
+
+// 操作提示每次打开网页只弹一次，之后每到一站都不再打扰
+let interactionTipShown = false;
+
+export function resetInteractionTipForTests() {
+  interactionTipShown = false;
+}
 
 function createLocationLoad() {
   return {
@@ -133,10 +138,12 @@ function clearLocationTimers(load) {
   load.hideTipTimeoutId = null;
 }
 
-// 有全景 ID 时按 ID 定位：按坐标 50 米范围查不到的用户上传全景也能打开
+// 只显示 Google 官方街景：官方全景 ID 直接加载；没有 ID 时按坐标加载（首页的位置总带 ID）。
+// 用户上传的全景返回 null，由 findOfficialTarget 就近换成官方全景
 function streetViewTarget(panoId, latitude, longitude) {
-  if (panoId) return { pano: String(panoId) };
-
+  if (panoId) {
+    return isOfficialPanoId(panoId) ? { pano: String(panoId) } : null;
+  }
   const lat = Number(latitude);
   const lng = Number(longitude);
   if (isNaN(lat) || isNaN(lng)) {
@@ -147,6 +154,21 @@ function streetViewTarget(panoId, latitude, longitude) {
   return { position: { lat, lng } };
 }
 
+// 附近没有官方全景就算这里没有街景，不退回用户全景
+async function findOfficialTarget(maps, panoId, latitude, longitude) {
+  const officialPanoId = await resolveOfficialPanoId(maps, {
+    lat: Number(latitude),
+    lng: Number(longitude),
+    panoId,
+  });
+  if (!officialPanoId) {
+    const noOfficialImagery = new Error("No official Street View nearby");
+    noOfficialImagery.errorKey = "error.streetViewNotAvailable";
+    throw noOfficialImagery;
+  }
+  return { pano: officialPanoId };
+}
+
 export default function StreetView({
   panoId,
   latitude,
@@ -154,6 +176,7 @@ export default function StreetView({
   heading = 0,
   onPovChanged,
   onViewChanged,
+  onLoadError,
   paused = false,
 }) {
   const panoramaRef = useRef(null);
@@ -167,6 +190,7 @@ export default function StreetView({
   const isContainerVisibleRef = useRef(true);
   const onPovChangedRef = useRef(onPovChanged);
   const onViewChangedRef = useRef(onViewChanged);
+  const onLoadErrorRef = useRef(onLoadError);
   const viewSourceRef = useRef("initial");
   const latestHeadingRef = useRef(heading);
   const lastNotifiedHeadingRef = useRef(null);
@@ -186,6 +210,15 @@ export default function StreetView({
   useEffect(() => {
     onViewChangedRef.current = onViewChanged;
   }, [onViewChanged]);
+
+  useEffect(() => {
+    onLoadErrorRef.current = onLoadError;
+  }, [onLoadError]);
+
+  // 每个位置开始加载时 error 会先清空，所以这里每次失败都会通知一次
+  useEffect(() => {
+    if (error) onLoadErrorRef.current?.(error);
+  }, [error]);
 
   useEffect(() => {
     latestHeadingRef.current = heading;
@@ -418,12 +451,13 @@ export default function StreetView({
       }
     }, AUTO_ROTATE_START_DELAY_MS);
 
-    // 每个位置只提示一次，沿路走动（pano_changed）不再重复弹出
-    if (load.hasScheduledTip) return;
+    // 每次打开网页只提示一次；沿路走动（pano_changed）和换站都不再重复弹出
+    if (load.hasScheduledTip || interactionTipShown) return;
     load.hasScheduledTip = true;
     load.tipTimeoutId = setTimeout(() => {
       load.tipTimeoutId = null;
-      if (!load.active || !mountedRef.current) return;
+      if (!load.active || !mountedRef.current || interactionTipShown) return;
+      interactionTipShown = true;
       setShowInteractionTip(true);
       // 8秒后自动隐藏提示
       load.hideTipTimeoutId = setTimeout(() => {
@@ -484,6 +518,11 @@ export default function StreetView({
       motionTrackingControl: false,
       showRoadLabels: false,
       addressControl: false,
+      // The home page is already full-bleed and keeps its corners for the
+      // nav and side column, so the panorama controls sit on the right edge.
+      fullscreenControl: false,
+      zoomControlOptions: { position: maps.ControlPosition.RIGHT_CENTER },
+      panControlOptions: { position: maps.ControlPosition.RIGHT_CENTER },
     });
     const isCurrent = () =>
       mountedRef.current && panoramaInstanceRef.current === panorama;
@@ -614,6 +653,22 @@ export default function StreetView({
       observer.observe(streetViewElement);
     }
 
+    // 容器尺寸变了（转屏、拖窗口、跨过布局断点）要通知街景重新计算画面，
+    // 否则复用的实例可能停在旧尺寸、画面发黑；Google 文档要求这里手动触发 resize
+    let resizeObserver = null;
+    let resizeTimer = null;
+    if ("ResizeObserver" in window && streetViewElement) {
+      resizeObserver = new ResizeObserver(() => {
+        // 拖动窗口时尺寸连续变化，合并成一次
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(() => {
+          const panorama = panoramaInstanceRef.current;
+          if (panorama) window.google?.maps?.event?.trigger(panorama, "resize");
+        }, 120);
+      });
+      resizeObserver.observe(streetViewElement);
+    }
+
     return () => {
       document.removeEventListener(
         "visibilitychange",
@@ -624,6 +679,8 @@ export default function StreetView({
       if (observer) {
         observer.disconnect();
       }
+      resizeObserver?.disconnect();
+      clearTimeout(resizeTimer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 只在挂载时注册可见性监听，辅助函数只读写 ref
   }, []);
@@ -647,10 +704,10 @@ export default function StreetView({
         // 停止之前的自动旋转
         stopAutoRotate();
 
-        const target = streetViewTarget(panoId, latitude, longitude);
+        let target = streetViewTarget(panoId, latitude, longitude);
         let panorama = panoramaInstanceRef.current;
         let maps = null;
-        if (!panorama) {
+        if (!panorama || !target) {
           // Load Google Maps when the panorama container is visible
           maps = await loadGoogleMapsWhenVisible(panoramaRef.current, {
             signal: visibilityController.signal,
@@ -658,6 +715,10 @@ export default function StreetView({
           if (!isActive || !mountedRef.current || !panoramaRef.current) {
             return;
           }
+        }
+        if (!target) {
+          target = await findOfficialTarget(maps, panoId, latitude, longitude);
+          if (!isActive || !mountedRef.current) return;
         }
 
         load = {
@@ -764,7 +825,6 @@ export default function StreetView({
 
       {error && (
         <div style={styles.errorContainer}>
-          <div style={styles.errorIcon}>{isNetworkError ? "🌐" : "⚠️"}</div>
           <div style={styles.errorText}>{t(error)}</div>
           <div style={styles.errorSubText}>
             {isNetworkError

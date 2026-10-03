@@ -9,6 +9,7 @@ import {
   joinGeoBattleRoom,
 } from "../services/api";
 import { readLocalStorage, writeLocalStorage } from "../utils/safeStorage";
+import { getGeoBattleErrorMessage } from "../hooks/useGeoBattleRoomSync";
 
 const NICKNAME_STORAGE_KEY = "geoBattleNickname";
 const SYNC_INTERVAL_PLAYING = 1500;
@@ -70,6 +71,19 @@ function GeoBattleHubPage() {
   // Set once a match is found so leaving for the room does not cancel it.
   const matchedRef = useRef(false);
   const queuedRef = useRef(false);
+  const errorRef = useRef(null);
+
+  // 提示在页面最底下，手机上常在首屏以外；出错时滚到看得见的位置
+  useEffect(() => {
+    if (!error) return;
+    const reduceMotion = window.matchMedia?.(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+    errorRef.current?.scrollIntoView?.({
+      behavior: reduceMotion ? "auto" : "smooth",
+      block: "nearest",
+    });
+  }, [error]);
   queuedRef.current = matchmaking.status === "queued";
 
   useEffect(() => {
@@ -144,7 +158,7 @@ function GeoBattleHubPage() {
     setBusyAction("");
 
     if (!res.success || !res.data?.room?.room_id) {
-      setError(res.error || t("geo_online.generic_error"));
+      setError(getGeoBattleErrorMessage(res, t));
       return;
     }
 
@@ -166,7 +180,11 @@ function GeoBattleHubPage() {
     setBusyAction("");
 
     if (!res.success || !res.data?.room?.room_id) {
-      setError(res.error || t("geo_online.generic_error"));
+      setError(
+        getGeoBattleErrorMessage(res, t, {
+          notFoundKey: "geo_online.error_room_not_found",
+        }),
+      );
       return;
     }
 
@@ -182,11 +200,12 @@ function GeoBattleHubPage() {
     setBusyAction("");
 
     if (!res.success || !res.data) {
-      if (res.status === 409) {
-        setError(t("geo_online.already_in_room"));
-      } else {
-        setError(res.error || t("geo_online.generic_error"));
-      }
+      // 匹配接口的 409 只会是"仍在好友房里"
+      setError(
+        res.status === 409
+          ? t("geo_online.already_in_room")
+          : getGeoBattleErrorMessage(res, t),
+      );
       return;
     }
 
@@ -344,7 +363,11 @@ function GeoBattleHubPage() {
             </section>
           </div>
 
-          {error && <div className="geo-battle-banner">{error}</div>}
+          {error && (
+            <div className="geo-battle-banner" role="alert" ref={errorRef}>
+              {error}
+            </div>
+          )}
         </div>
       </div>
     </div>

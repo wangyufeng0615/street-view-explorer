@@ -2,7 +2,7 @@
 /** @typedef {import('../utils/geoGameTypes').GameState} GameState */
 /** @typedef {import('../utils/geoGameTypes').RoundScore} RoundScore */
 /** @typedef {import('../utils/geoGameTypes').Translate} Translate */
-import React, { useEffect } from "react";
+import React, { useEffect, useId } from "react";
 
 import LanguageSwitch from "./LanguageSwitch";
 
@@ -301,6 +301,13 @@ function WelcomeModal({ onStart, t, navigate, countryCode }) {
   return (
     <div className="geo-welcome-page">
       <div className="geo-welcome-card">
+        <button
+          type="button"
+          className="geo-welcome-back"
+          onClick={() => navigate("/")}
+        >
+          ← {t("geo.back_home")}
+        </button>
         <div className="geo-modal-header">
           <div className="geo-modal-title">{t("geo.title")}</div>
           <LanguageSwitch />
@@ -427,9 +434,10 @@ function RoundResult({ state, t, onNext }) {
 }
 
 /**
- * @param {{state: GameState, t: Translate, onRestart: () => void, onNext: () => void}} props
+ * @param {{state: GameState, t: Translate, onRestart: () => void, onNext: () => void, onHome: () => void}} props
  */
-function GameOverModal({ state, t, onRestart, onNext }) {
+function GameOverModal({ state, t, onRestart, onNext, onHome }) {
+  const titleId = useId();
   useEffect(() => {
     if (state.scores.length < TOTAL_ROUNDS) onNext();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 只在弹窗挂载时补齐一次未完成的轮次
@@ -442,10 +450,17 @@ function GameOverModal({ state, t, onRestart, onNext }) {
 
   return (
     <div className="geo-modal-overlay">
-      <div className="geo-modal geo-gameover-modal">
+      <div
+        className="geo-modal geo-gameover-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+      >
         <div className="geo-gameover-header">
           <div>
-            <div className="geo-modal-title">{t("geo.game_over")}</div>
+            <div className="geo-modal-title" id={titleId}>
+              {t("geo.game_over")}
+            </div>
             <div className="geo-gameover-subtitle">
               {t("geo.gameover_summary", {
                 score: formatPlainScore(t, playerTotal),
@@ -526,9 +541,15 @@ function GameOverModal({ state, t, onRestart, onNext }) {
           ))}
         </div>
 
-        <button className="geo-start-btn" onClick={onRestart}>
-          {t("geo.play_again")}
-        </button>
+        {/* 弹窗盖住了顶栏的返回按钮，这里单独给出回首页的出口 */}
+        <div className="geo-gameover-actions">
+          <button type="button" className="geo-start-btn" onClick={onRestart}>
+            {t("geo.play_again")}
+          </button>
+          <button type="button" className="geo-secondary-btn" onClick={onHome}>
+            {t("geo.back_home")}
+          </button>
+        </div>
       </div>
     </div>
   );

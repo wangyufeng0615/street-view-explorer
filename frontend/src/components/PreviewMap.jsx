@@ -1,6 +1,6 @@
 import React, { memo, useEffect, useRef, useState, useCallback } from "react";
 import { useTranslation } from "react-i18next";
-import { loadGoogleMapsScript } from "../utils/googleMaps";
+import { loadGoogleMapsScript, loadMarkerLibrary } from "../utils/googleMaps";
 
 function removeMapListener(listenerRef) {
   if (listenerRef.current) {
@@ -84,7 +84,6 @@ function PreviewMap({
   const markerInstanceRef = useRef(null);
   const mapsApiRef = useRef(null);
   const clickListenerRef = useRef(null);
-  const dragEndListenerRef = useRef(null);
   const onLocationPickRef = useRef(onLocationPick);
   const isPickingLocationRef = useRef(isPickingLocation);
   // 地图只创建一次；坐标变化由 syncMapToPosition 移动中心点和标记
@@ -153,9 +152,8 @@ function PreviewMap({
       }
       removeMarker(markerInstanceRef);
       removeMapListener(clickListenerRef);
-      removeMapListener(dragEndListenerRef);
 
-      const position = {
+      let position = {
         lat: Number(positionRef.current.latitude),
         lng: Number(positionRef.current.longitude),
       };
@@ -169,10 +167,13 @@ function PreviewMap({
         mapTypeControl: false,
         streetViewControl: false,
         fullscreenControl: false,
-        zoomControl: true,
+        // 放大后的选点地图需要能缩放；侧栏小地图上盖着展开按钮，不放控件
+        zoomControl: Boolean(onLocationPickRef.current),
         disableDefaultUI: true,
+        // 侧栏小地图不接收键盘操作，版权行里就不放"键盘快捷键"入口
+        keyboardShortcuts: Boolean(onLocationPickRef.current),
         gestureHandling: onLocationPickRef.current ? "greedy" : "auto",
-        scrollwheel: false,
+        scrollwheel: Boolean(onLocationPickRef.current),
         draggableCursor: onLocationPickRef.current ? "crosshair" : undefined,
         draggingCursor: "grabbing",
         zoomControlOptions: {
@@ -180,6 +181,7 @@ function PreviewMap({
         },
       });
 
+      // 只有点击才出发；拖动只是挪地图看看，不跳走
       if (onLocationPickRef.current) {
         clickListenerRef.current = mapInstanceRef.current.addListener(
           "click",
@@ -187,30 +189,6 @@ function PreviewMap({
             pickFromLatLng(event.latLng, "click");
           },
         );
-        dragEndListenerRef.current = mapInstanceRef.current.addListener(
-          "dragend",
-          () => {
-            pickFromLatLng(mapInstanceRef.current?.getCenter(), "drag");
-          },
-        );
-      }
-
-      // 只添加一次样式
-      if (!document.querySelector("#previewmap-styles")) {
-        const style = document.createElement("style");
-        style.id = "previewmap-styles";
-        style.textContent = `
-                    .gm-style-cc { display: none; }
-                    a[href^="http://maps.google.com/maps"]{display:none !important}
-                    a[href^="https://maps.google.com/maps"]{display:none !important}
-                    .gmnoprint a, .gmnoprint span, .gm-style-cc {
-                        display:none;
-                    }
-                    .gmnoprint div {
-                        background:none !important;
-                    }
-                `;
-        document.head.appendChild(style);
       }
 
       // 创建图钉标记
@@ -227,6 +205,16 @@ function PreviewMap({
       pin.style.height = "32px";
 
       // 创建标记点
+      await loadMarkerLibrary(maps);
+      if (!mapInstanceRef.current) return;
+      // 等标记库期间可能已经换了站：按最新坐标放标记、定中心
+      const latest = {
+        lat: Number(positionRef.current.latitude),
+        lng: Number(positionRef.current.longitude),
+      };
+      if (Number.isFinite(latest.lat) && Number.isFinite(latest.lng)) {
+        position = latest;
+      }
       if (maps.marker?.AdvancedMarkerElement) {
         markerInstanceRef.current = new maps.marker.AdvancedMarkerElement({
           map: mapInstanceRef.current,
@@ -272,7 +260,6 @@ function PreviewMap({
       // 清理地图实例
       removeMarker(markerInstanceRef);
       removeMapListener(clickListenerRef);
-      removeMapListener(dragEndListenerRef);
       if (mapInstanceRef.current) {
         mapInstanceRef.current = null;
       }

@@ -118,7 +118,8 @@ describe("AiDescription thinking states", () => {
     expect(status).toHaveAttribute("aria-busy", "true");
     expect(status).toHaveAccessibleName("Atlas 正翻着地图…");
     expect(screen.getAllByText("Atlas 正翻着地图…")).toHaveLength(1);
-    expect(status).not.toHaveTextContent("Atlas 正翻着地图…");
+    // 首页来信没有标题栏，思考提示的文字直接显示在指示器里
+    expect(status).toHaveTextContent("Atlas 正翻着地图…");
   });
 
   it("uses first-person language for a pending deep description", async () => {

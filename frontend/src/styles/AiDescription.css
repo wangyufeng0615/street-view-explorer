@@ -44,44 +44,6 @@
     0 12px 28px rgba(92, 64, 22, 0.08);
 }
 
-/* —— 卡头 —— */
-
-.ai-description-header {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  min-height: 38px;
-  padding: 8px 14px 7px;
-  border-bottom: 1px solid var(--atlas-rule);
-}
-
-.ai-description-title {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  flex-shrink: 0;
-  white-space: nowrap;
-  color: var(--atlas-ink);
-  font-size: 13px;
-  font-weight: 700;
-  line-height: 1.2;
-  letter-spacing: 0.05em;
-  font-family:
-    "Source Han Serif SC", "Songti SC", Georgia, "PingFang SC", serif;
-}
-
-.ai-description-glyph {
-  flex-shrink: 0;
-  color: var(--atlas-accent);
-}
-
-.ai-description-voice {
-  flex: 0 1 auto;
-  min-width: 0;
-}
-
 .ai-description-body {
   padding: 12px 14px 13px;
 }
@@ -97,17 +59,15 @@
   line-height: 1.66;
   letter-spacing: 0.01em;
   text-align: left;
-  font-family:
-    "Source Han Serif SC", "Songti SC", Georgia, "PingFang SC",
-    "Hiragino Sans GB", "Microsoft YaHei", serif;
+  font-family: var(--font-serif);
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* 不两端对齐：窄栏里混排长英文单词时，两端对齐会把整行汉字拉开 */
 .ai-content:lang(zh) {
   line-height: 1.72;
-  text-align: justify;
 }
 
 .ai-content:lang(en) {
@@ -187,43 +147,18 @@
 .atlas-thinking-title {
   color: var(--atlas-ink-soft);
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 400;
   font-style: italic;
   line-height: 1.4;
   letter-spacing: 0.02em;
-  font-family:
-    "Source Han Serif SC", "Songti SC", Georgia, "PingFang SC", serif;
+  font-family: var(--font-serif);
   animation: atlasThinkingText 2.2s ease-in-out infinite;
 }
 
-.atlas-thinking-trail {
-  display: grid;
-  gap: 6px;
-  width: min(72%, 250px);
-}
-
-.atlas-thinking-trail span {
-  display: block;
-  height: 2px;
-  border-radius: 999px;
-  background: linear-gradient(
-    90deg,
-    rgba(168, 80, 42, 0.12),
-    rgba(168, 80, 42, 0.36),
-    rgba(168, 80, 42, 0.12)
-  );
-  background-size: 180% 100%;
-  animation: atlasThinkingTrail 2.2s ease-in-out infinite;
-}
-
-.atlas-thinking-trail span:nth-child(2) {
-  width: 82%;
-  animation-delay: 0.14s;
-}
-
-.atlas-thinking-trail span:nth-child(3) {
-  width: 58%;
-  animation-delay: 0.28s;
+/* 中文没有真斜体，浏览器只会把字形硬拧歪 */
+.atlas-thinking-title:lang(zh),
+.ai-scene-note:lang(zh) {
+  font-style: normal;
 }
 
 .atlas-thinking-indicator--detailed {
@@ -266,18 +201,6 @@
   }
 }
 
-@keyframes atlasThinkingTrail {
-  0%,
-  100% {
-    opacity: 0.42;
-    background-position: 100% 0;
-  }
-  50% {
-    opacity: 0.9;
-    background-position: 0 0;
-  }
-}
-
 .ai-error {
   padding: 9px 11px;
   background: rgba(190, 70, 44, 0.06);
@@ -314,11 +237,9 @@
 .ai-no-data {
   color: var(--atlas-ink-soft);
   font-size: 13px;
-  font-style: italic;
   line-height: 1.45;
   text-align: center;
   padding: 4px 0;
-  opacity: 0.85;
 }
 
 .ai-content-container {
@@ -336,50 +257,36 @@
   align-items: center;
 }
 
+/* 实线细框的文字按钮；不用虚线框（像占位框）和放大镜（像搜索框） */
 .tell-me-more-button {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 5px 13px 5px 10px;
+  padding: 6px 12px;
   background: transparent;
-  border: 1px dashed rgba(168, 80, 42, 0.55);
-  border-radius: 3px;
+  border: 1px solid rgba(168, 80, 42, 0.45);
+  border-radius: 8px;
   color: var(--atlas-accent);
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 600;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.02em;
   cursor: pointer;
-  font-family:
-    "Source Han Serif SC", "Songti SC", Georgia, "PingFang SC", serif;
+  font-family: var(--font-serif);
+  white-space: nowrap;
   transition:
     background 0.16s ease,
     border-color 0.16s ease,
-    color 0.16s ease,
-    transform 0.16s ease;
+    color 0.16s ease;
 }
 
 .tell-me-more-button:hover:not(:disabled) {
   background: rgba(168, 80, 42, 0.08);
-  border-color: rgba(168, 80, 42, 0.8);
+  border-color: rgba(168, 80, 42, 0.75);
   color: var(--atlas-accent-deep);
-  transform: rotate(-0.6deg);
 }
 
 .tell-me-more-button:disabled {
   opacity: 0.55;
   cursor: not-allowed;
-  transform: none;
-}
-
-.tell-me-more-button .button-icon {
-  display: flex;
-  align-items: center;
-  color: inherit;
-  opacity: 0.85;
-}
-
-.tell-me-more-button .button-text {
-  white-space: nowrap;
 }
 
 /* —— 深度解读 —— */
@@ -437,8 +344,7 @@
   font-weight: 700;
   letter-spacing: 0.08em;
   white-space: nowrap;
-  font-family:
-    "Source Han Serif SC", "Songti SC", Georgia, "PingFang SC", serif;
+  font-family: var(--font-serif);
 }
 
 .detailed-title::before,
@@ -535,17 +441,6 @@
     border-radius: 5px;
   }
 
-  .ai-description-header {
-    min-height: 30px;
-    padding: 7px 11px 6px;
-    gap: 8px;
-  }
-
-  .ai-description-header::after {
-    left: 11px;
-    right: 11px;
-  }
-
   .ai-description-body {
     padding: 10px 11px 11px;
   }
@@ -557,10 +452,6 @@
 
   .atlas-thinking-title {
     font-size: 12.5px;
-  }
-
-  .atlas-thinking-trail {
-    width: min(74%, 210px);
   }
 
   .atlas-thinking-indicator--detailed {

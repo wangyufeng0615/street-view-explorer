@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import LetterContent from "../components/LetterContent";
+import { loadNotoSerifSC } from "../utils/pageFonts";
 import "../styles/AgentPage.css";
 
 const API_V1 = "/api/v1";
@@ -8,15 +10,22 @@ const API_V1 = "/api/v1";
 export default function LetterPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const [letter, setLetter] = useState(null);
   const [photos, setPhotos] = useState([]);
-  const [error, setError] = useState("");
+  // 存翻译 key，切换语言时错误文案跟着变
+  const [errorKey, setErrorKey] = useState("");
   const [loading, setLoading] = useState(true);
+
+  // 来信正文和标题用衬线体，挂载时按需加载
+  useEffect(() => {
+    loadNotoSerifSC();
+  }, []);
 
   useEffect(() => {
     async function load() {
       if (!id || id === "undefined") {
-        setError("Invalid letter ID");
+        setErrorKey("letter.invalid_id");
         setLoading(false);
         return;
       }
@@ -25,19 +34,19 @@ export default function LetterPage() {
           `${API_V1}/agent/journeys/${id}/public-letter`,
         );
         const text = await resp.text();
-        if (!text) {
-          setError("Empty response");
-          return;
-        }
-        const data = JSON.parse(text);
-        if (data.success && data.data) {
+        const data = text ? JSON.parse(text) : null;
+        if (resp.ok && data?.success && data.data) {
           setLetter(data.data.letter);
           setPhotos(data.data.photos || []);
         } else {
-          setError(data.error || "Letter not found");
+          console.warn("Letter load failed:", resp.status, data?.error);
+          setErrorKey(
+            resp.status === 404 ? "letter.not_found" : "letter.load_failed",
+          );
         }
-      } catch {
-        setError("Failed to load letter");
+      } catch (err) {
+        console.warn("Letter load failed:", err);
+        setErrorKey("letter.load_failed");
       } finally {
         setLoading(false);
       }
@@ -53,32 +62,32 @@ export default function LetterPage() {
     }
   }
 
+  const header = (
+    <div className="agent-header">
+      <button className="agent-back-btn" onClick={() => navigate("/agent")}>
+        ← {t("agent.title")}
+      </button>
+    </div>
+  );
+
   if (loading) {
     return (
       <div className="agent-page">
-        <div className="agent-header">
-          <button className="agent-back-btn" onClick={() => navigate("/agent")}>
-            ← Atlas
-          </button>
-        </div>
+        {header}
         <div className="agent-content">
-          <div className="agent-detail-state">Loading...</div>
+          <div className="agent-detail-state">{t("common.loading")}</div>
         </div>
       </div>
     );
   }
 
-  if (error) {
+  if (errorKey) {
     return (
       <div className="agent-page">
-        <div className="agent-header">
-          <button className="agent-back-btn" onClick={() => navigate("/agent")}>
-            ← Atlas
-          </button>
-        </div>
+        {header}
         <div className="agent-content">
-          <div className="agent-detail-state error">
-            <div>{error}</div>
+          <div className="agent-detail-state error" role="alert">
+            <div>{t(errorKey)}</div>
           </div>
         </div>
       </div>
@@ -87,11 +96,7 @@ export default function LetterPage() {
 
   return (
     <div className="agent-page">
-      <div className="agent-header">
-        <button className="agent-back-btn" onClick={() => navigate("/agent")}>
-          ← Atlas
-        </button>
-      </div>
+      {header}
       <div className="agent-content">
         <div className="agent-letter-section agent-letter-standalone">
           <LetterContent

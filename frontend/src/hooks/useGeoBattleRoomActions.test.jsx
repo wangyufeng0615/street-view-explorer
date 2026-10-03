@@ -14,7 +14,11 @@ import {
   submitGeoBattleGuess,
   zoomOutGeoBattle,
 } from "../services/api";
-import { LOBBY_PATH, useGeoBattleRoomActions } from "./useGeoBattleRoomActions";
+import {
+  LOBBY_PATH,
+  getLeaveConfirmKey,
+  useGeoBattleRoomActions,
+} from "./useGeoBattleRoomActions";
 
 const t = (key) => key;
 const ROOM = {
@@ -209,6 +213,78 @@ describe("useGeoBattleRoomActions", () => {
     await act(() => deps.result.current.handleLeaveRoom());
     expect(leaveGeoBattleRoom).not.toHaveBeenCalled();
     expect(deps.navigate).toHaveBeenCalledWith(LOBBY_PATH);
+  });
+
+  describe("leave confirmation", () => {
+    const OPPONENT = { nickname: "B", left: false };
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it("stays in a running match when the player cancels", async () => {
+      const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+      const deps = setup({
+        room: { ...ROOM, mode: "private", opponent: OPPONENT },
+      });
+      await act(() => deps.result.current.handleLeaveRoom());
+      expect(confirm).toHaveBeenCalledWith("geo_online.leave_confirm_playing");
+      expect(leaveGeoBattleRoom).not.toHaveBeenCalled();
+      expect(deps.navigate).not.toHaveBeenCalled();
+    });
+
+    it("leaves a running match once confirmed", async () => {
+      vi.spyOn(window, "confirm").mockReturnValue(true);
+      const deps = setup({
+        room: { ...ROOM, mode: "private", opponent: OPPONENT },
+      });
+      await act(() => deps.result.current.handleLeaveRoom());
+      expect(leaveGeoBattleRoom).toHaveBeenCalledWith("room-1");
+      expect(deps.navigate).toHaveBeenCalledWith(LOBBY_PATH);
+    });
+
+    it("leaves an idle private room without asking", async () => {
+      const confirm = vi.spyOn(window, "confirm");
+      const deps = setup({
+        room: { ...ROOM, phase: "lobby", mode: "private", opponent: OPPONENT },
+      });
+      await act(() => deps.result.current.handleLeaveRoom());
+      expect(confirm).not.toHaveBeenCalled();
+      expect(leaveGeoBattleRoom).toHaveBeenCalledWith("room-1");
+    });
+  });
+
+  it.each([
+    [{ phase: "playing", mode: "private" }, "geo_online.leave_confirm_playing"],
+    [
+      { phase: "countdown", mode: "matchmaking" },
+      "geo_online.leave_confirm_playing",
+    ],
+    [
+      { phase: "finished", mode: "matchmaking" },
+      "geo_online.leave_confirm_matchmaking",
+    ],
+    [{ phase: "finished", mode: "private" }, null],
+    [{ phase: "lobby", mode: "private" }, null],
+  ])("picks the leave confirmation for %o", (overrides, key) => {
+    expect(
+      getLeaveConfirmKey({
+        ...ROOM,
+        opponent: { left: false },
+        ...overrides,
+      }),
+    ).toBe(key);
+  });
+
+  it("does not ask when nobody else is affected", () => {
+    expect(getLeaveConfirmKey({ ...ROOM, opponent: null })).toBeNull();
+    expect(
+      getLeaveConfirmKey({
+        ...ROOM,
+        mode: "matchmaking",
+        opponent: { left: true },
+      }),
+    ).toBeNull();
   });
 
   describe("copy room code", () => {

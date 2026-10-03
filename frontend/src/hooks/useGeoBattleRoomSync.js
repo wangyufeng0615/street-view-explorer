@@ -20,6 +20,41 @@ const FATAL_SYNC_FAILURES = 3;
 // The room no longer exists (404) or this session is no longer in it (403).
 const ROOM_GONE_STATUSES = new Set([403, 404]);
 
+// 后端 409 的错误原文是固定的服务层错误串，按它细分提示
+const CONFLICT_ERROR_KEYS = {
+  "geo battle room full": "geo_online.error_room_full",
+  "geo battle room closed": "geo_online.error_room_closed",
+  "geo battle already in another room": "geo_online.already_in_room",
+};
+
+/**
+ * 把联机接口的失败结果换成给用户看的翻译文案；后端原文只留在控制台。
+ * `notFoundKey` 让调用方区分"房间码不存在"和"已经不在房间里"。
+ */
+function getGeoBattleErrorMessage(
+  res,
+  t,
+  { notFoundKey = "geo_online.room_missing" } = {},
+) {
+  if (res?.error) console.warn("[geo-battle]", res.status ?? "", res.error);
+  switch (res?.status) {
+    case 0:
+      return t("geo_online.error_network");
+    case 400:
+      return t("geo_online.error_invalid_input");
+    case 403:
+      return t("geo_online.room_missing");
+    case 404:
+      return t(notFoundKey);
+    case 409:
+      return t(CONFLICT_ERROR_KEYS[res.error] || "geo_online.error_conflict");
+    case 429:
+      return t("geo_online.error_rate_limited");
+    default:
+      return t("geo_online.generic_error");
+  }
+}
+
 function isPageHidden() {
   return (
     typeof document !== "undefined" && document.visibilityState === "hidden"
@@ -95,7 +130,7 @@ function useGeoBattleRoomSync({ roomId, t, onRoomReset }) {
   const applyRoomResponse = useCallback(
     (response) => {
       if (!response.success || !response.data?.room) {
-        setActionError(response.error || t("geo_online.generic_error"));
+        setActionError(getGeoBattleErrorMessage(response, t));
         return false;
       }
       applyRoomSnapshot(response.data.room);
@@ -157,17 +192,23 @@ function useGeoBattleRoomSync({ roomId, t, onRoomReset }) {
       }
 
       if (ROOM_GONE_STATUSES.has(res.status)) {
+        console.warn("[geo-battle]", res.status, res.error);
         sync.rerun = false;
         setRoomGone(true);
         setRoom(null);
-        setFatalError(res.error || t("geo_online.room_missing"));
+        // 标题已经写了"房间不存在"，这里补充可能的原因
+        setFatalError(t("geo_online.room_gone_detail"));
         return false;
       }
 
+      // 轮询失败很常见，这里不打日志，只在连续失败后给出提示
+      let failureKey = "geo_online.generic_error";
+      if (res.status === 0) failureKey = "geo_online.error_network";
+      else if (res.status === 429) failureKey = "geo_online.error_rate_limited";
       setSyncFailures((prev) => {
         const next = prev + 1;
         if (next >= FATAL_SYNC_FAILURES && !roomRef.current) {
-          setFatalError(res.error || t("geo_online.room_missing"));
+          setFatalError(t(failureKey));
         }
         return next;
       });
@@ -282,6 +323,7 @@ function useGeoBattleRoomSync({ roomId, t, onRoomReset }) {
 
 export {
   useGeoBattleRoomSync,
+  getGeoBattleErrorMessage,
   SYNC_INTERVAL_PLAYING,
   SYNC_INTERVAL_IDLE,
   SYNC_INTERVAL_HIDDEN,

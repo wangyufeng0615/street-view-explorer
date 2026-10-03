@@ -4,7 +4,7 @@ const Toast = memo(({ message, visible }) => {
   if (!visible) return null;
 
   return (
-    <div style={styles.toastContainer}>
+    <div style={styles.toastContainer} role="status" aria-live="polite">
       <div style={styles.toast}>{message}</div>
     </div>
   );
@@ -17,6 +17,8 @@ const styles = {
     left: "50%",
     transform: "translateX(-50%)",
     zIndex: 2000,
+    // 手机上长句要能换行，不能撑出屏幕
+    maxWidth: "calc(100vw - 32px)",
     pointerEvents: "none",
   },
   toast: {
@@ -25,12 +27,11 @@ const styles = {
     padding: "12px 20px",
     borderRadius: "8px",
     fontSize: "14px",
-    fontFamily:
-      '"PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Helvetica, Arial, sans-serif',
+    fontFamily: "var(--font-sans)",
     fontWeight: "500",
     boxShadow: "0 4px 16px rgba(0, 0, 0, 0.2)",
     animation: "fadeInOut 3s ease-in-out",
-    whiteSpace: "nowrap",
+    textAlign: "center",
     backdropFilter: "blur(8px)",
   },
 };

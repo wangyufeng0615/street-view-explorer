@@ -172,6 +172,10 @@ function FinalResultOverlay({
       : room.me.total_score < (room.opponent?.total_score || 0)
         ? "lose"
         : "draw";
+  // 对手离开后，后端不会重置我的准备状态，但再来一局已经不可能，不能再显示"等待对手确认"
+  const waitingForRematch = Boolean(
+    room.me.is_ready && room.opponent && !room.opponent.left,
+  );
 
   return (
     <div className="geo-battle-controls geo-battle-controls--final">
@@ -222,16 +226,28 @@ function FinalResultOverlay({
             </div>
           ))}
         </div>
+        {waitingForRematch && (
+          <div className="geo-battle-rematch-status" role="status">
+            {t("geo_online.rematch_waiting")}
+          </div>
+        )}
         <div className="geo-battle-final-actions">
+          {/* 已准备时再点是取消准备，按钮文案要跟着变 */}
           <button
             type="button"
-            className="geo-battle-primary-btn"
+            className={
+              waitingForRematch
+                ? "geo-battle-secondary-btn"
+                : "geo-battle-primary-btn"
+            }
             disabled={!room.can_ready || actionBusy !== ""}
             onClick={onReady}
           >
             {actionBusy === "ready"
               ? t("geo_online.loading")
-              : t("geo_online.play_again")}
+              : waitingForRematch
+                ? t("geo_online.cancel_play_again")
+                : t("geo_online.play_again")}
           </button>
           <button
             type="button"

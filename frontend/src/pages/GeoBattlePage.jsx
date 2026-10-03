@@ -111,7 +111,9 @@ function GeoBattleRoomPage({ roomId }) {
       <div className="geo-battle-page">
         <div className="geo-battle-shell geo-battle-shell--error">
           <div className="geo-battle-title">{t("geo_online.room_missing")}</div>
-          <div className="geo-battle-banner">{fatalError}</div>
+          <div className="geo-battle-banner" role="alert">
+            {fatalError}
+          </div>
           <button
             type="button"
             className="geo-battle-primary-btn"
@@ -154,7 +156,9 @@ function GeoBattleRoomPage({ roomId }) {
         />
 
         {(actionError || fatalError) && (
-          <div className="geo-battle-banner">{actionError || fatalError}</div>
+          <div className="geo-battle-banner" role="alert">
+            {actionError || fatalError}
+          </div>
         )}
         {actionNotice && (
           <div className="geo-battle-notice">{actionNotice}</div>

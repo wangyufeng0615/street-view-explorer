@@ -169,12 +169,21 @@ describe("useGeoGameSatelliteZoom", () => {
 
     act(() => images[0].onerror());
     expect(dispatch).not.toHaveBeenCalled();
-    expect(result.current.imgError).toBe(true);
+    // 当前图仍然有效，不能被错误层盖住，也还能再试一次拉远
+    expect(result.current.imgError).toBe(false);
+    expect(result.current.zoomOutFailed).toBe(true);
+    expect(result.current.canZoomOut).toBe(true);
     expect(result.current.zoomTransitionLoading).toBe(false);
     expect(showFeedbackBubble).toHaveBeenCalledWith(
       "geo.feedback_image_error",
       "danger",
     );
+
+    images = [];
+    act(() => result.current.handleZoomOut());
+    expect(result.current.zoomOutFailed).toBe(false);
+    act(() => images[0].onload());
+    expect(dispatch).toHaveBeenCalledWith({ type: "ZOOM_OUT" });
   });
 
   it("does not zoom out past the minimum zoom", () => {

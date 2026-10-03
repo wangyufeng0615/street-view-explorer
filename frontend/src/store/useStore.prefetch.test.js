@@ -367,7 +367,7 @@ describe("using a prefetched place", () => {
     await flush();
     expect(result.success).toBe(true);
     expect(console.warn).toHaveBeenCalled();
-    expect(useStore.getState().location).toEqual(NEXT);
+    expect(useStore.getState().location).toMatchObject(NEXT);
   });
 
   it("keeps streaming a narration that is still being written into the new place", async () => {
@@ -442,7 +442,7 @@ describe("using a prefetched place", () => {
     expect(stream.signal.aborted).toBe(true);
     await next;
     expect(normalRandomCalls()).toHaveLength(1);
-    expect(useStore.getState().location).toEqual(OTHER);
+    expect(useStore.getState().location).toMatchObject(OTHER);
 
     stream.push("不该出现");
     stream.finish("不该出现");
@@ -526,7 +526,7 @@ describe("falling back to the normal path", () => {
     await useStore.getState().loadRandomLocation();
     expect(normalRandomCalls()).toHaveLength(1);
     expect(normalRandomCalls()[0][0]).toBe(lang);
-    expect(useStore.getState().location).toEqual(OTHER);
+    expect(useStore.getState().location).toMatchObject(OTHER);
   });
 
   it("drops a prefetch whose narration failed", async () => {
@@ -540,7 +540,7 @@ describe("falling back to the normal path", () => {
 
     await useStore.getState().loadRandomLocation();
     expect(normalRandomCalls()).toHaveLength(1);
-    expect(useStore.getState().location).toEqual(OTHER);
+    expect(useStore.getState().location).toMatchObject(OTHER);
     expect(apiMocks.markPrefetchedVisit).not.toHaveBeenCalled();
     // 失败后不自动重试，等下一次满足条件
     expect(prefetchCalls()).toHaveLength(1);
@@ -572,7 +572,7 @@ describe("falling back to the normal path", () => {
 
     await useStore.getState().loadRandomLocation();
     expect(prefetchSignal.aborted).toBe(true);
-    expect(useStore.getState().location).toEqual(OTHER);
+    expect(useStore.getState().location).toMatchObject(OTHER);
   });
 
   it("ignores a prefetch older than 15 minutes", async () => {
@@ -587,7 +587,7 @@ describe("falling back to the normal path", () => {
     const now = Date.now();
     vi.spyOn(Date, "now").mockReturnValue(now + 15 * 60 * 1000 + 1);
     await useStore.getState().loadRandomLocation();
-    expect(useStore.getState().location).toEqual(OTHER);
+    expect(useStore.getState().location).toMatchObject(OTHER);
     expect(normalRandomCalls()).toHaveLength(1);
   });
 
@@ -620,6 +620,6 @@ describe("falling back to the normal path", () => {
     useStore.getState().stopPrefetch();
     expect(streams[0].signal.aborted).toBe(true);
     await useStore.getState().loadRandomLocation();
-    expect(useStore.getState().location).toEqual(OTHER);
+    expect(useStore.getState().location).toMatchObject(OTHER);
   });
 });

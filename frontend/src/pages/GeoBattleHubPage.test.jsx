@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import React from "react";
 
 const navigate = vi.fn();
@@ -26,6 +26,7 @@ vi.mock("../services/api", () => ({
 import {
   cancelGeoBattleMatchmaking,
   getGeoBattleMatchmakingStatus,
+  joinGeoBattleRoom,
 } from "../services/api";
 import { GeoBattleHubPage } from "./GeoBattleHubPage";
 
@@ -100,5 +101,49 @@ describe("GeoBattleHubPage matchmaking cleanup", () => {
     });
     unmount();
     expect(cancelGeoBattleMatchmaking).not.toHaveBeenCalled();
+  });
+});
+
+describe("GeoBattleHubPage errors", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(getGeoBattleMatchmakingStatus).mockResolvedValue({
+      success: true,
+      data: { status: "idle" },
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("shows a translated alert instead of the raw backend error", async () => {
+    vi.mocked(joinGeoBattleRoom).mockResolvedValue({
+      success: false,
+      status: 404,
+      error: "geo battle room not found",
+    });
+    render(<GeoBattleHubPage />);
+    await act(async () => {});
+
+    fireEvent.change(
+      screen.getByPlaceholderText("geo_online.room_code_placeholder"),
+      { target: { value: "abc234" } },
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByText("geo_online.join_room"));
+    });
+
+    expect(joinGeoBattleRoom).toHaveBeenCalledWith(
+      "ABC234",
+      expect.any(String),
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "geo_online.error_room_not_found",
+    );
+    expect(
+      screen.queryByText("geo battle room not found"),
+    ).not.toBeInTheDocument();
   });
 });

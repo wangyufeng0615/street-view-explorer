@@ -3,12 +3,12 @@
 .geo-game {
   width: 100vw;
   height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   background: #f7f5f0;
   overflow: hidden;
-  font-family:
-    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: var(--font-sans);
 }
 
 .geo-game--welcome {
@@ -225,6 +225,27 @@
   color: #7c2d12;
   box-shadow: 0 14px 34px rgba(154, 52, 18, 0.24);
   backdrop-filter: blur(10px);
+}
+
+.geo-zoom-out-note {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  z-index: 6;
+  box-sizing: border-box;
+  width: max-content;
+  max-width: calc(100% - 24px);
+  transform: translateX(-50%);
+  padding: 8px 12px;
+  border: 1px solid rgba(249, 115, 22, 0.35);
+  border-radius: 10px;
+  background: rgba(255, 247, 237, 0.95);
+  color: #7c2d12;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.4;
+  text-align: center;
+  pointer-events: none;
 }
 
 .geo-satellite-controls span {
@@ -481,6 +502,7 @@
 }
 
 .geo-welcome-page {
+  box-sizing: border-box;
   flex: 1;
   min-height: 100%;
   display: flex;
@@ -497,6 +519,26 @@
   border: 1px solid rgba(23, 32, 51, 0.1);
   border-radius: 14px;
   box-shadow: 0 12px 28px rgba(23, 32, 51, 0.06);
+}
+
+.geo-welcome-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: -8px 0 16px -8px;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: #0e7490;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.geo-welcome-back:hover {
+  background: rgba(14, 116, 144, 0.08);
 }
 
 .geo-modal-header {
@@ -527,7 +569,7 @@
   font-weight: 700;
   color: #1a2b3c;
   margin-bottom: 8px;
-  font-family: Georgia, "Noto Serif SC", serif;
+  font-family: var(--font-serif);
 }
 
 .geo-welcome-card .geo-modal-title {
@@ -1020,6 +1062,12 @@
   margin-bottom: 22px;
 }
 
+.geo-gameover-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: 10px;
+}
+
 .geo-gameover-round {
   display: grid;
   grid-template-columns: minmax(150px, 1.2fr) minmax(180px, 1.1fr) minmax(
@@ -1129,7 +1177,8 @@
 
   .geo-gameover-scoreboard--duel,
   .geo-gameover-round,
-  .geo-gameover-round-scores--duel {
+  .geo-gameover-round-scores--duel,
+  .geo-gameover-actions {
     grid-template-columns: 1fr;
   }
 

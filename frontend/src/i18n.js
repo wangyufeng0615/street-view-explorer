@@ -45,4 +45,13 @@ i18n
     },
   });
 
+// 浏览器按 <html lang> 为中文挑选字体和字形（简体/日文写法），读屏器也按它发音；
+// 跟随界面语言更新，避免中文界面仍按英文处理
+function syncDocumentLanguage(lng) {
+  if (typeof document === "undefined" || !lng) return;
+  document.documentElement.lang = lng.startsWith("zh") ? "zh-CN" : "en";
+}
+syncDocumentLanguage(i18n.resolvedLanguage || i18n.language);
+i18n.on("languageChanged", syncDocumentLanguage);
+
 export default i18n;

@@ -17,7 +17,7 @@ function detectLanguage(text) {
   return totalChars > 0 && chineseChars.length / totalChars > 0.3 ? "zh" : "en";
 }
 
-// 整行的 [场景白描/心理活动] / 【…】 单独排版成旁注，可出现在文中任意位置
+// 整行的 [场景白描/心理活动] / 【…】 / ［…］ 单独排版成旁注，可出现在文中任意位置
 function splitNarration(text) {
   const paragraphs = (text || "")
     .split("\n")
@@ -25,7 +25,7 @@ function splitNarration(text) {
     .filter(Boolean);
 
   const items = paragraphs.map((paragraph) => {
-    const match = paragraph.match(/^[[【](.+)[\]】]$/);
+    const match = paragraph.match(/^[[【［](.+)[\]】］]$/);
     return match
       ? { type: "scene", text: match[1].trim() }
       : { type: "paragraph", text: paragraph };
@@ -63,28 +63,10 @@ const CompassGlyph = ({ className, needleClassName }) => (
   </svg>
 );
 
-const SearchGlyph = () => (
-  <svg
-    width="13"
-    height="13"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2.3"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-hidden="true"
-  >
-    <circle cx="10.5" cy="10.5" r="7" />
-    <line x1="20.5" y1="20.5" x2="15.8" y2="15.8" />
-  </svg>
-);
-
 const ThinkingIndicator = memo(function ThinkingIndicator({
   title,
   variant = "primary",
   elementRef = null,
-  showTitle = true,
 }) {
   return (
     <div
@@ -100,15 +82,7 @@ const ThinkingIndicator = memo(function ThinkingIndicator({
           <CompassGlyph />
         </div>
       </div>
-      {showTitle ? (
-        <div className="atlas-thinking-title">{title}</div>
-      ) : (
-        <div className="atlas-thinking-trail" aria-hidden="true">
-          <span />
-          <span />
-          <span />
-        </div>
-      )}
+      <div className="atlas-thinking-title">{title}</div>
     </div>
   );
 });
@@ -171,9 +145,10 @@ const NarrationBody = memo(function NarrationBody({
   );
 });
 
+const DEFAULT_VIEW = { heading: 0, pitch: 0, fov: 90 };
+
 const AiDescription = memo(
   function AiDescription({
-    voiceControl = null,
     isLoading,
     error,
     description,
@@ -181,8 +156,8 @@ const AiDescription = memo(
     researchStatus = null,
     retries,
     panoId,
-    heading = 0,
-    view = null,
+    // 点"再多讲讲"时才读取当前视角，拖动街景时这里不必跟着重渲染
+    getView = null,
     onRetry,
   }) {
     const { t, i18n } = useTranslation();
@@ -199,16 +174,12 @@ const AiDescription = memo(
     const shouldShowLoading = !description && (isLoading || (panoId && !error));
     const activeLanguage = i18n.resolvedLanguage || i18n.language || "en";
     const isChinese = activeLanguage.startsWith("zh");
-    const sectionTitle = isChinese ? "Atlas 说…" : "Atlas says...";
     const citationsLabel = isChinese ? "出处" : "Sources";
     const unverifiedLabel = isChinese
       ? "本次检索状态未获上游确认，请结合出处核对。"
       : "Search execution was not confirmed by the provider; check the sources.";
     const primaryStatusTitle =
       retries > 0 ? t("ai.retrying", { retries }) : t("ai.thinkingTitle");
-    const visibleSectionTitle = shouldShowLoading
-      ? primaryStatusTitle
-      : sectionTitle;
 
     const handleTellMeMore = useCallback(async () => {
       if (!panoId || isLoadingDetailed || hasRequestedDetailed) return;
@@ -233,7 +204,7 @@ const AiDescription = memo(
           panoId,
           activeLanguage,
           controller.signal,
-          view || { heading, pitch: 0, fov: 90 },
+          getView?.() || DEFAULT_VIEW,
           (delta) => {
             if (!controller.signal.aborted) {
               setDetailedDescription((current) => `${current || ""}${delta}`);
@@ -249,10 +220,12 @@ const AiDescription = memo(
             result.data?.research_status || "unverified",
           );
         } else {
-          setDetailedError(result.error || t("ai.retryDetailedDescription"));
+          if (result.error) console.warn("详细介绍失败:", result.error);
+          setDetailedError(t("ai.detailedFailed"));
         }
       } catch (err) {
-        setDetailedError(err.message || "获取详细介绍失败");
+        console.warn("详细介绍失败:", err);
+        setDetailedError(t("ai.detailedFailed"));
       } finally {
         if (detailedAbortRef.current === controller) {
           detailedAbortRef.current = null;
@@ -262,11 +235,10 @@ const AiDescription = memo(
     }, [
       description,
       hasRequestedDetailed,
-      heading,
+      getView,
       activeLanguage,
       isLoadingDetailed,
       panoId,
-      view,
       t,
     ]);
 
@@ -287,7 +259,7 @@ const AiDescription = memo(
           panoId,
           activeLanguage,
           controller.signal,
-          view || { heading, pitch: 0, fov: 90 },
+          getView?.() || DEFAULT_VIEW,
           (delta) => {
             if (!controller.signal.aborted) {
               setDetailedDescription((current) => `${current || ""}${delta}`);
@@ -304,17 +276,19 @@ const AiDescription = memo(
           );
           setDetailedError(null);
         } else {
-          setDetailedError(result.error || t("ai.retryDetailedDescription"));
+          if (result.error) console.warn("详细介绍失败:", result.error);
+          setDetailedError(t("ai.detailedFailed"));
         }
       } catch (err) {
-        setDetailedError(err.message || "获取详细介绍失败");
+        console.warn("详细介绍失败:", err);
+        setDetailedError(t("ai.detailedFailed"));
       } finally {
         if (detailedAbortRef.current === controller) {
           detailedAbortRef.current = null;
           setIsLoadingDetailed(false);
         }
       }
-    }, [activeLanguage, heading, isLoadingDetailed, panoId, t, view]);
+    }, [activeLanguage, getView, isLoadingDetailed, panoId, t]);
 
     useEffect(() => {
       detailedAbortRef.current?.abort();
@@ -349,22 +323,15 @@ const AiDescription = memo(
 
     return (
       <div className="ai-description">
-        <div className="ai-description-header">
-          <div className="ai-description-title">
-            <CompassGlyph className="ai-description-glyph" />
-            <span>{visibleSectionTitle}</span>
-          </div>
-          {voiceControl && (
-            <div className="ai-description-voice">{voiceControl}</div>
-          )}
-        </div>
-
         <div
           className="ai-description-body"
-          aria-busy={shouldShowLoading || isLoadingDetailed}
+          // 讲解还在流式追加时标记忙碌，读屏软件等写完再整段播报
+          aria-busy={
+            Boolean(isLoading) || shouldShowLoading || isLoadingDetailed
+          }
         >
           {shouldShowLoading ? (
-            <ThinkingIndicator title={primaryStatusTitle} showTitle={false} />
+            <ThinkingIndicator title={primaryStatusTitle} />
           ) : error ? (
             <div className="ai-error">
               <div className="ai-error-message" role="alert">
@@ -398,9 +365,6 @@ const AiDescription = memo(
                     onClick={handleTellMeMore}
                     disabled={isLoadingDetailed}
                   >
-                    <span className="button-icon">
-                      <SearchGlyph />
-                    </span>
                     <span className="button-text">
                       {isLoadingDetailed
                         ? t("ai.loadingDetailedDescription")
@@ -463,11 +427,8 @@ const AiDescription = memo(
     prevProps.researchStatus === nextProps.researchStatus &&
     prevProps.retries === nextProps.retries &&
     prevProps.panoId === nextProps.panoId &&
-    prevProps.heading === nextProps.heading &&
-    prevProps.view?.panoId === nextProps.view?.panoId &&
-    prevProps.view?.heading === nextProps.view?.heading &&
-    prevProps.view?.pitch === nextProps.view?.pitch &&
-    prevProps.view?.fov === nextProps.view?.fov,
+    prevProps.getView === nextProps.getView &&
+    prevProps.onRetry === nextProps.onRetry,
 );
 
 export default AiDescription;

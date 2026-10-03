@@ -7,6 +7,7 @@ import {
   deleteExplorationPreference,
   lookupLocation,
   markPrefetchedVisit,
+  getLocalizedAddress,
 } from "../services/api";
 import i18n from "../i18n";
 import { PREFETCH_NEXT_ENABLED, PREFETCH_TTL_MS } from "./prefetchConfig";
@@ -64,17 +65,43 @@ function getRateLimitMessage() {
     : "Too fast. Please wait a second and try again";
 }
 
-function locationFromResponse(resp, fallbackError) {
+// 后端的错误文案只有中文；界面按状态码给出当前语言的提示，原文只进控制台
+function locationErrorMessage(resp, kind) {
+  if (resp?.status === 429) return i18n.t("error.tooManyRequests");
+  if (resp?.status === 0) return resp.error;
+  if (resp?.status === 404 && kind === "lookup") {
+    return i18n.t("mapPicker.failed");
+  }
+  return i18n.t(
+    kind === "lookup" ? "error.lookupFailed" : "error.locationFailed",
+  );
+}
+
+// 偏好接口在 200 响应里返回的 error 已按界面语言写好；其他失败用通用提示
+function preferenceErrorMessage(resp) {
+  if (resp?.status === 200 && resp.error) return resp.error;
+  if (resp?.status === 429) return i18n.t("error.tooManyRequests");
+  if (resp?.status === 0 && resp.error) return resp.error;
+  return i18n.t("error.preferenceFailed");
+}
+
+// kind: "random" 随机出发，"lookup" 按坐标找街景
+function locationFromResponse(resp, kind, language) {
   if (!resp?.success || !resp.data) {
-    throw new Error(resp?.error || fallbackError);
+    if (resp?.error) console.warn("位置请求失败:", resp.status, resp.error);
+    throw new Error(locationErrorMessage(resp, kind));
   }
   const latitude = Number(resp.data.latitude);
   const longitude = Number(resp.data.longitude);
   if (isNaN(latitude) || isNaN(longitude)) {
-    throw new Error("无效的坐标数据");
+    throw new Error(locationErrorMessage(null, kind));
   }
-  return { ...resp.data, latitude, longitude };
+  // address_language records which language the address fields are in, so a
+  // later UI language switch knows to fetch them again.
+  return { ...resp.data, latitude, longitude, address_language: language };
 }
+
+const ADDRESS_FIELDS = ["formatted_address", "country", "country_code", "city"];
 
 function appliedLocationState(locationData) {
   return {
@@ -121,7 +148,7 @@ async function runPrefetch(slot) {
       signal,
     });
     if (!isPrefetchCurrent(slot)) return;
-    slot.location = locationFromResponse(resp, "预取位置失败");
+    slot.location = locationFromResponse(resp, "random", slot.language);
 
     const result = await streamLocationDescription(
       slot.location.pano_id,
@@ -376,7 +403,11 @@ const useStore = create(
             return { success: false, superseded: true, error: SUPERSEDED };
           }
 
-          const locationData = locationFromResponse(resp, "获取位置失败");
+          const locationData = locationFromResponse(
+            resp,
+            "random",
+            currentLanguage,
+          );
           set(appliedLocationState(locationData));
           return { success: true, data: locationData };
         } catch (error) {
@@ -384,16 +415,19 @@ const useStore = create(
             return { success: false, superseded: true, error: SUPERSEDED };
           }
           console.error("加载位置失败:", error);
-          const message = error.message || "获取位置失败，请重试";
+          const message = error.message || i18n.t("error.locationFailed");
           if (!preserveLocation) {
             set({ locationError: message });
           }
           return { success: false, error: message };
         } finally {
-          set({
-            isLocationLoading: false,
-            isLoadingLocation: false,
-          });
+          // 已被新请求或直接应用的地点作废时，加载状态归新的那一方管
+          if (requestId === locationRequestSequence) {
+            set({
+              isLocationLoading: false,
+              isLoadingLocation: false,
+            });
+          }
         }
       },
 
@@ -422,7 +456,11 @@ const useStore = create(
             return { success: false, superseded: true, error: SUPERSEDED };
           }
 
-          const locationData = locationFromResponse(resp, "查找位置失败");
+          const locationData = locationFromResponse(
+            resp,
+            "lookup",
+            currentLanguage,
+          );
           set(appliedLocationState(locationData));
           return { success: true, data: locationData };
         } catch (error) {
@@ -430,16 +468,19 @@ const useStore = create(
             return { success: false, superseded: true, error: SUPERSEDED };
           }
           console.error("从URL加载位置失败:", error);
-          const message = error.message || "查找位置失败，请重试";
+          const message = error.message || i18n.t("error.lookupFailed");
           if (!preserveLocation) {
             set({ locationError: message });
           }
           return { success: false, error: message };
         } finally {
-          set({
-            isLocationLoading: false,
-            isLoadingLocation: false,
-          });
+          // 已被新请求或直接应用的地点作废时，加载状态归新的那一方管
+          if (requestId === locationRequestSequence) {
+            set({
+              isLocationLoading: false,
+              isLoadingLocation: false,
+            });
+          }
         }
       },
 
@@ -472,7 +513,15 @@ const useStore = create(
             return { success: false, superseded: true, error: SUPERSEDED };
           }
 
-          const locationData = locationFromResponse(resp, "查找位置失败");
+          const locationData = locationFromResponse(
+            resp,
+            "lookup",
+            currentLanguage,
+          );
+          // 点到当前全景附近会找回同一个全景：保持原样，不清空讲解也不重新着陆
+          if (locationData.pano_id === get().location?.pano_id) {
+            return { success: true, data: get().location, unchanged: true };
+          }
           set(appliedLocationState(locationData));
 
           return {
@@ -480,23 +529,73 @@ const useStore = create(
             data: locationData,
           };
         } catch (error) {
+          if (requestId !== locationRequestSequence) {
+            return { success: false, superseded: true, error: SUPERSEDED };
+          }
           console.error("从地图查找位置失败:", error);
           return {
             success: false,
-            error: error.message || "查找位置失败，请重试",
+            error: error.message || i18n.t("error.lookupFailed"),
           };
         } finally {
-          set({
-            isMapLocationLoading: false,
-            isLoadingLocation: false,
-          });
+          if (requestId === locationRequestSequence) {
+            set({
+              isMapLocationLoading: false,
+              isLoadingLocation: false,
+            });
+          }
         }
       },
 
       // 语音地点搜索等已拿到结果的导航：直接应用，并让仍在进行的加载作废
       applyNavigatedLocation: (locationData) => {
         locationRequestSequence += 1;
-        set(appliedLocationState(locationData));
+        // 进行中的加载从这一刻起作废，它结束时不会再动加载状态，这里直接收掉
+        set({
+          isLocationLoading: false,
+          isLoadingLocation: false,
+          isMapLocationLoading: false,
+        });
+        // 已经在这个全景：不清空讲解，否则全景没变、讲解也不会重新加载
+        if (
+          locationData?.pano_id &&
+          locationData.pano_id === get().location?.pano_id
+        ) {
+          return;
+        }
+        set(
+          appliedLocationState({
+            address_language: getActiveLanguage(),
+            ...locationData,
+          }),
+        );
+      },
+
+      // 切换界面语言后，只把当前地点的地址换成新语言；不换全景、不重新加载讲解
+      relocalizeLocationAddress: async () => {
+        const location = get().location;
+        const language = getActiveLanguage();
+        if (!location?.pano_id || location.address_language === language) {
+          return;
+        }
+        const resp = await getLocalizedAddress(
+          location.latitude,
+          location.longitude,
+          language,
+        );
+        const latest = get().location;
+        if (
+          !resp.success ||
+          latest?.pano_id !== location.pano_id ||
+          getActiveLanguage() !== language
+        ) {
+          return;
+        }
+        const updated = { ...latest, address_language: language };
+        for (const field of ADDRESS_FIELDS) {
+          if (resp.data?.[field]) updated[field] = resp.data[field];
+        }
+        set({ location: updated, currentLocationRef: updated });
       },
 
       // Description Actions
@@ -754,7 +853,7 @@ const useStore = create(
               ? await setExplorationPreference(savedInterest)
               : await deleteExplorationPreference();
             if (!response.success)
-              throw new Error(response.error || "同步探索偏好失败");
+              throw new Error(preferenceErrorMessage(response));
             set({
               explorationMode: custom
                 ? EXPLORATION_MODES.CUSTOM
@@ -784,7 +883,7 @@ const useStore = create(
           try {
             const response = await deleteExplorationPreference();
             if (!response.success)
-              throw new Error(response.error || "删除探索偏好失败");
+              throw new Error(preferenceErrorMessage(response));
             writeLocalStorage(EXPLORATION_MODE_KEY, EXPLORATION_MODES.RANDOM);
             removeLocalStorage(EXPLORATION_INTEREST_KEY);
             set({
@@ -810,10 +909,7 @@ const useStore = create(
 
         // 检查限流
         if (now - state.lastRefreshTime < RATE_LIMIT_MS) {
-          const waitTime = Math.ceil(
-            (RATE_LIMIT_MS - (now - state.lastRefreshTime)) / 1000,
-          );
-          set({ preferenceError: `请等待 ${waitTime} 秒后再试` });
+          set({ preferenceError: getRateLimitMessage() });
           return;
         }
 
@@ -841,12 +937,12 @@ const useStore = create(
             // 自动刷新位置
             get().loadRandomLocation(true);
           } else {
-            throw new Error(resp.error || "保存失败");
+            throw new Error(preferenceErrorMessage(resp));
           }
         } catch (error) {
           console.error("保存探索偏好失败:", error);
           set({
-            preferenceError: error.message || "保存失败，请重试",
+            preferenceError: error.message || i18n.t("error.preferenceFailed"),
           });
         } finally {
           set({ isSavingPreference: false });

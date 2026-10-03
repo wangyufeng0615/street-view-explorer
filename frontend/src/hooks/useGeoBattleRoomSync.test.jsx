@@ -10,6 +10,7 @@ import {
   SYNC_INTERVAL_HIDDEN,
   SYNC_INTERVAL_IDLE,
   SYNC_INTERVAL_PLAYING,
+  getGeoBattleErrorMessage,
   useGeoBattleRoomSync,
 } from "./useGeoBattleRoomSync";
 
@@ -61,10 +62,12 @@ describe("useGeoBattleRoomSync", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.mocked(getGeoBattleRoom).mockReset();
+    vi.spyOn(console, "warn").mockImplementation(() => {});
   });
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.restoreAllMocks();
     delete document.visibilityState;
   });
 
@@ -87,7 +90,8 @@ describe("useGeoBattleRoomSync", () => {
 
     await advance(SYNC_INTERVAL_IDLE);
     expect(result.current.syncFailures).toBe(3);
-    expect(result.current.fatalError).toBe("gone");
+    // 后端原文不展示给用户
+    expect(result.current.fatalError).toBe("geo_online.generic_error");
   });
 
   it("polls faster while playing", async () => {
@@ -129,7 +133,7 @@ describe("useGeoBattleRoomSync", () => {
         result.current.applyRoomResponse({ success: false, error: "nope" }),
       ).toBe(false);
     });
-    expect(result.current.actionError).toBe("nope");
+    expect(result.current.actionError).toBe("geo_online.generic_error");
   });
 
   it("refreshes right after the phase deadline using the server clock offset", async () => {
@@ -294,7 +298,7 @@ describe("useGeoBattleRoomSync", () => {
     });
     await advance(SYNC_INTERVAL_IDLE);
     expect(result.current.room).toBeNull();
-    expect(result.current.fatalError).toBe("room not found");
+    expect(result.current.fatalError).toBe("geo_online.room_gone_detail");
 
     await advance(SYNC_INTERVAL_IDLE * 3);
     expect(getGeoBattleRoom).toHaveBeenCalledTimes(2);
@@ -310,16 +314,20 @@ describe("useGeoBattleRoomSync", () => {
     await flush();
 
     act(() => {
-      result.current.applyRoomResponse({ success: false, error: "too late" });
+      result.current.applyRoomResponse({
+        success: false,
+        status: 409,
+        error: "geo battle invalid phase",
+      });
     });
-    expect(result.current.actionError).toBe("too late");
+    expect(result.current.actionError).toBe("geo_online.error_conflict");
 
     // Same phase and round: the error still applies.
     vi.mocked(getGeoBattleRoom).mockResolvedValueOnce(
       ok(roomAt(2, { phase: "playing", round: { index: 1 } })),
     );
     await advance(SYNC_INTERVAL_PLAYING);
-    expect(result.current.actionError).toBe("too late");
+    expect(result.current.actionError).toBe("geo_online.error_conflict");
 
     vi.mocked(getGeoBattleRoom).mockResolvedValueOnce(
       ok(roomAt(3, { phase: "reveal", round: { index: 1 } })),
@@ -394,5 +402,65 @@ describe("useGeoBattleRoomSync", () => {
       expect(result.current.remainingSeconds).toBeLessThanOrEqual(previous);
       previous = result.current.remainingSeconds;
     }
+  });
+});
+
+describe("getGeoBattleErrorMessage", () => {
+  beforeEach(() => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it.each([
+    [{ status: 0, error: "Failed to fetch" }, "geo_online.error_network"],
+    [
+      { status: 400, error: "geo battle invalid nickname" },
+      "geo_online.error_invalid_input",
+    ],
+    [
+      { status: 403, error: "geo battle player not in room" },
+      "geo_online.room_missing",
+    ],
+    [
+      { status: 404, error: "geo battle room not found" },
+      "geo_online.room_missing",
+    ],
+    [
+      { status: 409, error: "geo battle room full" },
+      "geo_online.error_room_full",
+    ],
+    [
+      { status: 409, error: "geo battle room closed" },
+      "geo_online.error_room_closed",
+    ],
+    [
+      { status: 409, error: "geo battle already in another room" },
+      "geo_online.already_in_room",
+    ],
+    [
+      { status: 409, error: "geo battle invalid phase" },
+      "geo_online.error_conflict",
+    ],
+    [{ status: 429, error: "rate limited" }, "geo_online.error_rate_limited"],
+    [{ status: 500, error: "boom" }, "geo_online.generic_error"],
+    [{ error: "thrown" }, "geo_online.generic_error"],
+  ])("maps %o to a translated message", (res, key) => {
+    expect(getGeoBattleErrorMessage({ success: false, ...res }, t)).toBe(key);
+  });
+
+  it("lets the caller choose the not-found message", () => {
+    expect(
+      getGeoBattleErrorMessage({ success: false, status: 404 }, t, {
+        notFoundKey: "geo_online.error_room_not_found",
+      }),
+    ).toBe("geo_online.error_room_not_found");
+  });
+
+  it("keeps the raw backend error in the console only", () => {
+    getGeoBattleErrorMessage({ success: false, status: 500, error: "boom" }, t);
+    expect(console.warn).toHaveBeenCalledWith("[geo-battle]", 500, "boom");
   });
 });

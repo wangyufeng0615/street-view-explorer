@@ -1,5 +1,7 @@
 import React from "react";
 import { captureException } from "../services/sentryLazy";
+// 边界可能在 i18n 的 React 上下文之外渲染，直接用实例取文案
+import i18n from "../i18n";
 
 class AppErrorBoundary extends React.Component {
   constructor(props) {
@@ -46,21 +48,29 @@ class AppErrorBoundary extends React.Component {
 
   render() {
     if (this.state.hasError) {
+      // 中文句子之间不加空格
+      const sentenceGap = (i18n.resolvedLanguage || i18n.language || "")
+        .toLowerCase()
+        .startsWith("zh")
+        ? ""
+        : " ";
       return (
         <div style={styles.container}>
           <div style={styles.content}>
             <div style={styles.icon}>⚠️</div>
-            <h1 style={styles.title}>Something went wrong</h1>
+            <h1 style={styles.title}>{i18n.t("error.somethingWentWrong")}</h1>
             <p style={styles.message}>
-              We encountered an unexpected error.
-              {this.state.reportComplete && " The error has been reported."}
-              {this.state.isReporting && " Reporting error..."}
+              {i18n.t("error.boundary_message")}
+              {this.state.reportComplete &&
+                `${sentenceGap}${i18n.t("error.boundary_reported")}`}
+              {this.state.isReporting &&
+                `${sentenceGap}${i18n.t("error.boundary_reporting")}`}
             </p>
 
             {process.env.NODE_ENV === "development" && this.state.error && (
               <details style={styles.details}>
                 <summary style={styles.summary}>
-                  Error Details (Dev Only)
+                  {i18n.t("error.boundary_details")}
                 </summary>
                 <pre style={styles.errorText}>
                   {this.state.error.toString()}
@@ -70,7 +80,7 @@ class AppErrorBoundary extends React.Component {
             )}
 
             <button style={styles.button} onClick={this.handleReload}>
-              Reload Page
+              {i18n.t("error.boundary_reload")}
             </button>
           </div>
         </div>
@@ -89,8 +99,7 @@ const styles = {
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "#f5f5f5",
-    fontFamily:
-      '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+    fontFamily: "var(--font-sans)",
   },
   content: {
     textAlign: "center",

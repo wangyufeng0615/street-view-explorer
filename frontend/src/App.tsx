@@ -7,6 +7,7 @@ import {
   useLocation,
   type Location,
 } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import HomePage from "./pages/HomePage";
 import FootprintPage from "./pages/FootprintPage";
 import { getOrCreateSessionId } from "./utils/session";
@@ -23,6 +24,34 @@ function LegacyGeoRedirect() {
 
   return (
     <Navigate to={`${nextPath}${location.search}${location.hash}`} replace />
+  );
+}
+
+// 移动端浏览器工具栏会盖住 100vh 的底部，支持时改用 100dvh；
+// 内联样式写不了同一属性的两行回退，只能在这里判断一次
+const FULL_VIEWPORT_HEIGHT =
+  typeof CSS !== "undefined" && CSS.supports?.("height", "100dvh")
+    ? "100dvh"
+    : "100vh";
+
+// 懒加载页面的占位；背景和各页面一致，避免切换时闪色
+function RouteFallback() {
+  const { t } = useTranslation();
+  return (
+    <div
+      style={{
+        width: "100%",
+        height: "100%",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "#f7f5f0",
+        color: "#4b5563",
+        fontSize: "14px",
+      }}
+    >
+      {t("common.loading")}
+    </div>
   );
 }
 
@@ -58,7 +87,7 @@ function AppRoutes() {
       <div
         style={{
           width: "100vw",
-          height: "100vh",
+          height: FULL_VIEWPORT_HEIGHT,
           margin: 0,
           padding: 0,
           overflow: "hidden",
@@ -75,24 +104,7 @@ function AppRoutes() {
           <Route
             path="/agent"
             element={
-              <Suspense
-                fallback={
-                  <div
-                    style={{
-                      width: "100%",
-                      height: "100%",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      background: "#0a0a0f",
-                      color: "#d1d5db",
-                      fontSize: "14px",
-                    }}
-                  >
-                    Loading agent journey...
-                  </div>
-                }
-              >
+              <Suspense fallback={<RouteFallback />}>
                 <AgentPage />
               </Suspense>
             }
@@ -100,24 +112,7 @@ function AppRoutes() {
           <Route
             path="/guess"
             element={
-              <Suspense
-                fallback={
-                  <div
-                    style={{
-                      width: "100%",
-                      height: "100%",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      background: "#f7f5f0",
-                      color: "#4b5563",
-                      fontSize: "14px",
-                    }}
-                  >
-                    Loading...
-                  </div>
-                }
-              >
+              <Suspense fallback={<RouteFallback />}>
                 <GeoGamePage />
               </Suspense>
             }
@@ -125,24 +120,7 @@ function AppRoutes() {
           <Route
             path="/guess/online"
             element={
-              <Suspense
-                fallback={
-                  <div
-                    style={{
-                      width: "100%",
-                      height: "100%",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      background: "#f7f5f0",
-                      color: "#4b5563",
-                      fontSize: "14px",
-                    }}
-                  >
-                    Loading...
-                  </div>
-                }
-              >
+              <Suspense fallback={<RouteFallback />}>
                 <GeoBattlePage />
               </Suspense>
             }
@@ -150,24 +128,7 @@ function AppRoutes() {
           <Route
             path="/guess/online/:roomId"
             element={
-              <Suspense
-                fallback={
-                  <div
-                    style={{
-                      width: "100%",
-                      height: "100%",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      background: "#f7f5f0",
-                      color: "#4b5563",
-                      fontSize: "14px",
-                    }}
-                  >
-                    Loading...
-                  </div>
-                }
-              >
+              <Suspense fallback={<RouteFallback />}>
                 <GeoBattlePage />
               </Suspense>
             }

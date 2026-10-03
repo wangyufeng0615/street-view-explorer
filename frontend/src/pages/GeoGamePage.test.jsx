@@ -37,6 +37,7 @@ global.fetch = vi.fn().mockResolvedValue({
 });
 
 import GeoGamePage, { getGameOverAtlasMessage } from "./GeoGamePage";
+import { GameOverModal } from "../components/GeoGameResults";
 import { loadGoogleMapsScript } from "../utils/googleMaps";
 import { getRandomLocation } from "../services/api";
 
@@ -180,6 +181,46 @@ describe("GeoGamePage", () => {
     expect(getGameOverAtlasMessage(state, t, 8500, 9200)).toBe(
       "mixed:London|second:Reykjavik|rough:Patagonia|score:8,500 pts|lose",
     );
+  });
+
+  it("goes back home from the welcome screen", () => {
+    render(<GeoGamePage />);
+    fireEvent.click(screen.getByRole("button", { name: /geo\.back_home/ }));
+    expect(navigate).toHaveBeenCalledWith("/");
+  });
+
+  it("shows the game-over summary as a named dialog with a way home", () => {
+    const onHome = vi.fn();
+    const onRestart = vi.fn();
+    const onNext = vi.fn();
+    const state = {
+      aiEnabled: false,
+      scores: Array.from({ length: 5 }, (_, i) => ({
+        playerScore: 1000,
+        distance: 500,
+        zoomSteps: 1,
+        locationLabel: `Place ${i + 1}`,
+      })),
+    };
+
+    render(
+      <GameOverModal
+        state={state}
+        t={(key) => key}
+        onRestart={onRestart}
+        onNext={onNext}
+        onHome={onHome}
+      />,
+    );
+
+    expect(
+      screen.getByRole("dialog", { name: "geo.game_over" }),
+    ).toBeInTheDocument();
+    expect(onNext).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "geo.back_home" }));
+    expect(onHome).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "geo.play_again" }));
+    expect(onRestart).toHaveBeenCalledTimes(1);
   });
 
   it("invites friends online", () => {

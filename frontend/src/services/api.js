@@ -41,6 +41,15 @@ function blobToDataURL(blob) {
   });
 }
 
+// 请求没拿到可用响应（超时、断网、网关返回了非 JSON）时给界面语言的提示
+function networkErrorMessage(err) {
+  return i18n.t(
+    err?.name === "AbortError"
+      ? "error.requestTimeout"
+      : "error.checkNetworkConnection",
+  );
+}
+
 // 获取当前语言，默认为英文
 function getCurrentLanguage() {
   const language = i18n.resolvedLanguage || i18n.language || "en";
@@ -197,11 +206,14 @@ async function streamDescriptionEndpoint(
     return { success: true, data: completed, error: null };
   } catch (err) {
     discardDelta();
+    // 讲解流的错误由调用方换成界面文案，这里保留原因便于排查
     return {
       success: false,
       data: null,
       error:
-        err.name === "AbortError" ? "请求超时" : err.message || "获取描述失败",
+        err.name === "AbortError"
+          ? networkErrorMessage(err)
+          : err.message || "获取描述失败",
       aborted: err.name === "AbortError",
     };
   } finally {
@@ -291,6 +303,7 @@ export async function getRandomLocation(
 
     return {
       success: false,
+      status: resp.status,
       data: null,
       message: null,
       error: data.error || "获取位置失败",
@@ -298,10 +311,10 @@ export async function getRandomLocation(
   } catch (err) {
     return {
       success: false,
+      status: 0,
       data: null,
       message: null,
-      error:
-        err.name === "AbortError" ? "请求超时" : err.message || "网络请求失败",
+      error: networkErrorMessage(err),
     };
   }
 }
@@ -314,6 +327,31 @@ export async function markPrefetchedVisit(panoId) {
 }
 
 // 根据坐标查找位置
+/**
+ * 只取坐标在指定语言下的地址字段；切换界面语言时更新当前地点名，不换全景、不记访问。
+ */
+export async function getLocalizedAddress(lat, lng, language = null) {
+  const params = new URLSearchParams({
+    lat: String(lat),
+    lng: String(lng),
+    lang: language || getCurrentLanguage(),
+  });
+
+  try {
+    const resp = await fetchWithTimeout(
+      `${API_V1}/locations/address?${params.toString()}`,
+      { method: "GET", headers: getHeaders() },
+    );
+    const data = await resp.json();
+    if (data.success && data.data) {
+      return { success: true, data: data.data, error: null };
+    }
+    return { success: false, data: null, error: data.error || "获取地址失败" };
+  } catch (error) {
+    return { success: false, data: null, error: error.message };
+  }
+}
+
 export async function lookupLocation(
   lat,
   lng,
@@ -350,15 +388,16 @@ export async function lookupLocation(
 
     return {
       success: false,
+      status: resp.status,
       data: null,
       error: data.error || "查找位置失败",
     };
   } catch (err) {
     return {
       success: false,
+      status: 0,
       data: null,
-      error:
-        err.name === "AbortError" ? "请求超时" : err.message || "网络请求失败",
+      error: networkErrorMessage(err),
     };
   }
 }
@@ -399,8 +438,7 @@ export async function searchLocation(query, language = null) {
       success: false,
       data: null,
       place: null,
-      error:
-        err.name === "AbortError" ? "请求超时" : err.message || "网络请求失败",
+      error: networkErrorMessage(err),
     };
   }
 }
@@ -463,8 +501,7 @@ export async function getLocationDescription(
       data: null,
       language: null,
       message: null,
-      error:
-        err.name === "AbortError" ? "请求超时" : err.message || "获取描述失败",
+      error: networkErrorMessage(err),
     };
   }
 }
@@ -486,14 +523,15 @@ export async function setExplorationPreference(interest, language = null) {
 
     return {
       success: data.success,
+      status: resp.status,
       error: data.error,
       message: data.message || "探索偏好设置成功",
     };
   } catch (err) {
     return {
       success: false,
-      error:
-        err.name === "AbortError" ? "请求超时" : err.message || "网络请求失败",
+      status: 0,
+      error: networkErrorMessage(err),
       message: null,
     };
   }
@@ -515,6 +553,7 @@ export async function deleteExplorationPreference(language = null) {
     const data = await response.json();
     return {
       success: data.success,
+      status: response.status,
       error: data.error || data.detail,
       message: data.message || "探索偏好已删除",
     };
@@ -522,10 +561,8 @@ export async function deleteExplorationPreference(language = null) {
     console.error("Error deleting preference:", err);
     return {
       success: false,
-      error:
-        err.name === "AbortError"
-          ? "请求超时"
-          : err.message || "删除探索兴趣失败",
+      status: 0,
+      error: networkErrorMessage(err),
       message: null,
     };
   }
@@ -576,8 +613,7 @@ export async function getVisitHistory(
     return {
       success: false,
       data: null,
-      error:
-        err.name === "AbortError" ? "请求超时" : err.message || "网络请求失败",
+      error: networkErrorMessage(err),
     };
   }
 }
@@ -676,10 +712,7 @@ export async function getLocationDetailedDescription(
       data: null,
       language: null,
       message: null,
-      error:
-        err.name === "AbortError"
-          ? "请求超时"
-          : err.message || "获取详细介绍失败",
+      error: networkErrorMessage(err),
     };
   }
 }
@@ -816,8 +849,7 @@ async function requestJson(path, options = {}, timeout = DEFAULT_TIMEOUT) {
       status: 0,
       data: null,
       message: null,
-      error:
-        err.name === "AbortError" ? "请求超时" : err.message || "网络请求失败",
+      error: networkErrorMessage(err),
     };
   }
 }

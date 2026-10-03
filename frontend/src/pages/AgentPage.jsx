@@ -5,28 +5,8 @@ import { loadGoogleMapsScript } from "../utils/googleMaps";
 import { getAgentJourneys, getAgentJourneyDetail } from "../services/api";
 import LetterContent from "../components/LetterContent";
 import { readLocalStorage, writeLocalStorage } from "../utils/safeStorage";
+import { loadNotoSerifSC } from "../utils/pageFonts";
 import "../styles/AgentPage.css";
-
-// Load classical fonts for title
-if (
-  typeof document !== "undefined" &&
-  window.location.hostname !== "localhost" &&
-  window.location.hostname !== "127.0.0.1" &&
-  !document.getElementById("odyssey-fonts")
-) {
-  const link = document.createElement("link");
-  link.id = "odyssey-fonts";
-  link.rel = "stylesheet";
-  link.href =
-    "https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&display=swap";
-  document.head.appendChild(link);
-
-  const lxgw = document.createElement("link");
-  lxgw.rel = "stylesheet";
-  lxgw.href =
-    "https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/style.css";
-  document.head.appendChild(lxgw);
-}
 
 // Natural borderless map — Lonely Planet inspired
 const NATURAL_MAP_STYLE = [
@@ -370,6 +350,11 @@ export default function AgentPage() {
   const navigate = useNavigate();
   const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
 
+  // 标题和来信用衬线体，挂载时按需加载
+  useEffect(() => {
+    loadNotoSerifSC();
+  }, []);
+
   // Map & Skills state
   const [pin, setPin] = useState(null);
   const [copied, setCopied] = useState(false);
@@ -387,6 +372,8 @@ export default function AgentPage() {
   const [isLoadingJourneys, setIsLoadingJourneys] = useState(false);
   const [journeysLoaded, setJourneysLoaded] = useState(false);
   const [journeysError, setJourneysError] = useState("");
+  // 展开详情、重试都用发起查询时的 ID，输入框之后被改动也不影响已列出的旅程
+  const [queriedTravelerId, setQueriedTravelerId] = useState("");
   const [expandedJourney, setExpandedJourney] = useState(null);
   const [journeyDetails, setJourneyDetails] = useState({});
   const [journeyDetailLoadingId, setJourneyDetailLoadingId] = useState(null);
@@ -514,26 +501,29 @@ export default function AgentPage() {
   }, [skillsText, t]);
 
   // Journey viewer
-  const loadJourneys = useCallback(
-    async (travelerId) => {
-      if (!travelerId) return;
-      const requestId = journeysRequestRef.current + 1;
-      journeysRequestRef.current = requestId;
-      setIsLoadingJourneys(true);
-      setJourneysError("");
-      const res = await getAgentJourneys(travelerId);
-      if (journeysRequestRef.current !== requestId) return;
-      if (res.success && res.data) {
-        setJourneys(res.data.journeys || []);
-        setTotalPlaces(res.data.total_places || 0);
-        setJourneysLoaded(true);
-      } else {
-        setJourneysError(res.error || t("agent.error_load_journeys"));
-      }
-      setIsLoadingJourneys(false);
-    },
-    [t],
-  );
+  const loadJourneys = useCallback(async (travelerId) => {
+    if (!travelerId) return;
+    const requestId = journeysRequestRef.current + 1;
+    journeysRequestRef.current = requestId;
+    setQueriedTravelerId(travelerId);
+    // 换 ID 查询时先清掉上一个 ID 的结果，失败时不会留着别人的旅程
+    setJourneys([]);
+    setTotalPlaces(0);
+    setJourneysLoaded(false);
+    setIsLoadingJourneys(true);
+    setJourneysError("");
+    const res = await getAgentJourneys(travelerId);
+    if (journeysRequestRef.current !== requestId) return;
+    if (res.success && res.data) {
+      setJourneys(res.data.journeys || []);
+      setTotalPlaces(res.data.total_places || 0);
+      setJourneysLoaded(true);
+    } else {
+      console.warn("Load journeys failed:", res.error);
+      setJourneysError("agent.error_load_journeys");
+    }
+    setIsLoadingJourneys(false);
+  }, []);
 
   const handleLookup = useCallback(() => {
     const id = viewerTravelerId.trim();
@@ -550,26 +540,24 @@ export default function AgentPage() {
     if (cached) loadJourneys(cached);
   }, [loadJourneys, viewerTravelerId]);
 
-  const loadJourneyDetail = useCallback(
-    async (journeyId, travelerId) => {
-      setJourneyDetailLoadingId(journeyId);
-      setJourneyDetailErrors((prev) => ({ ...prev, [journeyId]: "" }));
-      try {
-        const res = await getAgentJourneyDetail(journeyId, travelerId);
-        if (res.success && res.data) {
-          setJourneyDetails((prev) => ({ ...prev, [journeyId]: res.data }));
-        } else {
-          setJourneyDetailErrors((prev) => ({
-            ...prev,
-            [journeyId]: res.error || t("agent.error_load_journey"),
-          }));
-        }
-      } finally {
-        setJourneyDetailLoadingId((c) => (c === journeyId ? null : c));
+  const loadJourneyDetail = useCallback(async (journeyId, travelerId) => {
+    setJourneyDetailLoadingId(journeyId);
+    setJourneyDetailErrors((prev) => ({ ...prev, [journeyId]: "" }));
+    try {
+      const res = await getAgentJourneyDetail(journeyId, travelerId);
+      if (res.success && res.data) {
+        setJourneyDetails((prev) => ({ ...prev, [journeyId]: res.data }));
+      } else {
+        console.warn("Load journey detail failed:", res.error);
+        setJourneyDetailErrors((prev) => ({
+          ...prev,
+          [journeyId]: "agent.error_load_journey",
+        }));
       }
-    },
-    [t],
-  );
+    } finally {
+      setJourneyDetailLoadingId((c) => (c === journeyId ? null : c));
+    }
+  }, []);
 
   const toggleJourneyDetail = useCallback(
     async (journeyId) => {
@@ -579,17 +567,31 @@ export default function AgentPage() {
       }
       setExpandedJourney(journeyId);
       if (!journeyDetails[journeyId]) {
-        await loadJourneyDetail(journeyId, viewerTravelerId.trim());
+        await loadJourneyDetail(journeyId, queriedTravelerId);
       }
     },
-    [expandedJourney, journeyDetails, loadJourneyDetail, viewerTravelerId],
+    [expandedJourney, journeyDetails, loadJourneyDetail, queriedTravelerId],
+  );
+
+  const handleShareJourney = useCallback(
+    (journeyId) => {
+      const url = `${window.location.origin}/agent/letter/${journeyId}`;
+      copyText(url)
+        .then(() => {
+          setFeedback({ type: "success", message: t("agent.link_copied") });
+        })
+        .catch(() => {
+          setFeedback({ type: "error", message: t("agent.error_copy") });
+        });
+    },
+    [t],
   );
 
   const renderJourneyDetail = (journeyId) => {
     const data = journeyDetails[journeyId];
     const error = journeyDetailErrors[journeyId];
     const loading = journeyDetailLoadingId === journeyId;
-    const tid = viewerTravelerId.trim();
+    const tid = queriedTravelerId;
 
     if (!data && loading)
       return (
@@ -597,8 +599,8 @@ export default function AgentPage() {
       );
     if (!data && error)
       return (
-        <div className="agent-detail-state error">
-          <div>{error}</div>
+        <div className="agent-detail-state error" role="alert">
+          <div>{t(error)}</div>
           <button
             className="agent-secondary-btn"
             onClick={() => loadJourneyDetail(journeyId, tid)}
@@ -758,7 +760,7 @@ export default function AgentPage() {
 
           <div className="agent-skills-box">
             <div className="agent-skills-header">
-              <span>SKILLS</span>
+              <span>{t("agent.skills_label")}</span>
               <button
                 className={`agent-copy-btn ${copied ? "copied" : ""}`}
                 onClick={handleCopy}
@@ -826,8 +828,8 @@ export default function AgentPage() {
           )}
 
           {journeysError && (
-            <div className="agent-detail-state error">
-              <div>{journeysError}</div>
+            <div className="agent-detail-state error" role="alert">
+              <div>{t(journeysError)}</div>
             </div>
           )}
 
@@ -842,19 +844,33 @@ export default function AgentPage() {
 
           {visibleJourneys.map((j) => (
             <div key={j.id}>
+              {/* 整张卡片仍可用鼠标点开；键盘和读屏走标题区的按钮 */}
               <div
                 className="agent-journey-card"
                 onClick={() => toggleJourneyDetail(j.id)}
               >
                 <div className="agent-journey-card-header">
-                  <div>
-                    <div className="agent-journey-card-title">
+                  <button
+                    type="button"
+                    className="agent-journey-card-toggle"
+                    aria-expanded={expandedJourney === j.id}
+                    aria-controls={
+                      expandedJourney === j.id
+                        ? `agent-journey-detail-${j.id}`
+                        : undefined
+                    }
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleJourneyDetail(j.id);
+                    }}
+                  >
+                    <span className="agent-journey-card-title">
                       {t("agent.journey")} · {j.total_stops} {t("agent.stops")}
                       <span className={`agent-status-badge ${j.status}`}>
                         {statusLabel(j.status)}
                       </span>
-                    </div>
-                    <div className="agent-journey-card-meta">
+                    </span>
+                    <span className="agent-journey-card-meta">
                       {new Date(j.created_at).toLocaleDateString(
                         currentLocale,
                         {
@@ -864,21 +880,16 @@ export default function AgentPage() {
                         },
                       )}{" "}
                       · {j.start_lat.toFixed(2)}°, {j.start_lng.toFixed(2)}°
-                    </div>
-                  </div>
+                    </span>
+                  </button>
                   <div className="agent-journey-card-actions">
                     {j.status === "completed" && (
                       <button
+                        type="button"
                         className="agent-share-btn"
                         onClick={(e) => {
                           e.stopPropagation();
-                          const url = `${window.location.origin}/agent/letter/${j.id}`;
-                          copyText(url).then(() => {
-                            setFeedback({
-                              type: "success",
-                              message: t("agent.link_copied"),
-                            });
-                          });
+                          handleShareJourney(j.id);
                         }}
                       >
                         {t("agent.share")}
@@ -888,6 +899,7 @@ export default function AgentPage() {
                 </div>
                 {expandedJourney === j.id && (
                   <div
+                    id={`agent-journey-detail-${j.id}`}
                     className="agent-journey-detail"
                     onClick={(e) => e.stopPropagation()}
                   >

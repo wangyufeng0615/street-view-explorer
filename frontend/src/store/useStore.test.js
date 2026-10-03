@@ -11,6 +11,7 @@ vi.mock("../services/api", () => ({
   setExplorationPreference: vi.fn(),
   deleteExplorationPreference: vi.fn(),
   lookupLocation: vi.fn(),
+  getLocalizedAddress: vi.fn(),
 }));
 
 vi.mock("../i18n", () => ({
@@ -28,6 +29,7 @@ import {
   setExplorationPreference,
   getRandomLocation,
   lookupLocation,
+  getLocalizedAddress,
 } from "../services/api";
 
 describe("exploration preference synchronization", () => {
@@ -59,7 +61,8 @@ describe("exploration preference synchronization", () => {
     await useStore.getState().handleModeChange("random");
     expect(useStore.getState().explorationMode).toBe("custom");
     expect(localStorage.getItem("exploration_interest")).toBe("mountains");
-    expect(useStore.getState().preferenceError).toBe("offline");
+    // 后端的原始错误只进控制台，界面给当前语言的提示
+    expect(useStore.getState().preferenceError).toBe("error.preferenceFailed");
     expect(getRandomLocation).not.toHaveBeenCalled();
   });
 
@@ -187,18 +190,48 @@ describe("location loading errors", () => {
   });
 
   it("still reports a user-initiated failure on the page", async () => {
-    getRandomLocation.mockResolvedValue({ success: false, error: "down" });
+    getRandomLocation.mockResolvedValue({
+      success: false,
+      status: 500,
+      error: "down",
+    });
     const result = await useStore.getState().loadRandomLocation(true);
-    expect(result).toEqual({ success: false, error: "down" });
-    expect(useStore.getState().locationError).toBe("down");
+    expect(result).toEqual({ success: false, error: "error.locationFailed" });
+    expect(useStore.getState().locationError).toBe("error.locationFailed");
+  });
+
+  it("explains rate limits and network failures in the UI language", async () => {
+    getRandomLocation.mockResolvedValue({
+      success: false,
+      status: 429,
+      error: "请求过于频繁，请稍后再试",
+    });
+    expect(await useStore.getState().loadRandomLocation(true)).toEqual({
+      success: false,
+      error: "error.tooManyRequests",
+    });
+
+    getRandomLocation.mockResolvedValue({
+      success: false,
+      status: 0,
+      error: "error.requestTimeout",
+    });
+    expect(await useStore.getState().loadRandomLocation(true)).toEqual({
+      success: false,
+      error: "error.requestTimeout",
+    });
   });
 
   it("keeps the current place when a preserving lookup fails", async () => {
-    lookupLocation.mockResolvedValue({ success: false, error: "no pano" });
+    lookupLocation.mockResolvedValue({
+      success: false,
+      status: 404,
+      error: "no pano",
+    });
     const result = await useStore
       .getState()
       .loadLocationFromURL(3, 4, { preserveLocation: true });
-    expect(result).toEqual({ success: false, error: "no pano" });
+    expect(result).toEqual({ success: false, error: "mapPicker.failed" });
     expect(useStore.getState()).toMatchObject({
       location: CURRENT,
       locationError: null,
@@ -228,6 +261,77 @@ describe("location loading errors", () => {
       location: null,
       description: null,
       isDescriptionLoading: false,
+    });
+  });
+
+  it("keeps the narration when a map pick lands on the panorama already shown", async () => {
+    useStore.setState({ description: "当前讲解" });
+    lookupLocation.mockResolvedValue({
+      success: true,
+      data: { ...CURRENT, latitude: 1.00001 },
+    });
+    const result = await useStore.getState().loadLocationFromMapPick(1, 2);
+    expect(result).toMatchObject({ success: true, unchanged: true });
+    expect(useStore.getState()).toMatchObject({
+      location: CURRENT,
+      description: "当前讲解",
+      isMapLocationLoading: false,
+    });
+  });
+
+  it("lets a direct navigation end an in-flight load without leaving it busy", async () => {
+    let finishRandom;
+    getRandomLocation.mockReturnValue(
+      new Promise((resolve) => {
+        finishRandom = resolve;
+      }),
+    );
+    const pending = useStore.getState().loadRandomLocation(true);
+    expect(useStore.getState().isLoadingLocation).toBe(true);
+
+    const OLD_STOP = { pano_id: "pano-old", latitude: 5, longitude: 6 };
+    useStore.getState().applyNavigatedLocation(OLD_STOP);
+    expect(useStore.getState()).toMatchObject({
+      location: OLD_STOP,
+      isLoadingLocation: false,
+      isLocationLoading: false,
+    });
+
+    // 新的一次出发开始后，被作废的请求才结束：不能把新请求的忙碌状态清掉
+    let finishSecond;
+    getRandomLocation.mockReturnValue(
+      new Promise((resolve) => {
+        finishSecond = resolve;
+      }),
+    );
+    const second = useStore.getState().loadRandomLocation(true);
+    finishRandom({
+      success: true,
+      data: { pano_id: "pano-stale", latitude: 1, longitude: 1 },
+    });
+    expect(await pending).toMatchObject({ superseded: true });
+    expect(useStore.getState()).toMatchObject({
+      location: null,
+      isLoadingLocation: true,
+    });
+
+    finishSecond({
+      success: true,
+      data: { pano_id: "pano-new", latitude: 2, longitude: 2 },
+    });
+    await second;
+    expect(useStore.getState()).toMatchObject({
+      location: { pano_id: "pano-new" },
+      isLoadingLocation: false,
+    });
+  });
+
+  it("does not clear the narration when navigation targets the current panorama", () => {
+    useStore.setState({ description: "当前讲解" });
+    useStore.getState().applyNavigatedLocation({ ...CURRENT });
+    expect(useStore.getState()).toMatchObject({
+      location: CURRENT,
+      description: "当前讲解",
     });
   });
 });
@@ -448,5 +552,88 @@ describe("description request lifecycle", () => {
     expect(receivedSignal.aborted).toBe(true);
     expect(useStore.getState().isDescriptionLoading).toBe(false);
     expect(useStore.getState().descriptionRequestKey).toBeNull();
+  });
+});
+
+describe("address language", () => {
+  const englishTokyo = {
+    pano_id: "pano-tokyo",
+    latitude: 35.66,
+    longitude: 139.7,
+    formatted_address: "Shibuya, Tokyo, Japan",
+    country: "Japan",
+    country_code: "JP",
+    city: "Tokyo",
+    address_language: "en",
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useStore.setState({
+      location: englishTokyo,
+      currentLocationRef: englishTokyo,
+    });
+  });
+
+  it("tags loaded locations with the language their address is in", async () => {
+    getRandomLocation.mockResolvedValue({
+      success: true,
+      data: { pano_id: "p", latitude: 1, longitude: 2 },
+    });
+    useStore.setState({
+      isLoadingLocation: false,
+      isExplorationInitialized: true,
+    });
+    await useStore.getState().loadRandomLocation(true);
+    expect(useStore.getState().location.address_language).toBe("zh");
+  });
+
+  it("swaps only the address fields into the UI language", async () => {
+    getLocalizedAddress.mockResolvedValue({
+      success: true,
+      data: {
+        formatted_address: "日本东京都涩谷区",
+        country: "日本",
+        country_code: "JP",
+        city: "",
+      },
+    });
+    await useStore.getState().relocalizeLocationAddress();
+
+    expect(getLocalizedAddress).toHaveBeenCalledWith(35.66, 139.7, "zh");
+    expect(useStore.getState().location).toMatchObject({
+      pano_id: "pano-tokyo",
+      formatted_address: "日本东京都涩谷区",
+      country: "日本",
+      city: "Tokyo",
+      address_language: "zh",
+    });
+  });
+
+  it("drops a late answer after the explorer moved on", async () => {
+    let resolveAddress;
+    getLocalizedAddress.mockReturnValue(
+      new Promise((resolve) => {
+        resolveAddress = resolve;
+      }),
+    );
+    const pending = useStore.getState().relocalizeLocationAddress();
+    const nextStop = { ...englishTokyo, pano_id: "pano-next" };
+    useStore.setState({ location: nextStop });
+    resolveAddress({
+      success: true,
+      data: { formatted_address: "日本东京都涩谷区" },
+    });
+    await pending;
+
+    expect(useStore.getState().location).toBe(nextStop);
+  });
+
+  it("does not ask again when the address already matches", async () => {
+    useStore.setState({
+      location: { ...englishTokyo, address_language: "zh" },
+    });
+    await useStore.getState().relocalizeLocationAddress();
+    expect(getLocalizedAddress).not.toHaveBeenCalled();
   });
 });

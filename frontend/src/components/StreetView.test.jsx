@@ -1,7 +1,7 @@
 import React from "react";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import StreetView from "./StreetView";
+import StreetView, { resetInteractionTipForTests } from "./StreetView";
 import { loadGoogleMapsWhenVisible } from "../utils/googleMaps";
 
 const translation = vi.hoisted(() => ({
@@ -86,6 +86,22 @@ class MockStreetViewPanorama {
 
 MockStreetViewPanorama.instances = [];
 
+class MockStreetViewService {
+  async getPanorama() {
+    return { data: { location: { pano: "official-near" } } };
+  }
+}
+
+function mockMaps() {
+  return {
+    StreetViewPanorama: MockStreetViewPanorama,
+    StreetViewService: MockStreetViewService,
+    StreetViewSource: { GOOGLE: "google" },
+    StreetViewPreference: { NEAREST: "nearest" },
+    ControlPosition: { RIGHT_CENTER: 5 },
+  };
+}
+
 function setDocumentVisibility(value) {
   Object.defineProperty(document, "visibilityState", {
     configurable: true,
@@ -112,11 +128,10 @@ describe("StreetView auto-rotation", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     MockStreetViewPanorama.instances = [];
+    resetInteractionTipForTests();
     setDocumentVisibility("visible");
     setDocumentFocus(true);
-    loadGoogleMapsWhenVisible.mockResolvedValue({
-      StreetViewPanorama: MockStreetViewPanorama,
-    });
+    loadGoogleMapsWhenVisible.mockResolvedValue(mockMaps());
   });
 
   afterEach(() => {
@@ -327,11 +342,10 @@ describe("StreetView location switching", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     MockStreetViewPanorama.instances = [];
+    resetInteractionTipForTests();
     setDocumentVisibility("visible");
     setDocumentFocus(true);
-    loadGoogleMapsWhenVisible.mockResolvedValue({
-      StreetViewPanorama: MockStreetViewPanorama,
-    });
+    loadGoogleMapsWhenVisible.mockResolvedValue(mockMaps());
   });
 
   afterEach(() => {
@@ -347,6 +361,55 @@ describe("StreetView location switching", () => {
     const [panorama] = MockStreetViewPanorama.instances;
     expect(panorama.options.pano).toBe("uploaded-pano");
     expect(panorama.options.position).toBeUndefined();
+  });
+
+  it("loads an official panorama ID directly, without searching", async () => {
+    const search = vi.spyOn(MockStreetViewService.prototype, "getPanorama");
+    render(
+      <StreetView panoId="RVHISCP2VhnDsPJUbAybGQ" latitude={1} longitude={2} />,
+    );
+    await advanceTimers(250);
+
+    expect(MockStreetViewPanorama.instances[0].options.pano).toBe(
+      "RVHISCP2VhnDsPJUbAybGQ",
+    );
+    expect(search).not.toHaveBeenCalled();
+    search.mockRestore();
+  });
+
+  it("swaps a user photosphere for the nearest official panorama", async () => {
+    render(
+      <StreetView
+        panoId="CAoSF0NJSE0wb2dLRUlDQWdNQ2d0Zl9GNVFF"
+        latitude={1}
+        longitude={2}
+      />,
+    );
+    await advanceTimers(250);
+
+    expect(MockStreetViewPanorama.instances[0].options.pano).toBe(
+      "official-near",
+    );
+  });
+
+  it("shows no imagery when only a user photosphere is nearby", async () => {
+    const search = vi
+      .spyOn(MockStreetViewService.prototype, "getPanorama")
+      .mockRejectedValue(
+        Object.assign(new Error("none"), { code: "ZERO_RESULTS" }),
+      );
+    render(
+      <StreetView
+        panoId="CAoSF0NJSE0wb2dLRUlDQWdNQ2d0Zl9GNVFF"
+        latitude={1}
+        longitude={2}
+      />,
+    );
+    await advanceTimers(250);
+
+    expect(MockStreetViewPanorama.instances).toHaveLength(0);
+    expect(screen.getByText("error.streetViewNotAvailable")).toBeTruthy();
+    search.mockRestore();
   });
 
   it("falls back to coordinates without a panorama ID", async () => {
@@ -475,6 +538,8 @@ describe("StreetView location switching", () => {
     await act(async () => panorama.emit("status_changed"));
     await advanceTimers(12000);
     onViewChanged.mockClear();
+    // 第一站已经弹过提示；重置后用第二站的提示判断后续动作是否按时到来
+    resetInteractionTipForTests();
 
     // 状态保持 OK：只有新全景元数据到达时的 position_changed
     rerender(<StreetView panoId="pano-b" onViewChanged={onViewChanged} />);
@@ -489,7 +554,7 @@ describe("StreetView location switching", () => {
     expect(screen.getByText("streetview.interactionTip")).toBeTruthy();
   });
 
-  it("shows the interaction tip again for the next location", async () => {
+  it("shows the interaction tip only once per page load", async () => {
     const { rerender } = render(<StreetView panoId="pano-a" />);
     await advanceTimers(250);
     const panorama = MockStreetViewPanorama.instances[0];
@@ -502,7 +567,51 @@ describe("StreetView location switching", () => {
     expect(screen.queryByText("streetview.interactionTip")).toBeNull();
     await act(async () => panorama.emit("status_changed"));
     await advanceTimers(3000);
+    expect(screen.queryByText("streetview.interactionTip")).toBeNull();
+  });
+
+  it("still shows the tip at the next stop when it never got to appear", async () => {
+    const { rerender } = render(<StreetView panoId="pano-a" />);
+    await advanceTimers(250);
+    const panorama = MockStreetViewPanorama.instances[0];
+    await act(async () => panorama.emit("status_changed"));
+    await advanceTimers(1000);
+
+    rerender(<StreetView panoId="pano-b" />);
+    await advanceTimers(250);
+    await act(async () => panorama.emit("status_changed"));
+    await advanceTimers(3000);
     expect(screen.getByText("streetview.interactionTip")).toBeTruthy();
+  });
+
+  it("tells the panorama to redraw when its container changes size", async () => {
+    let notifySize = null;
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(callback) {
+          notifySize = callback;
+        }
+        observe() {}
+        disconnect() {}
+      },
+    );
+    const trigger = vi.fn();
+    vi.stubGlobal("google", { maps: { event: { trigger } } });
+    try {
+      render(<StreetView panoId="pano-a" />);
+      await advanceTimers(250);
+      const panorama = MockStreetViewPanorama.instances[0];
+
+      // 连续几次尺寸变化只通知一次
+      notifySize([]);
+      notifySize([]);
+      await advanceTimers(200);
+      expect(trigger).toHaveBeenCalledTimes(1);
+      expect(trigger).toHaveBeenCalledWith(panorama, "resize");
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("destroys the panorama on unmount", async () => {

@@ -1,54 +1,1179 @@
+/* 首页：全屏街景，界面像纪录片字幕一样直接压在画面上。
+   常驻元素不加底板（home-bare），靠画面上下的暗角保证可读；只有"下一站"和两张小地图是实体。
+   点开后才出现的菜单、全文、地图面板用不透明深色面板（home-panel），不做毛玻璃。
+   颜色全部留给街景；衬线字体只给 Atlas 自己（品牌字和解说） */
+
+.home-shell {
+  --home-panel-bg: rgba(33, 26, 20, 0.96);
+  --home-panel-border: rgba(255, 245, 230, 0.1);
+  --home-bare-hover: rgba(255, 245, 230, 0.12);
+  --home-text-shadow:
+    0 1px 2px rgba(26, 16, 8, 0.55), 0 0 12px rgba(26, 16, 8, 0.35);
+  --home-fill: rgba(255, 245, 230, 0.07);
+  --home-fill-strong: rgba(255, 245, 230, 0.15);
+  --home-text: rgba(255, 245, 230, 0.95);
+  --home-text-muted: rgba(255, 245, 230, 0.6);
+  --home-primary: #f3e8d4;
+  --home-primary-hover: #fbf2e2;
+  --home-accent: #e2ad74;
+  --home-paper: #f5ecdc;
+  --home-paper-ink: #3a2c1c;
+  --home-paper-ink-soft: #7a654b;
+  --home-ink: #2a2018;
+  --home-ink-muted: rgba(33, 26, 20, 0.55);
+  --home-focus: rgba(255, 245, 230, 0.85);
+  --home-danger-soft: #ffb4a0;
+  --home-radius-md: 12px;
+  --home-radius-lg: 16px;
+  --home-control-height: 46px;
+  --home-shadow: 0 16px 40px -16px rgba(26, 16, 8, 0.6);
+  --home-sans: var(--font-sans);
+  --home-serif: var(--font-serif);
+  --home-edge: 16px;
+  --home-side-width: 380px;
+  --streetview-tip-top: 84px;
+
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: #1c1712;
+  color: var(--home-text);
+  font-family: var(--home-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+.home-shell :focus-visible {
+  outline: 1.5px solid var(--home-focus);
+  outline-offset: 2px;
+}
+
+/* —— 街景舞台 —— */
+
+/* 街景占右侧栏以外的全部区域 */
+.home-stage {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  right: var(--home-side-width);
+  /* 街景自己的提示和报错层只在舞台内叠放，不盖住导航和操作栏 */
+  isolation: isolate;
+}
+
+/* 上下两道暗角是字幕和导航的"底板"：顶部托住导航，底部托住字幕和操作栏。
+   多段渐变让过渡更自然，亮画面（雪地、白沙、正午天空）上白字也读得清 */
+.home-stage::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background:
+    linear-gradient(
+      to bottom,
+      rgba(26, 16, 8, 0.5) 0,
+      rgba(26, 16, 8, 0.22) 72px,
+      transparent 150px
+    ),
+    linear-gradient(
+      to top,
+      rgba(26, 16, 8, 0.72) 0,
+      rgba(26, 16, 8, 0.5) 120px,
+      rgba(26, 16, 8, 0.18) 240px,
+      transparent 340px
+    );
+}
+
+/* 街景自成一层，Google 内部图层的 z-index 不会盖过上面的暗角 */
 .street-view-container {
   width: 100%;
   height: 100%;
   position: relative;
+  z-index: 0;
 }
 
-.exploration-preference-wrapper {
+/* —— 两种材质 —— */
+
+/* 常驻元素：不加底板，文字直接压在画面暗角上 */
+.home-bare {
+  color: var(--home-text);
+  text-shadow: var(--home-text-shadow);
+}
+
+/* text-shadow 不作用于 SVG 图标，单独给一层同样的投影 */
+.home-bare svg {
+  filter: drop-shadow(0 1px 2px rgba(26, 16, 8, 0.55));
+}
+
+/* 点开才出现的内容：不透明深色面板 */
+.home-panel,
+.home-popover {
+  border: 1px solid var(--home-panel-border);
+  background: var(--home-panel-bg);
+  box-shadow: var(--home-shadow);
+  color: var(--home-text);
+  text-shadow: none;
+}
+
+.home-popover,
+.home-map-panel,
+.home-minimap,
+.home-arrival__card,
+.home-side,
+.atlas-letter {
+  box-sizing: border-box;
+}
+
+.home-popover {
   position: absolute;
-  top: 20px;
-  left: 20px;
-  z-index: 10;
-  width: 320px;
+  z-index: 40;
+  padding: 12px;
+  border-radius: var(--home-radius-lg);
+  animation: homePopIn 0.16s ease-out;
+}
+
+.home-popover__title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 2px 4px 10px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.home-popover__count,
+.home-popover__label {
+  color: var(--home-text-muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.home-popover__label {
+  display: block;
+  margin: 0 4px 8px;
+}
+
+.home-popover__divider {
+  height: 1px;
+  margin: 10px 0;
+  background: rgba(255, 245, 230, 0.1);
+}
+
+.home-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--home-text);
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.14s ease;
+}
+
+.home-menu-item:hover:not(:disabled),
+.home-menu-item[aria-pressed="true"],
+.home-menu-item[aria-current="page"] {
+  background: var(--home-fill);
+}
+
+.home-menu-item:disabled {
+  cursor: default;
+}
+
+.home-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--home-text-muted);
+  cursor: pointer;
+  transition:
+    background 0.14s ease,
+    color 0.14s ease;
+}
+
+.home-icon-button:hover,
+.home-icon-button[aria-expanded="true"] {
+  background: var(--home-fill);
+  color: var(--home-text);
+}
+
+.home-button-primary {
+  border: 0;
+  border-radius: var(--home-radius-md);
+  background: var(--home-primary);
+  color: var(--home-ink);
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background 0.16s ease,
+    transform 0.16s ease;
+}
+
+.home-button-primary:hover:not(:disabled) {
+  background: var(--home-primary-hover);
+}
+
+.home-shell .home-button-primary:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.home-button-primary:disabled {
+  cursor: progress;
+  opacity: 0.72;
+}
+
+.home-input {
+  flex: 1;
+  min-width: 0;
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 245, 230, 0.16);
+  border-radius: 10px;
+  background: var(--home-fill);
+  color: var(--home-text);
+  font: inherit;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.14s ease;
+}
+
+.home-input::placeholder {
+  color: rgba(255, 245, 230, 0.42);
+}
+
+/* 输入框聚焦只换边框颜色，不再叠一圈外框，避免双层描边 */
+.home-input:focus {
+  border-color: var(--home-focus);
+  background: rgba(255, 245, 230, 0.1);
+}
+
+.home-shell .home-input:focus-visible {
+  outline: none;
+}
+
+.home-segmented {
+  display: inline-flex;
+  flex: 0 0 auto;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--home-fill);
+}
+
+.home-segmented button,
+.home-lang__option {
+  padding: 5px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--home-text-muted);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition:
+    background 0.14s ease,
+    color 0.14s ease;
+}
+
+.home-segmented button[aria-pressed="true"] {
+  background: var(--home-fill-strong);
+  color: var(--home-text);
+}
+
+.home-lang__option[aria-pressed="true"] {
+  color: var(--home-text);
+}
+
+/* —— 顶部导航 —— */
+
+/* 导航宽度等于街景区域，用容器查询按实际可用宽度决定链接是否收进菜单；
+   空白处不拦截街景上的拖动 */
+.home-nav {
+  position: absolute;
+  top: var(--home-edge);
+  left: var(--home-edge);
+  z-index: 25;
+  width: calc(100% - var(--home-side-width) - 2 * var(--home-edge));
+  container: home-nav / inline-size;
   pointer-events: none;
 }
 
-.exploration-preference-wrapper > * {
+.home-nav__inner {
+  position: relative;
+  width: fit-content;
+  max-width: 100%;
   pointer-events: auto;
 }
 
-.error-container {
+.home-nav__main {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: var(--home-control-height);
+  padding: 0 4px;
+}
+
+.home-brand {
+  margin-right: 14px;
+  font-family: var(--home-serif);
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.home-nav__links,
+.home-nav__tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.home-nav__link {
+  position: relative;
+  padding: 7px 10px;
+  border: 0;
+  background: transparent;
+  color: rgba(255, 245, 230, 0.72);
+  font-size: 13.5px;
+  cursor: pointer;
+  transition: color 0.14s ease;
+}
+
+.home-nav__link:hover {
+  color: var(--home-text);
+}
+
+/* 当前页：白字加一道细线，不用底块 */
+.home-nav__link[aria-current="page"] {
+  color: var(--home-text);
+}
+
+.home-nav__link[aria-current="page"]::after {
+  content: "";
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 1px;
+  height: 1.5px;
+  border-radius: 1px;
+  background: var(--home-accent);
+  box-shadow: 0 1px 3px rgba(26, 16, 8, 0.4);
+}
+
+.home-nav__divider {
+  width: 1px;
+  height: 18px;
+  margin: 0 8px;
+  background: rgba(255, 245, 230, 0.16);
+}
+
+.home-lang {
+  display: inline-flex;
+  padding: 2px;
+}
+
+.home-lang__option {
+  padding: 4px 9px;
+  font-size: 12px;
+}
+
+.home-nav__menu-button {
+  display: none;
+}
+
+.home-nav__about {
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 250px;
+}
+
+.home-nav__sheet {
+  top: calc(100% + 8px);
+  left: 0;
+  width: min(300px, calc(100vw - 2 * var(--home-edge)));
+}
+
+.home-nav__sheet-links {
+  display: grid;
+  gap: 2px;
+}
+
+.home-nav__sheet-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px;
+}
+
+.home-nav__sheet-row .home-popover__label {
+  margin: 0;
+}
+
+.home-contact {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 16px;
+  margin: 0 4px;
+  font-size: 13px;
+}
+
+.home-contact dt {
+  color: var(--home-text-muted);
+}
+
+.home-contact dd {
+  margin: 0;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+/* —— 右侧栏：整栏是一页旅行手记，地图像贴在纸上的照片，下面接 Atlas 来信 —— */
+
+.home-side {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: var(--home-side-width);
+  padding: 14px 14px 0;
+  background: var(--home-paper);
+  box-shadow: -10px 0 30px rgba(26, 16, 8, 0.28);
+  color: var(--home-paper-ink);
+  text-shadow: none;
+}
+
+.home-minimaps {
+  display: grid;
+  flex: 0 0 auto;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+}
+
+.home-minimap {
+  position: relative;
+  height: 136px;
+  overflow: hidden;
+  border: 1px solid rgba(122, 92, 52, 0.22);
+  border-radius: 10px;
+  background: rgba(122, 92, 52, 0.08);
+}
+
+/* 小卡片只看不操作，点开再交互；隐藏缩放按钮，保留 Google 标识和版权 */
+.home-minimap .gm-bundled-control {
+  display: none;
+}
+
+.home-minimap__open {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  padding: 0;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+
+/* 放在右上角：地图底边是 Google 标志和版权文字，按使用条款不能遮挡 */
+.home-minimap__badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: rgba(33, 26, 20, 0.66);
+  color: #fff5e6;
+  transition: background 0.14s ease;
+}
+
+.home-minimap__open:hover .home-minimap__badge {
+  background: var(--home-primary);
+  color: var(--home-ink);
+}
+
+/* 放大的地图浮在街景上，靠右侧栏一边，不挤动栏内布局 */
+.home-map-panel {
+  position: fixed;
+  /* 放在顶部导航下方，不压住导航 */
+  top: calc(var(--home-edge) + var(--home-control-height) + 10px);
+  right: calc(var(--home-side-width) + var(--home-edge));
+  z-index: 45;
+  display: flex;
+  flex-direction: column;
+  width: min(
+    540px,
+    calc(100vw - var(--home-side-width) - 2 * var(--home-edge))
+  );
+  height: min(420px, 62vh);
+  overflow: hidden;
+  border-radius: var(--home-radius-lg);
+  animation: homePopIn 0.18s ease-out;
+}
+
+.home-map-panel__header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 8px 8px 10px;
+}
+
+.home-map-panel__hint {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--home-text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.home-map-panel__body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  margin: 0 6px 6px;
+  overflow: hidden;
+  border-radius: 11px;
+  background: rgba(255, 245, 230, 0.06);
+}
+
+/* 收起后保留地图实例，只是看不见；重新打开时动画会重新播放 */
+.home-map-panel.is-collapsed {
+  visibility: hidden;
+  pointer-events: none;
+  animation: none;
+}
+
+.home-map-panel__map {
+  position: absolute;
+  inset: 0;
+}
+
+.home-map-panel__map.is-hidden {
+  visibility: hidden;
+}
+
+/* 放大的地图浮层在侧栏里；侧栏要压过同层级的底部操作栏，手机上两者会重叠 */
+.home-side:has(.home-map-panel:not(.is-collapsed)) {
+  z-index: 30;
+}
+
+/* —— Atlas 来信：右侧栏里常驻的纸面全文 —— */
+
+.atlas-letter {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  padding: 0 0 0 4px;
+}
+
+/* 地名是这一页的标题：衬线、加粗、墨色，长地址最多三行 */
+.atlas-letter__header {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+  padding: 0 14px 12px 0;
+  border-bottom: 1px solid rgba(122, 92, 52, 0.22);
+}
+
+.atlas-letter__place {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--home-paper-ink);
+  font-family: var(--home-serif);
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+}
+
+.atlas-letter__coords {
+  color: var(--home-paper-ink-soft);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+.atlas-letter__body {
+  flex: 1;
+  min-height: 0;
+  margin-top: 12px;
+  padding: 0 14px 16px 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(122, 92, 52, 0.35) transparent;
+}
+
+/* —— 底部操作栏：街景区域的水平中间 —— */
+
+.home-bottom {
+  position: absolute;
+  left: calc((100% - var(--home-side-width)) / 2);
+  bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+  z-index: 20;
+  width: min(720px, calc(100% - var(--home-side-width) - 2 * var(--home-edge)));
+  transform: translateX(-50%);
+  container: home-dock / inline-size;
+}
+
+.atlas-transcript .ai-description {
+  background: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.atlas-transcript .ai-description:hover {
+  border: 0;
+  box-shadow: none;
+}
+
+.atlas-transcript .ai-description::after {
+  display: none;
+}
+
+.atlas-transcript .ai-description-body {
+  padding: 0;
+}
+
+.atlas-transcript .ai-content {
+  font-family: var(--home-serif);
+  font-size: 15px;
+}
+
+.home-dock {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.home-dock__button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: var(--home-control-height);
+  padding: 0 12px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.14s ease;
+}
+
+.home-dock__button:hover,
+.home-dock__button[aria-expanded="true"] {
+  background: var(--home-bare-hover);
+}
+
+.home-dock__count {
+  color: var(--home-text-muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.home-dock__where-label {
+  max-width: 150px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.home-dock__next {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-width: 196px;
+  height: var(--home-control-height);
+  padding: 0 18px;
+  font-size: 15px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  box-shadow: 0 14px 34px -14px rgba(26, 16, 8, 0.6);
+}
+
+/* 键帽样式：一眼看出是"按空格也行"，不和按钮文字连成一句 */
+.home-dock__kbd {
+  padding: 0 6px;
+  border: 1px solid rgba(33, 26, 20, 0.2);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  color: var(--home-ink-muted);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 17px;
+  letter-spacing: 0;
+}
+
+.home-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(33, 26, 20, 0.18);
+  border-top-color: var(--home-ink);
+  border-radius: 50%;
+  animation: homeSpin 0.8s linear infinite;
+}
+
+.home-dock__popover {
+  bottom: calc(100% + 10px);
+  left: 50%;
+  width: min(340px, 100%);
+  transform: translateX(-50%);
+}
+
+/* "下一站去哪儿"：两个同样形状的选项，当前生效的一项有底色和对勾 */
+.home-where {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.home-where .home-popover__title {
+  margin-bottom: 6px;
+}
+
+.home-where__option {
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--home-text);
+  font-size: 14px;
+  text-align: left;
+  transition: background 0.14s ease;
+}
+
+button.home-where__option {
+  cursor: pointer;
+}
+
+button.home-where__option:hover:not(:disabled),
+.home-where__option[aria-pressed="true"],
+.home-where__option.is-selected {
+  background: var(--home-fill);
+}
+
+.home-where__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 20px;
+}
+
+.home-where__name {
+  font-weight: 500;
+}
+
+.home-where__desc {
+  display: block;
+  margin-top: 2px;
+  color: var(--home-text-muted);
+  font-size: 12px;
+}
+
+.home-where__row {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.home-where__go {
+  flex: 0 0 auto;
+  height: 40px;
+  padding: 0 16px;
+  font-size: 14px;
+}
+
+/* 没填内容时只是暂不可点，不是"正在处理"，不用等待光标 */
+.home-where__go:disabled:not(.is-busy) {
+  cursor: default;
+  opacity: 0.4;
+}
+
+.home-where__error {
+  margin: 8px 4px 0;
+  color: var(--home-danger-soft);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.home-journey {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
+  max-height: 280px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 245, 230, 0.24) transparent;
+}
+
+.home-journey__stop {
+  justify-content: flex-start;
+}
+
+.home-journey__index {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: var(--home-fill);
+  color: var(--home-text-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.home-journey__label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.home-journey__current {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  color: var(--home-text-muted);
+  font-size: 12px;
+}
+
+.home-journey__current::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--home-accent);
+}
+
+.home-journey__empty {
+  margin: 0 4px 4px;
+  color: var(--home-text-muted);
+  font-size: 13px;
+}
+
+/* —— 出发 / 落地过渡 —— */
+
+.home-arrival {
+  position: absolute;
+  inset: 0;
+  z-index: 15;
+  display: grid;
+  place-items: center;
+  background: rgba(24, 17, 11, 0.55);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+
+/* 晚 0.3 秒才显示：预取命中时街景半秒内就到，不让提示一闪而过；隐藏时立即淡出 */
+.home-arrival.is-visible {
+  opacity: 1;
+  transition: opacity 0.35s ease 0.3s;
+}
+
+.home-arrival__card {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  height: 100vh;
+  gap: 6px;
+  min-width: 220px;
+  max-width: calc(100vw - 48px);
+  padding: 18px 28px 20px;
+  border-radius: var(--home-radius-lg);
   text-align: center;
-  padding: 20px;
+  transform: translateY(8px) scale(0.98);
+  transition: transform 0.4s ease;
 }
 
-.retry-button {
-  margin-top: 20px;
-  padding: 10px 20px;
-  font-size: 16px;
-  background-color: #1a73e8;
-  color: white;
-  border: none;
-  border-radius: 8px;
+.home-arrival.is-visible .home-arrival__card {
+  transform: none;
+}
+
+.home-arrival__compass {
+  display: flex;
+  margin-bottom: 4px;
+  color: var(--home-text);
+  animation: homeCompass 2.2s ease-in-out infinite;
+}
+
+.home-arrival__place {
+  font-family: var(--home-serif);
+  font-size: 20px;
+  line-height: 1.4;
+}
+
+.home-arrival__card--error {
+  gap: 10px;
+  max-width: min(420px, calc(100vw - 48px));
+  pointer-events: auto;
+}
+
+.home-arrival__error {
+  margin: 0;
+  color: var(--home-text-muted);
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+
+.home-arrival__actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.home-arrival__secondary {
+  height: 38px;
+  padding: 0 14px;
+  border: 1px solid rgba(255, 245, 230, 0.18);
+  border-radius: 10px;
+  background: var(--home-fill);
+  color: var(--home-text);
+  font-size: 14px;
   cursor: pointer;
-  transition: background-color 0.2s;
 }
 
-.retry-button:hover {
-  background-color: #1557b0;
+.home-arrival__secondary:disabled {
+  cursor: progress;
+  opacity: 0.6;
 }
 
-/* 响应式设计 */
-@media (max-width: 640px) {
-  .exploration-preference-wrapper {
-    top: 12px;
-    left: 12px;
-    width: calc(100% - 24px);
-    max-width: 320px;
+.home-arrival__secondary:hover:not(:disabled) {
+  background: var(--home-fill-strong);
+}
+
+.home-arrival__retry {
+  height: 38px;
+  padding: 0 18px;
+  font-size: 14px;
+}
+
+/* —— 动画 —— */
+
+@keyframes homePopIn {
+  from {
+    opacity: 0;
+    translate: 0 6px;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+
+@keyframes homeSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes homeCompass {
+  0%,
+  100% {
+    transform: rotate(-28deg);
+  }
+  50% {
+    transform: rotate(40deg);
+  }
+}
+
+/* —— 手机 —— */
+
+@media (hover: none) {
+  .home-dock__kbd {
+    display: none;
+  }
+}
+
+/* 标题加整排链接：中文约 560px，英文约 700px，放不下就收进菜单 */
+@container home-nav (max-width: 580px) {
+  .home-nav__links,
+  .home-nav__divider,
+  .home-nav__tools {
+    display: none;
+  }
+
+  .home-nav__menu-button {
+    display: inline-flex;
+  }
+}
+
+@container home-nav (max-width: 720px) {
+  :lang(en) .home-nav__links,
+  :lang(en) .home-nav__divider,
+  :lang(en) .home-nav__tools {
+    display: none;
+  }
+
+  :lang(en) .home-nav__menu-button {
+    display: inline-flex;
+  }
+}
+
+@media (max-width: 1100px) {
+  .home-shell {
+    --home-side-width: 340px;
+  }
+}
+
+/* 街景区域放不下完整操作栏时（平板竖屏、窄窗口、英文文案更长）：次要按钮只留文字，"下一站"不再撑最小宽度 */
+@container home-dock (max-width: 580px) {
+  .home-dock {
+    gap: 4px;
+  }
+
+  .home-dock__button,
+  .home-dock .atlas-voice-button {
+    gap: 4px;
+    padding: 0 8px;
+  }
+
+  /* 站数在旅程面板标题里有，窄的时候把宽度让给"下一站" */
+  .home-dock__button > svg,
+  .home-dock .atlas-voice-glyph,
+  .home-dock__count,
+  .home-dock__kbd {
+    display: none;
+  }
+
+  .home-dock__where-label {
+    max-width: 96px;
+  }
+
+  .home-dock__next {
+    min-width: 0;
+  }
+}
+
+/* 手机：街景在上，地图和来信在下；操作栏贴着街景底边 */
+@media (max-width: 720px) {
+  .home-shell {
+    --home-edge: 12px;
+    --home-control-height: 44px;
+    --home-side-width: 0px;
+    --home-stage-height: 52vh;
+    --streetview-tip-top: 64px;
+  }
+
+  .home-stage {
+    bottom: auto;
+    height: var(--home-stage-height);
+  }
+
+  .home-side {
+    top: var(--home-stage-height);
+    left: 0;
+    width: auto;
+    padding: 12px 12px 0;
+    box-shadow: none;
+  }
+
+  .home-minimap {
+    height: 96px;
+    border-radius: 10px;
+  }
+
+  .home-map-panel {
+    left: var(--home-edge);
+    right: var(--home-edge);
+    width: auto;
+    height: 56vh;
+  }
+
+  /* 街景底边留给 Google 标志和版权行（约 26px），按使用条款不能压住 */
+  .home-bottom {
+    top: calc(var(--home-stage-height) - var(--home-control-height) - 32px);
+    bottom: auto;
+    left: 50%;
+    width: calc(100% - 2 * var(--home-edge));
+  }
+
+  .home-dock {
+    gap: 6px;
+  }
+
+  /* 手机上次要按钮只留文字，把宽度让给"下一站" */
+  .home-dock__button {
+    gap: 4px;
+    padding: 0 8px;
+  }
+
+  .home-dock__button > svg,
+  .home-dock .atlas-voice-glyph {
+    display: none;
+  }
+
+  .home-dock .atlas-voice-button {
+    padding: 0 8px;
+  }
+
+  .home-dock__where-label {
+    max-width: 72px;
+  }
+
+  .home-dock__next {
+    flex: 1;
+    min-width: 0;
+    padding: 0 14px;
+  }
+
+  .home-dock__kbd {
+    display: none;
+  }
+
+  .home-dock__popover {
+    width: 100%;
+  }
+
+  /* 浮层向上展开，高度不能超过街景区域，否则会顶到导航栏外面 */
+  .home-journey {
+    max-height: max(120px, calc(var(--home-stage-height) - 190px));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-arrival__compass,
+  .home-popover,
+  .home-map-panel {
+    animation: none !important;
   }
 }

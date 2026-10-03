@@ -41,22 +41,28 @@ import useAtlasVoiceSceneContext from "../hooks/useAtlasVoiceSceneContext";
 import { MicGlyph, StopGlyph } from "./AtlasVoiceGlyphs";
 import "../styles/AtlasVoicePanel.css";
 
+const IDLE_LOG_HIDE_MS = 8000;
+
 export default function AtlasVoicePanel() {
   const { i18n } = useTranslation();
   const locale = getLocale(i18n.resolvedLanguage || i18n.language);
   const copy = TEXT[locale];
 
-  const location = useStore((state) => state.location);
+  const [status, setStatus] = useState("idle");
+  // 没开语音时不订阅这些字段：朝向在拖动时每秒变几十次，闲置的面板不必跟着重渲染
+  const isActive = status !== "idle";
+  const location = useStore((state) => (isActive ? state.location : null));
   // Hold the narration steady while it streams: every chunk would otherwise
   // change the context signature and resend the whole session.update.
   const description = useStore((state) =>
-    state.isDescriptionLoading ? "" : state.description,
+    !isActive || state.isDescriptionLoading ? "" : state.description,
   );
-  const heading = useStore((state) => state.heading);
-  const streetViewView = useStore((state) => state.streetViewView);
+  const heading = useStore((state) => (isActive ? state.heading : 0));
+  const streetViewView = useStore((state) =>
+    isActive ? state.streetViewView : null,
+  );
   const showToastMessage = useStore((state) => state.showToastMessage);
 
-  const [status, setStatus] = useState("idle");
   const [error, setError] = useState("");
   const [lastAssistantText, setLastAssistantText] = useState("");
   const [voiceConfig, setVoiceConfig] = useState(() =>
@@ -423,8 +429,11 @@ export default function AtlasVoicePanel() {
     startMicrophoneStreaming,
   ]);
 
+  // 主动停止（包括连接中途取消）时一并收起回复记录；连接意外断开时保留错误提示
   const stopVoice = useCallback(() => {
     cleanupConnection();
+    setLastAssistantText("");
+    setError("");
     setStatus("idle");
   }, [cleanupConnection]);
 
@@ -432,7 +441,16 @@ export default function AtlasVoicePanel() {
     return () => cleanupConnection();
   }, [cleanupConnection]);
 
-  const isActive = status !== "idle";
+  // 语音已经结束（比如麦克风被拒、连接断开）时，留下的提示看一会儿就收起，不一直压在街景上
+  useEffect(() => {
+    if (status !== "idle" || (!error && !lastAssistantText)) return undefined;
+    const timerId = window.setTimeout(() => {
+      setError("");
+      setLastAssistantText("");
+    }, IDLE_LOG_HIDE_MS);
+    return () => window.clearTimeout(timerId);
+  }, [error, lastAssistantText, status]);
+
   const statusLabel = copy[status] || copy.idle;
   const hasVoiceLog = Boolean(lastAssistantText || error);
 
@@ -446,9 +464,8 @@ export default function AtlasVoicePanel() {
       <button
         className="atlas-voice-button"
         onClick={isActive ? stopVoice : startVoice}
-        disabled={status === "connecting"}
         type="button"
-        aria-label={isActive ? copy.stop : copy.start}
+        aria-label={`${isActive ? copy.stop : copy.start}${locale === "zh" ? "" : " "}${copy.title}`}
         title={isActive ? copy.stop : copy.start}
       >
         <span className="atlas-voice-glyph" aria-hidden="true">

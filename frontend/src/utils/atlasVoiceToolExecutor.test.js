@@ -363,7 +363,11 @@ describe("executeAtlasVoiceTool", () => {
       makeDeps(),
     );
 
-    expect(result).toMatchObject({ success: false, error: "upstream down" });
+    // 后端原文只进控制台；语音工具拿到的是界面语言的提示
+    expect(result).toMatchObject({
+      success: false,
+      error: "Couldn't find the next stop. Please try again.",
+    });
     expect(useStore.getState().location).toBe(CROMWELL);
     expect(useStore.getState().locationError).toBeNull();
   });

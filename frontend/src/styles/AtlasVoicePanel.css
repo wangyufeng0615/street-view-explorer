@@ -1,168 +1,148 @@
-/* Atlas 语音入口 —— 印章式按钮，随手记暖纸风格 */
+/* Atlas 语音入口：首页底部操作栏里的无底图标按钮，开启后变白；回复记录是右侧的深色面板 */
 
 .atlas-voice-panel {
-  position: static;
+  position: relative;
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  width: 100%;
-  background: transparent;
-  border: 0;
-  box-shadow: none;
-  font-family: inherit;
-  overflow: visible;
+  flex: 0 0 auto;
 }
 
 .atlas-voice-button {
+  position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  flex: 0 0 auto;
-  height: 25px;
-  padding: 0 11px;
-  border: 1px solid rgba(168, 80, 42, 0.45);
-  border-radius: 999px;
+  justify-content: center;
+  gap: 8px;
+  height: var(--home-control-height, 46px);
+  padding: 0 12px;
+  border: 0;
+  border-radius: 10px;
   background: transparent;
-  color: var(--atlas-accent, #a8502a);
-  font-size: 11.5px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  color: var(--home-text, rgba(255, 245, 230, 0.94));
+  filter: drop-shadow(0 1px 2px rgba(26, 16, 8, 0.55));
   cursor: pointer;
-  font-family:
-    "Source Han Serif SC", "Songti SC", Georgia, "PingFang SC", serif;
   transition:
     background 0.16s ease,
-    border-color 0.16s ease,
-    color 0.16s ease,
-    box-shadow 0.16s ease;
+    border-color 0.16s ease;
 }
 
 .atlas-voice-button:hover:not(:disabled) {
-  background: rgba(168, 80, 42, 0.08);
-  border-color: rgba(168, 80, 42, 0.75);
-  color: var(--atlas-accent-deep, #8c3f1f);
+  background: var(--home-bare-hover, rgba(255, 245, 230, 0.12));
 }
 
 .atlas-voice-button:disabled {
   cursor: wait;
-  opacity: 0.65;
 }
 
 .atlas-voice-glyph {
   display: flex;
   align-items: center;
-  flex-shrink: 0;
 }
 
+.atlas-voice-glyph svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* 按钮带文字：空闲时显示"语音模式"，开启后显示当前状态 */
 .atlas-voice-label {
-  white-space: nowrap;
-  max-width: 110px;
+  max-width: 120px;
   overflow: hidden;
+  font-size: 14px;
+  white-space: nowrap;
   text-overflow: ellipsis;
 }
 
-/* 激活态：实心赭石印章 */
 .atlas-voice-panel--connecting .atlas-voice-button,
 .atlas-voice-panel--connected .atlas-voice-button,
 .atlas-voice-panel--listening .atlas-voice-button,
 .atlas-voice-panel--thinking .atlas-voice-button,
 .atlas-voice-panel--speaking .atlas-voice-button,
 .atlas-voice-panel--tool .atlas-voice-button {
-  background: var(--atlas-accent, #a8502a);
-  color: #fdfaf2;
-  border-color: var(--atlas-accent-deep, #8c3f1f);
-  box-shadow: 0 1px 4px rgba(140, 63, 31, 0.3);
+  background: var(--home-primary, rgba(248, 248, 245, 0.96));
+  border-color: transparent;
+  color: var(--home-ink, #2a2018);
 }
 
-.atlas-voice-panel--connecting .atlas-voice-button:hover:not(:disabled),
-.atlas-voice-panel--connected .atlas-voice-button:hover:not(:disabled),
-.atlas-voice-panel--listening .atlas-voice-button:hover:not(:disabled),
-.atlas-voice-panel--thinking .atlas-voice-button:hover:not(:disabled),
-.atlas-voice-panel--speaking .atlas-voice-button:hover:not(:disabled),
-.atlas-voice-panel--tool .atlas-voice-button:hover:not(:disabled) {
-  background: var(--atlas-accent-deep, #8c3f1f);
-  color: #fdfaf2;
+.atlas-voice-panel--listening .atlas-voice-button::after,
+.atlas-voice-panel--speaking .atlas-voice-button::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border: 1.5px solid var(--home-accent, #e2ad74);
+  border-radius: 15px;
+  opacity: 0;
+  animation: voiceRing 1.8s ease-out infinite;
 }
 
-/* 在听 / 在说 / 行动中：图标呼吸 */
-.atlas-voice-panel--listening .atlas-voice-glyph,
 .atlas-voice-panel--thinking .atlas-voice-glyph,
-.atlas-voice-panel--speaking .atlas-voice-glyph,
-.atlas-voice-panel--tool .atlas-voice-glyph {
-  animation: voiceBreath 1.6s ease-in-out infinite;
+.atlas-voice-panel--tool .atlas-voice-glyph,
+.atlas-voice-panel--connecting .atlas-voice-glyph {
+  animation: voiceBreath 1.4s ease-in-out infinite;
+}
+
+@keyframes voiceRing {
+  0% {
+    opacity: 0.7;
+    transform: scale(0.96);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.18);
+  }
 }
 
 @keyframes voiceBreath {
   0%,
   100% {
     opacity: 1;
-    transform: scale(1);
   }
   50% {
-    opacity: 0.55;
-    transform: scale(0.86);
+    opacity: 0.5;
   }
 }
 
-/* 对话记录：页边笔记 */
+/* 语音回复：浮在语音按钮上方、右对齐。操作栏外层有 transform，fixed 会以它为参照，所以用 absolute */
 .atlas-voice-log {
-  align-self: stretch;
-  max-height: 92px;
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 10px);
+  width: min(300px, calc(100vw - 32px));
+  max-height: 180px;
   overflow-y: auto;
-  margin-top: 7px;
-  padding: 6px 0 0;
-  border-top: 1px dashed var(--atlas-rule, rgba(163, 131, 84, 0.36));
-  background: transparent;
+  padding: 12px 14px;
+  border: 1px solid var(--home-panel-border, rgba(255, 245, 230, 0.1));
+  border-radius: var(--home-radius-lg, 16px);
+  background: var(--home-panel-bg, rgba(33, 26, 20, 0.96));
+  box-shadow: var(--home-shadow, 0 12px 32px rgba(26, 16, 8, 0.28));
+  z-index: 30;
 }
 
 .atlas-voice-line {
-  font-size: 11.5px;
-  line-height: 1.5;
-  letter-spacing: 0.01em;
-  color: var(--atlas-ink-soft, #84715a);
-  font-family:
-    "Source Han Serif SC", "Songti SC", Georgia, "PingFang SC", serif;
+  color: var(--home-text, rgba(255, 245, 230, 0.94));
+  font-family: var(--home-serif, Georgia, serif);
+  font-size: 14px;
+  line-height: 1.6;
 }
 
 .atlas-voice-line + .atlas-voice-line {
-  margin-top: 5px;
-}
-
-.atlas-voice-line.assistant {
-  color: var(--atlas-accent-deep, #8c3f1f);
-  font-style: italic;
+  margin-top: 6px;
 }
 
 .atlas-voice-line.error {
-  color: #a03c22;
+  color: #ffb4a0;
+  font-family: inherit;
+  font-size: 13px;
 }
 
-@media (max-width: 760px) {
-  .atlas-voice-button {
-    height: 25px;
-    padding: 0 10px;
-    font-size: 11.5px;
-  }
-
-  .atlas-voice-label {
-    max-width: 96px;
-  }
-
+@media (max-width: 720px) {
   .atlas-voice-log {
-    max-height: 80px;
-    padding-top: 6px;
-  }
-
-  .atlas-voice-line {
-    font-size: 11px;
+    max-height: 132px;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .atlas-voice-panel--listening .atlas-voice-glyph,
-  .atlas-voice-panel--thinking .atlas-voice-glyph,
-  .atlas-voice-panel--speaking .atlas-voice-glyph,
-  .atlas-voice-panel--tool .atlas-voice-glyph {
+  .atlas-voice-button::after,
+  .atlas-voice-glyph {
     animation: none !important;
   }
 }

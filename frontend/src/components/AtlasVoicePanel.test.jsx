@@ -187,7 +187,7 @@ describe("AtlasVoicePanel", () => {
 
   async function startPanel() {
     render(<AtlasVoicePanel />);
-    fireEvent.click(screen.getByRole("button", { name: "开始" }));
+    fireEvent.click(screen.getByRole("button", { name: "开始语音模式" }));
     await waitFor(() => expect(getUserMedia).toHaveBeenCalled());
     await waitFor(() =>
       expect(screen.getByText("可以说话了")).toBeInTheDocument(),
@@ -205,9 +205,11 @@ describe("AtlasVoicePanel", () => {
     });
 
     expect(firstTrack.stop).toHaveBeenCalled();
-    expect(screen.getByRole("button", { name: "开始" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "开始语音模式" }),
+    ).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "开始" }));
+    fireEvent.click(screen.getByRole("button", { name: "开始语音模式" }));
     await waitFor(() => expect(MockWebSocket.instances).toHaveLength(2));
     await waitFor(() => expect(getUserMedia).toHaveBeenCalledTimes(2));
     expect(firstTrack.stop).toHaveBeenCalledTimes(1);
@@ -222,7 +224,7 @@ describe("AtlasVoicePanel", () => {
       }),
     );
     const { unmount } = render(<AtlasVoicePanel />);
-    fireEvent.click(screen.getByRole("button", { name: "开始" }));
+    fireEvent.click(screen.getByRole("button", { name: "开始语音模式" }));
     await waitFor(() => expect(getUserMedia).toHaveBeenCalled());
 
     unmount();

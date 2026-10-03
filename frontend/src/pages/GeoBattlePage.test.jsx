@@ -428,6 +428,79 @@ describe("GeoBattlePage", () => {
     ).toBe("blob:round-1-zoom-13");
   });
 
+  it("keeps ready and result controls usable when Google Maps fails to load", async () => {
+    vi.mocked(loadGoogleMapsScript).mockRejectedValueOnce(new Error("blocked"));
+    const lobbyRoom = {
+      ...makeRoom(),
+      phase: "lobby",
+      can_ready: true,
+      can_submit_guess: false,
+    };
+
+    render(<GeoBattlePage />);
+    await act(async () => {
+      mocks.roomResolver({ success: true, data: { room: lobbyRoom } });
+    });
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "geo_online.map_error",
+    );
+    expect(
+      screen.queryByText("geo_online.map_loading"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "geo_online.ready" }),
+    ).toBeEnabled();
+  });
+
+  it("labels the rematch button as a cancel once this player is ready", async () => {
+    const finishedRoom = {
+      ...makeRoom(),
+      phase: "finished",
+      can_ready: true,
+      can_submit_guess: false,
+      me: { ...makeRoom().me, is_ready: true },
+      rounds: [],
+    };
+
+    render(<GeoBattlePage />);
+    await act(async () => {
+      mocks.roomResolver({ success: true, data: { room: finishedRoom } });
+    });
+
+    expect(
+      screen.getByRole("button", { name: "geo_online.cancel_play_again" }),
+    ).toBeEnabled();
+    expect(screen.getByText("geo_online.rematch_waiting")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "geo_online.play_again" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("stops waiting for a rematch once the opponent has left", async () => {
+    const finishedRoom = {
+      ...makeRoom(),
+      phase: "finished",
+      can_ready: false,
+      can_submit_guess: false,
+      me: { ...makeRoom().me, is_ready: true },
+      opponent: { ...makeRoom().opponent, left: true },
+      rounds: [],
+    };
+
+    render(<GeoBattlePage />);
+    await act(async () => {
+      mocks.roomResolver({ success: true, data: { room: finishedRoom } });
+    });
+
+    expect(
+      screen.queryByText("geo_online.rematch_waiting"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "geo_online.play_again" }),
+    ).toBeDisabled();
+  });
+
   it("keeps at most one room poll in flight", async () => {
     render(<GeoBattlePage />);
     await act(async () => {
