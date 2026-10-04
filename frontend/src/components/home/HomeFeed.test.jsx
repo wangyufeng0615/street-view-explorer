@@ -29,7 +29,7 @@ vi.mock("react-i18next", () => ({
   }),
 }));
 
-import HomeFeed from "./HomeFeed";
+import HomeFeed, { measureInlineMore } from "./HomeFeed";
 
 beforeAll(() => {
   if (typeof window.PointerEvent === "function") return;
@@ -180,5 +180,62 @@ describe("HomeFeed", () => {
     );
     swipe(screen.getByTestId("pano-a"), 600, 200);
     expect(onNext).not.toHaveBeenCalled();
+  });
+});
+
+describe("measureInlineMore", () => {
+  function slotWith({ logoRight, marksLeft, buttonWidth }) {
+    const slot = document.createElement("div");
+    slot.innerHTML = `
+      <a href="https://maps.google.com/maps/@1,2"></a>
+      <div class="gm-style-cc"></div>
+      <button class="home-feed__more"></button>`;
+    const rect = (left, right, top, bottom) => () => ({
+      left,
+      right,
+      top,
+      bottom,
+      width: right - left,
+      height: bottom - top,
+    });
+    slot.getBoundingClientRect = rect(0, 375, 0, 812);
+    slot.querySelector("a").getBoundingClientRect = rect(
+      5,
+      logoRight,
+      786,
+      812,
+    );
+    slot.querySelector(".gm-style-cc").getBoundingClientRect = rect(
+      marksLeft,
+      375,
+      798,
+      812,
+    );
+    Object.defineProperty(slot.querySelector("button"), "offsetWidth", {
+      value: buttonWidth,
+    });
+    return slot;
+  }
+
+  it("puts the button next to the Google logo when the gap is wide enough", () => {
+    expect(
+      measureInlineMore(
+        slotWith({ logoRight: 71, marksLeft: 212, buttonWidth: 88 }),
+      ),
+    ).toBe(79);
+  });
+
+  it("keeps the button above the logo row when it would touch the attribution", () => {
+    expect(
+      measureInlineMore(
+        slotWith({ logoRight: 71, marksLeft: 167, buttonWidth: 103 }),
+      ),
+    ).toBeNull();
+  });
+
+  it("falls back when Google's attribution cannot be found", () => {
+    const slot = document.createElement("div");
+    slot.innerHTML = `<button class="home-feed__more"></button>`;
+    expect(measureInlineMore(slot)).toBeNull();
   });
 });

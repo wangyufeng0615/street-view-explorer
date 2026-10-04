@@ -477,5 +477,6 @@
   "home.feed.closeLetter": "收起来信",
   "home.feed.writing": "Atlas 正在写这一站…",
   "home.feed.hint": "上滑去下一站",
-  "home.feed.hintRotate": "左右拖动环顾四周，下拉回到上一站"
+  "home.feed.hintRotate": "左右拖动环顾四周，下拉回到上一站",
+  "home.feed.more": "展开来信"
 }

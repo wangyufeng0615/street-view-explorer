@@ -120,12 +120,48 @@ const FeedCaption = memo(function FeedCaption({
       {active && excerpt && (
         <span className="home-feed__excerpt">{excerpt}</span>
       )}
-      {active && (
-        <span className="home-feed__more">{t("home.feed.openLetter")}</span>
-      )}
     </div>
   );
 });
+
+// "展开来信"按钮：放得下时摆在 Google 标志右边那一行，不再单独占一行；放不下就摆在字幕下面
+const FeedMore = memo(function FeedMore({ onOpen }) {
+  const { t } = useTranslation();
+  return (
+    <button
+      type="button"
+      className="home-feed__more"
+      aria-label={t("home.feed.openLetter")}
+      onClick={onOpen}
+    >
+      {t("home.feed.more")}
+    </button>
+  );
+});
+
+const ATTRIBUTION_GAP_PX = 8;
+
+/**
+ * 量出当前卡片底边 Google 标志和右侧版权行之间的空当，够放"展开来信"按钮就返回它的左边距。
+ * 找不到标志或版权行（Google 改了结构、还没加载完）时返回 null，按钮退回字幕下方，
+ * 保证永远不压住署名。
+ */
+export function measureInlineMore(slot) {
+  const button = slot?.querySelector(".home-feed__more");
+  const logo = slot?.querySelector('a[href^="https://maps.google.com/maps"]');
+  if (!button || !logo) return null;
+  const box = slot.getBoundingClientRect();
+  const logoBox = logo.getBoundingClientRect();
+  const marks = [...slot.querySelectorAll(".gm-style-cc")]
+    .map((mark) => mark.getBoundingClientRect())
+    .filter((rect) => rect.width > 0 && rect.bottom > box.bottom - 30);
+  if (logoBox.width === 0 || marks.length === 0) return null;
+  const left = logoBox.right - box.left + ATTRIBUTION_GAP_PX;
+  const marksLeft = Math.min(...marks.map((rect) => rect.left)) - box.left;
+  return left + button.offsetWidth + ATTRIBUTION_GAP_PX <= marksLeft
+    ? Math.round(left)
+    : null;
+}
 
 function useSwipeHint({ enabled, ready }) {
   const [state, setState] = useState(() =>
@@ -242,6 +278,9 @@ export default function HomeFeed({
 
   // —— 拖动和吸附动画直接写 DOM 样式，不经过 React 渲染 ——
   const areaRef = useRef(null);
+  const [moreLeft, setMoreLeft] = useState(null);
+  // 沿路走到别的全景时版权行可能变长，跟着重新量
+  const viewPanoId = useStore((state) => state.streetViewView?.panoId || "");
   const slotRefs = useRef([]);
   const rolesRef = useRef(roles);
   const motionRef = useRef({
@@ -410,13 +449,38 @@ export default function HomeFeed({
 
   useEffect(() => () => window.clearTimeout(motionRef.current.timerId), []);
 
+  const currentSlot = roles.current;
+  useEffect(() => {
+    const slot = slotRefs.current[currentSlot];
+    if (!slot || !hasLanded) {
+      setMoreLeft(null);
+      return undefined;
+    }
+    const measure = () => setMoreLeft(measureInlineMore(slot));
+    measure();
+    // Google 的版权行在全景加载后才排好，稍后再量一次
+    const timerId = window.setTimeout(measure, 800);
+    window.addEventListener("resize", measure);
+    return () => {
+      window.clearTimeout(timerId);
+      window.removeEventListener("resize", measure);
+    };
+    // viewPanoId 只用来触发重新测量
+  }, [currentSlot, hasLanded, language, viewPanoId]);
+
   const excerpt = descError
     ? ""
     : letterExcerpt(description) ||
       (isLoadingDesc ? t("home.feed.writing") : "");
 
   return (
-    <div className="home-feed" ref={areaRef}>
+    <div
+      className={`home-feed${moreLeft === null ? "" : " is-more-inline"}`}
+      style={
+        moreLeft === null ? undefined : { "--feed-more-left": `${moreLeft}px` }
+      }
+      ref={areaRef}
+    >
       {items.map((item, slotIndex) => {
         const role = roleOfSlot(roles, slotIndex);
         const active = role === "current";
@@ -448,12 +512,15 @@ export default function HomeFeed({
                 <CompassGlyph size={24} strokeWidth={1.6} />
               </div>
             ) : (
-              <FeedCaption
-                label={item?.label}
-                excerpt={active ? excerpt : ""}
-                active={active}
-                onOpen={onOpenLetter}
-              />
+              <>
+                <FeedCaption
+                  label={item?.label}
+                  excerpt={active ? excerpt : ""}
+                  active={active}
+                  onOpen={onOpenLetter}
+                />
+                {active && item?.label && <FeedMore onOpen={onOpenLetter} />}
+              </>
             )}
           </div>
         );

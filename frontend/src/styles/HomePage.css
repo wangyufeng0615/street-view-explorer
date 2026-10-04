@@ -84,6 +84,13 @@
     );
 }
 
+/* 街景右下角的"键盘快捷键"只是帮助入口，不属于署名；街景全景没有关掉它的选项，这里只藏这一项。
+   Google 标志、地图数据 ©、条款、报告问题按使用条款必须保留，不要扩大这条规则 */
+.home-stage .gm-style-cc:has(button[aria-label="键盘快捷键"]),
+.home-stage .gm-style-cc:has(button[aria-label="Keyboard shortcuts"]) {
+  display: none;
+}
+
 /* 街景自成一层，Google 内部图层的 z-index 不会盖过上面的暗角 */
 .street-view-container {
   width: 100%;
@@ -1155,7 +1162,8 @@ button.home-where__option:hover:not(:disabled),
   position: absolute;
   left: var(--home-edge);
   right: calc(var(--feed-rail-width) + var(--home-edge));
-  bottom: var(--feed-bottom);
+  /* 下面先让出"展开来信"按钮的一行 */
+  bottom: calc(var(--feed-bottom) + 38px);
   z-index: 2;
   display: flex;
   flex-direction: column;
@@ -1192,18 +1200,38 @@ button.home-where__option:hover:not(:disabled),
 
 /* "展开"是字幕里唯一的操作，做成实底小按钮，一眼能看出可以点 */
 .home-feed__more {
+  position: absolute;
+  bottom: var(--feed-bottom);
+  left: var(--home-edge);
+  z-index: 2;
   display: inline-flex;
-  align-self: flex-start;
   align-items: center;
   gap: 6px;
-  margin-top: 2px;
-  padding: 6px 10px 6px 12px;
+  padding: 7px 10px 7px 12px;
+  border: 0;
   border-radius: 8px;
   background: rgba(255, 245, 230, 0.18);
   color: var(--home-text);
+  font: inherit;
   font-size: 13px;
   font-weight: 600;
-  text-shadow: none;
+  line-height: 16px;
+  white-space: nowrap;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 空当够宽（HomeFeed 实测 Google 标志和版权行之间的距离）：按钮挪到标志右边那一行，
+   字幕跟着下移，Google 标志不再单独占一行 */
+.home-feed.is-more-inline .home-feed__more {
+  bottom: 0;
+  left: var(--feed-more-left);
+  padding-top: 5px;
+  padding-bottom: 5px;
+}
+
+.home-feed.is-more-inline .home-feed__caption {
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 34px);
 }
 
 .home-feed__more::after {
@@ -1216,7 +1244,8 @@ button.home-where__option:hover:not(:disabled),
   transform: rotate(45deg);
 }
 
-.home-feed__caption:active .home-feed__more {
+.home-feed__more:active,
+.home-feed__caption:active ~ .home-feed__more {
   background: rgba(255, 245, 230, 0.28);
 }
 
@@ -1306,7 +1335,8 @@ button.home-where__option:hover:not(:disabled),
 .home-shell--feed .home-bottom {
   top: auto;
   right: 4px;
-  bottom: calc(var(--feed-bottom) - 6px);
+  /* 右下角的版权行只有 14px 高，竖排按钮贴着它上方 */
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 22px);
   left: auto;
   width: var(--feed-rail-width);
   transform: none;
