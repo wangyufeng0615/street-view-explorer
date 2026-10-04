@@ -38,6 +38,8 @@ Selected implementation: Exa fast search plus a Fireworks preference **only** fo
 
 ## Reproduction
 
+The test file `backend/internal/openai/description_latency_live_test.go` was removed on 2026-10-04 after the switch to V4.1 Flash; restore it from Git history before running the command below.
+
 Normal `go test ./...` skips the paid test. From `backend/`, explicitly supply absolute paths:
 
 ```bash

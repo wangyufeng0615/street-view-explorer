@@ -6,14 +6,8 @@ func TestDescriptionPerformancePolicy(t *testing.T) {
 	t.Setenv("OPENROUTER_DESCRIPTION_SEARCH", "")
 	t.Setenv("OPENROUTER_DESCRIPTION_PROVIDER_SORT", "")
 	t.Setenv("OPENROUTER_PROVIDER_SORT", "latency")
-	if descriptionProviderPreferences("another-model") != nil {
+	if descriptionProviderPreferences() != nil {
 		t.Fatal("game policy leaked into descriptions")
-	}
-	if p := descriptionProviderPreferences("deepseek/deepseek-v4-flash-vision-exp"); p == nil || len(p.Order) != 1 || p.Order[0] != "fireworks" || p.AllowFallbacks == nil || !*p.AllowFallbacks || p.Sort != "" {
-		t.Fatal("missing measured model preference or fallback")
-	}
-	if descriptionProviderPreferences(defaultSceneModel) != nil {
-		t.Fatal("V4.1 Flash must not inherit the legacy Fireworks preference")
 	}
 	for _, detailed := range []bool{false, true} {
 		p := descriptionSearchParameters(detailed)
@@ -32,11 +26,11 @@ func TestDescriptionPerformancePolicy(t *testing.T) {
 		t.Fatal("cannot restore previous search policy")
 	}
 	t.Setenv("OPENROUTER_DESCRIPTION_PROVIDER_SORT", "latency")
-	if p := descriptionProviderPreferences(defaultSceneModel); p == nil || p.Sort != "latency" || len(p.Order) != 0 {
+	if p := descriptionProviderPreferences(); p == nil || p.Sort != "latency" {
 		t.Fatal("description route not configurable")
 	}
 	t.Setenv("OPENROUTER_DESCRIPTION_PROVIDER_SORT", "off")
-	if descriptionProviderPreferences(defaultSceneModel) != nil {
+	if descriptionProviderPreferences() != nil {
 		t.Fatal("cannot restore automatic routing")
 	}
 }

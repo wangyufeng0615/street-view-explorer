@@ -42,14 +42,12 @@ func (c *client) StreamLocationDescription(parent context.Context, latitude, lon
 func (c *client) streamLocationDescriptionOnce(parent context.Context, latitude, longitude float64, locationInfo map[string]string, scene *SceneImage, language string, onDelta func(string) error) (string, []Citation, error) {
 	startTime := time.Now()
 	descTimeout := 25 * time.Second
-	descriptionModel := c.modelName
 	systemPrompt := atlas.TextSystemPrompt(language)
 	if scene != nil && strings.TrimSpace(scene.Base64) != "" {
-		descriptionModel = c.sceneModel()
 		systemPrompt = atlas.VisualTextSystemPrompt(language)
 	}
 
-	log.Printf("[AI] action=request_start function=GenerateLocationDescription coords=(%.6f,%.6f) language=%s model=%s scene_attached=%t timeout=%s", latitude, longitude, language, descriptionModel, scene != nil && strings.TrimSpace(scene.Base64) != "", descTimeout)
+	log.Printf("[AI] action=request_start function=GenerateLocationDescription coords=(%.6f,%.6f) language=%s model=%s scene_attached=%t timeout=%s", latitude, longitude, language, c.modelName, scene != nil && strings.TrimSpace(scene.Base64) != "", descTimeout)
 
 	outputFormat := descriptionLanguageInstruction(language) + "\n\n" + descriptionGroundingRules
 
@@ -168,8 +166,8 @@ func (c *client) streamLocationDescriptionOnce(parent context.Context, latitude,
 	streamLimiter.language = language
 	streamGate := newDescriptionStreamGate(language, streamLimiter.Write)
 	reqBody := visionChatRequest{
-		Model:     descriptionModel,
-		Provider:  descriptionProviderPreferences(descriptionModel),
+		Model:     c.modelName,
+		Provider:  descriptionProviderPreferences(),
 		MaxTokens: 640,
 		Reasoning: &reasoningConfig{Enabled: false},
 		Messages: []visionMessage{
@@ -254,14 +252,12 @@ func (c *client) GenerateDetailedLocationDescription(latitude, longitude float64
 func (c *client) StreamDetailedLocationDescription(parent context.Context, latitude, longitude float64, locationInfo map[string]string, scene *SceneImage, language string, onDelta func(string) error) (string, []Citation, error) {
 	startTime := time.Now()
 	detailedTimeout := 60 * time.Second
-	descriptionModel := c.modelName
 	systemPrompt := atlas.TextSystemPrompt(language)
 	if scene != nil && strings.TrimSpace(scene.Base64) != "" {
-		descriptionModel = c.sceneModel()
 		systemPrompt = atlas.VisualTextSystemPrompt(language)
 	}
 
-	log.Printf("[AI] action=request_start function=GenerateDetailedLocationDescription coords=(%.6f,%.6f) language=%s model=%s scene_attached=%t timeout=%s", latitude, longitude, language, descriptionModel, scene != nil && strings.TrimSpace(scene.Base64) != "", detailedTimeout)
+	log.Printf("[AI] action=request_start function=GenerateDetailedLocationDescription coords=(%.6f,%.6f) language=%s model=%s scene_attached=%t timeout=%s", latitude, longitude, language, c.modelName, scene != nil && strings.TrimSpace(scene.Base64) != "", detailedTimeout)
 
 	ctx, cancel := context.WithTimeout(parent, detailedTimeout)
 	defer cancel()
@@ -333,8 +329,8 @@ func (c *client) StreamDetailedLocationDescription(parent context.Context, latit
 	streamLimiter.language = language
 	streamGate := newDescriptionStreamGate(language, streamLimiter.Write)
 	reqBody := visionChatRequest{
-		Model:     descriptionModel,
-		Provider:  descriptionProviderPreferences(descriptionModel),
+		Model:     c.modelName,
+		Provider:  descriptionProviderPreferences(),
 		MaxTokens: 850,
 		Reasoning: &reasoningConfig{Enabled: false},
 		Messages: []visionMessage{

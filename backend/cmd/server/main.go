@@ -214,7 +214,6 @@ func main() {
 			"config": map[string]interface{}{
 				"storage":            "sqlite",
 				"rate_limit_enabled": cfg.SecurityConfig().RateLimit.Enabled,
-				"cors_origins":       cfg.SecurityConfig().CORS.AllowedOrigins,
 				"proxy_enabled":      cfg.ProxyURL() != "",
 				"proxy_type":         os.Getenv("PROXY_TYPE"),
 				"proxy_status":       proxyStatus,

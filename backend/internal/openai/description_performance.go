@@ -5,19 +5,12 @@ import (
 	"strings"
 )
 
-// Description routing is independent of the satellite guessing game.
-// Prefer the measured endpoint only for the model evaluated on SG. A model
-// override must not inherit an unrelated provider pin. Fallback remains allowed.
-func descriptionProviderPreferences(model string) *providerPreferences {
+// Description routing is independent of the satellite guessing game: by
+// default OpenRouter picks the provider, and an explicit sort can override it.
+func descriptionProviderPreferences() *providerPreferences {
 	switch sort := strings.ToLower(strings.TrimSpace(os.Getenv("OPENROUTER_DESCRIPTION_PROVIDER_SORT"))); sort {
 	case "latency", "throughput", "price":
 		return &providerPreferences{Sort: sort}
-	case "off", "auto":
-		return nil
-	}
-	if model == "deepseek/deepseek-v4-flash-vision-exp" || model == "deepseek/deepseek-v4-flash-vision-exp-20260821" {
-		allow := true
-		return &providerPreferences{Order: []string{"fireworks"}, AllowFallbacks: &allow}
 	}
 	return nil
 }

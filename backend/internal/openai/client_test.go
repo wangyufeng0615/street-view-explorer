@@ -108,7 +108,7 @@ func TestTextSystemPromptKeepsCitationsOutOfBody(t *testing.T) {
 	}
 }
 
-func TestGenerateLocationDescriptionUsesSceneModelAndImageWithoutPlusCodeMetadata(t *testing.T) {
+func TestGenerateLocationDescriptionUsesSceneImageWithoutPlusCodeMetadata(t *testing.T) {
 	var requestBody map[string]interface{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
@@ -122,11 +122,10 @@ func TestGenerateLocationDescriptionUsesSceneModelAndImageWithoutPlusCodeMetadat
 	defer server.Close()
 
 	c := &client{
-		apiKey:         "test-key",
-		modelName:      "text-test-model",
-		sceneModelName: "scene-test-model",
-		httpClient:     server.Client(),
-		endpoint:       server.URL,
+		apiKey:     "test-key",
+		modelName:  "test-model",
+		httpClient: server.Client(),
+		endpoint:   server.URL,
 	}
 
 	_, _, err := c.GenerateLocationDescription(
@@ -155,8 +154,8 @@ func TestGenerateLocationDescriptionUsesSceneModelAndImageWithoutPlusCodeMetadat
 	if !strings.Contains(body, "Street View Frame: provided (heading=90, pitch=0, fov=80)") || !strings.Contains(body, "可见事实只能来自当前街景图片") {
 		t.Fatalf("request did not make the visual grounding contract explicit: %s", body)
 	}
-	if got := requestBody["model"]; got != "scene-test-model" {
-		t.Fatalf("request model = %v, want scene-test-model", got)
+	if got := requestBody["model"]; got != "test-model" {
+		t.Fatalf("request model = %v, want test-model", got)
 	}
 	if !strings.Contains(body, `"reasoning":{"enabled":false}`) {
 		t.Fatalf("request did not disable paid reasoning tokens for the description path: %s", body)
@@ -435,7 +434,7 @@ func TestReadChatCompletionStreamForwardsDeltasAndUsage(t *testing.T) {
 	}
 }
 
-func TestGenerateDetailedLocationDescriptionUsesSceneModelAndImage(t *testing.T) {
+func TestGenerateDetailedLocationDescriptionUsesSceneImage(t *testing.T) {
 	var requestBody map[string]interface{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
@@ -448,7 +447,7 @@ func TestGenerateDetailedLocationDescriptionUsesSceneModelAndImage(t *testing.T)
 	}))
 	defer server.Close()
 
-	c := &client{apiKey: "test-key", modelName: "text-test-model", sceneModelName: "scene-test-model", httpClient: server.Client(), endpoint: server.URL}
+	c := &client{apiKey: "test-key", modelName: "test-model", httpClient: server.Client(), endpoint: server.URL}
 	_, _, err := c.GenerateDetailedLocationDescription(
 		1,
 		2,
@@ -471,8 +470,8 @@ func TestGenerateDetailedLocationDescriptionUsesSceneModelAndImage(t *testing.T)
 	if !strings.Contains(body, "A current Street View frame is attached at heading 180, pitch -5, fov 75") {
 		t.Fatalf("detailed request did not declare visual grounding: %s", body)
 	}
-	if got := requestBody["model"]; got != "scene-test-model" {
-		t.Fatalf("request model = %v, want scene-test-model", got)
+	if got := requestBody["model"]; got != "test-model" {
+		t.Fatalf("request model = %v, want test-model", got)
 	}
 	if strings.Contains(body, `"provider"`) {
 		t.Fatalf("detailed request overrode OpenRouter Auto Exacto provider routing: %s", body)
@@ -505,7 +504,7 @@ func TestGenerateRegionsForInterestUsesJSONOnlySystemPrompt(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c := &client{apiKey: "test-key", modelName: "deepseek/deepseek-v4-flash", httpClient: server.Client(), endpoint: server.URL}
+	c := &client{apiKey: "test-key", modelName: "test-model", httpClient: server.Client(), endpoint: server.URL}
 	regions, err := c.GenerateRegionsForInterest("castles")
 	if err != nil {
 		t.Fatalf("GenerateRegionsForInterest() error = %v", err)
@@ -533,7 +532,7 @@ func TestGenerateRegionsForInterestUsesJSONOnlySystemPrompt(t *testing.T) {
 	}
 }
 
-func TestGuessLocationFromImageUsesSeparateVisionModel(t *testing.T) {
+func TestGuessLocationFromImageUsesConfiguredModelWithoutReasoning(t *testing.T) {
 	var requestBody map[string]interface{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
@@ -545,17 +544,16 @@ func TestGuessLocationFromImageUsesSeparateVisionModel(t *testing.T) {
 	defer server.Close()
 
 	c := &client{
-		apiKey:          "test-key",
-		modelName:       "deepseek/deepseek-v4-flash",
-		visionModelName: "vision-test-model",
-		httpClient:      server.Client(),
-		endpoint:        server.URL,
+		apiKey:     "test-key",
+		modelName:  "test-model",
+		httpClient: server.Client(),
+		endpoint:   server.URL,
 	}
 	if _, _, _, err := c.GuessLocationFromImage(context.Background(), "aW1hZ2U=", 10, "en"); err != nil {
 		t.Fatalf("GuessLocationFromImage() error = %v", err)
 	}
-	if got := requestBody["model"]; got != "vision-test-model" {
-		t.Fatalf("request model = %v, want vision-test-model", got)
+	if got := requestBody["model"]; got != "test-model" {
+		t.Fatalf("request model = %v, want test-model", got)
 	}
 	if got := requestBody["max_tokens"]; got != float64(geoAIMaxTokens) {
 		t.Fatalf("request max_tokens = %v, want %d", got, geoAIMaxTokens)
@@ -719,37 +717,14 @@ func TestDoChatCompletionDoesNotRetryNonTransientStatus(t *testing.T) {
 	}
 }
 
-func TestSelectModelUsesCNModelOnlyWithoutProxy(t *testing.T) {
+func TestSelectModelDefaultsToDeepSeekV41AndAllowsOverride(t *testing.T) {
 	t.Setenv("OPENROUTER_MODEL", "")
-	t.Setenv("AI_MODEL", "")
-	t.Setenv("CN_AI_MODEL", "minimax/minimax-m2.7")
-
-	if got := selectModel(""); got != "minimax/minimax-m2.7" {
-		t.Fatalf("selectModel without proxy = %q", got)
+	if got := selectModel(); got != "deepseek/deepseek-v4.1-flash" {
+		t.Fatalf("selectModel = %q, want deepseek/deepseek-v4.1-flash", got)
 	}
-	if got := selectModel("http://127.0.0.1:10086"); got != defaultModel {
-		t.Fatalf("selectModel with proxy = %q, want %q", got, defaultModel)
-	}
-}
-
-func TestSelectSceneAndVisionModelsUseDeepSeekV41ByDefaultAndAllowOverrides(t *testing.T) {
-	t.Setenv("OPENROUTER_SCENE_MODEL", "")
-	if got := selectSceneModel(); got != "deepseek/deepseek-v4.1-flash" {
-		t.Fatalf("selectSceneModel = %q, want deepseek/deepseek-v4.1-flash", got)
-	}
-	t.Setenv("OPENROUTER_SCENE_MODEL", "scene-override")
-	if got := selectSceneModel(); got != "scene-override" {
-		t.Fatalf("selectSceneModel override = %q, want scene-override", got)
-	}
-
-	t.Setenv("OPENROUTER_VISION_MODEL", "")
-	if got := selectVisionModel(); got != "deepseek/deepseek-v4.1-flash" {
-		t.Fatalf("selectVisionModel = %q, want deepseek/deepseek-v4.1-flash", got)
-	}
-
-	t.Setenv("OPENROUTER_VISION_MODEL", "google/gemini-2.5-flash")
-	if got := selectVisionModel(); got != "google/gemini-2.5-flash" {
-		t.Fatalf("selectVisionModel override = %q, want google/gemini-2.5-flash", got)
+	t.Setenv("OPENROUTER_MODEL", "model-override")
+	if got := selectModel(); got != "model-override" {
+		t.Fatalf("selectModel override = %q, want model-override", got)
 	}
 }
 

@@ -68,7 +68,7 @@ func TestBothDescriptionPromptsCarryGroundingContract(t *testing.T) {
 		fmt.Fprintf(w, "data: %s\n\ndata: [DONE]\n\n", chunk)
 	}))
 	defer server.Close()
-	c := &client{apiKey: "test", modelName: defaultSceneModel, endpoint: server.URL, httpClient: server.Client()}
+	c := &client{apiKey: "test", modelName: defaultModel, endpoint: server.URL, httpClient: server.Client()}
 	info := map[string]string{"streetview_address": "Unnamed Road, Paia, Samoa"}
 	if _, _, err := c.StreamLocationDescription(context.Background(), 1, 2, info, nil, "en", nil); err != nil {
 		t.Fatal(err)

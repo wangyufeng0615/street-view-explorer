@@ -77,7 +77,7 @@ func (c *client) GuessLocationFromImage(parentCtx context.Context, imageBase64 s
 	dataURI := "data:" + sniffImageContentType(imageBase64) + ";base64," + imageBase64
 
 	reqBody := visionChatRequest{
-		Model:     c.visionModel(),
+		Model:     c.modelName,
 		MaxTokens: geoAIMaxTokens,
 		Provider:  selectProviderPreferences(),
 		Reasoning: &reasoningConfig{Enabled: false},

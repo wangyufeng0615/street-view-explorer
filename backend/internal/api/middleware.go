@@ -281,36 +281,6 @@ func UserRateLimitMiddleware(rateLimiter repositories.RateLimiter) gin.HandlerFu
 	}
 }
 
-// CORSMiddleware 实现跨域资源共享控制
-func CORSMiddleware() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		origin := c.Request.Header.Get("Origin")
-		// 只允许特定域名
-		allowedOrigins := []string{
-			"http://localhost:3000",        // 开发环境
-			"https://earth.wangyufeng.org", // 生产环境
-		}
-
-		for _, allowedOrigin := range allowedOrigins {
-			if origin == allowedOrigin {
-				c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
-				break
-			}
-		}
-
-		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
-		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Session-ID")
-		c.Writer.Header().Set("Access-Control-Max-Age", "86400") // 24小时
-
-		if c.Request.Method == http.MethodOptions {
-			c.AbortWithStatus(http.StatusNoContent)
-			return
-		}
-
-		c.Next()
-	}
-}
-
 // InputValidationMiddleware 实现输入验证
 func InputValidationMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {

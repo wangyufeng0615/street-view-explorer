@@ -142,6 +142,19 @@ else
   log "backend/.env not found; SENTRY_RELEASE was not updated"
 fi
 
+# The frontend reads VITE_VERSION at build time for its Sentry release.
+frontend_version="${after_commit:0:7}"
+if [[ -f frontend/.env ]]; then
+  if grep -q '^VITE_VERSION=' frontend/.env; then
+    sed -i "s|^VITE_VERSION=.*|VITE_VERSION=${frontend_version}|" frontend/.env
+  else
+    printf '\nVITE_VERSION=%s\n' "$frontend_version" >> frontend/.env
+  fi
+  log "set VITE_VERSION=$frontend_version"
+else
+  log "frontend/.env not found; VITE_VERSION was not updated"
+fi
+
 # Keep the images that are serving traffic right now reachable by tag. The
 # rebuild moves :latest, and the prune after a healthy release only removes
 # untagged images, so :previous stays available for rollback.

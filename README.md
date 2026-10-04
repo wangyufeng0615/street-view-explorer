@@ -121,7 +121,7 @@ Backend variables live in `backend/.env`.
 | `SQLITE_PATH` | No | SQLite database path, default `data/streetview.db`. |
 | `AI_API_KEY` | Yes | OpenRouter key used by AI services. |
 | `OPENAI_API_KEY` or `REALTIME_API_KEY` | No | OpenAI key for Atlas Voice / Realtime. Required only when voice is enabled. |
-| `OPENAI_REALTIME_MODEL` | No | Realtime voice model, default `gpt-realtime-2.1`. |
+| `OPENAI_REALTIME_MODEL` | No | Realtime voice model, default `gpt-realtime-2.1-mini`. |
 | `OPENAI_REALTIME_API_BASE`, `OPENAI_REALTIME_WS_URL` | No | Optional Realtime API base or explicit WebSocket URL override. Normally leave unset. |
 | `OPENAI_REALTIME_VOICE` | No | Realtime output voice, default `cedar`. |
 | `OPENAI_REALTIME_TRANSCRIPTION_MODEL` | No | Input transcription model, default `gpt-4o-mini-transcribe`. |
@@ -129,7 +129,7 @@ Backend variables live in `backend/.env`.
 | `OPENAI_REALTIME_VAD_THRESHOLD`, `OPENAI_REALTIME_VAD_PREFIX_PADDING_MS`, `OPENAI_REALTIME_VAD_SILENCE_DURATION_MS` | No | Optional `server_vad` tuning when `OPENAI_REALTIME_VAD_TYPE=server_vad`. Defaults are `0.5`, `250`, and `350`. |
 | `OPENAI_REALTIME_ALLOWED_ORIGINS`, `REALTIME_ALLOWED_ORIGINS` | No | Comma-separated browser origins allowed to open the backend Realtime WebSocket. Same-origin and local dev hosts are allowed automatically. |
 | `REALTIME_WEBRTC_ENABLED` | No | Enables the legacy WebRTC endpoints (`/realtime/client-secret`, `/realtime/calls`). Default `false`; enable only with `VITE_REALTIME_TRANSPORT=webrtc`. |
-| `ATLAS_VOICE_PROVIDER` | No | Atlas Voice audio provider, default `openai`. Set to `doubao` to keep OpenAI Realtime for text/tools and synthesize speech with Doubao TTS. |
+| `ATLAS_VOICE_PROVIDER` | No | Atlas Voice audio provider, default `openai`. Production sets `doubao`, which keeps OpenAI Realtime for text/tools and synthesizes speech with Doubao TTS. |
 | `DOUBAO_TTS_API_KEY` | No | Doubao TTS API key for the new Volcengine console. Alternative to app ID plus access token. |
 | `DOUBAO_TTS_APP_ID` / `DOUBAO_TTS_APPID`, `DOUBAO_TTS_ACCESS_KEY` / `DOUBAO_TTS_TOKEN` | No | Doubao TTS app credentials when not using `DOUBAO_TTS_API_KEY`. |
 | `DOUBAO_TTS_SPEAKER` | No | Doubao TTS speaker / voice type, default `zh_male_m191_uranus_bigtts` (Yunzhou 2.0 male). |
@@ -137,23 +137,15 @@ Backend variables live in `backend/.env`.
 | `DOUBAO_TTS_FORMAT`, `DOUBAO_TTS_SAMPLE_RATE` | No | Doubao TTS stream format and sample rate. Atlas currently expects `pcm` and defaults to `24000`. |
 | `DOUBAO_TTS_SPEECH_RATE`, `DOUBAO_TTS_LOUDNESS_RATE`, `DOUBAO_TTS_EMOTION`, `DOUBAO_TTS_EMOTION_SCALE` | No | Optional Doubao speech tuning. |
 | `DOUBAO_TTS_PROXY_URL` | No | Doubao-specific outbound proxy. Falls back to `AI_PROXY_URL` or `PROXY_URL`. |
-| `OPENROUTER_MODEL`, `AI_MODEL` | No | Text-only OpenRouter model for interest-region generation and no-frame development fallbacks, default `deepseek/deepseek-v4.1-flash`. `OPENROUTER_MODEL` takes precedence. |
-| `OPENROUTER_SCENE_MODEL` | No | Vision-capable OpenRouter model used by Atlas descriptions with the current Street View frame, default `deepseek/deepseek-v4.1-flash`. |
-| `OPENROUTER_VISION_MODEL` | No | Vision-capable OpenRouter model used by Geo Guess satellite-image analysis, default `deepseek/deepseek-v4.1-flash`. Geo Guess disables model reasoning and caps the response to keep latency bounded. |
-| `CN_AI_MODEL` | No | Optional fallback model used only when no AI/shared proxy is configured. |
+| `OPENROUTER_MODEL` | No | The single OpenRouter model for Atlas descriptions (with the current Street View frame), interest-region generation, and Geo Guess satellite-image analysis, default `deepseek/deepseek-v4.1-flash`. It must accept image input. Geo Guess disables model reasoning and caps the response to keep latency bounded. |
 | `OPENROUTER_PROVIDER_SORT` | No | Geo Guess vision-provider preference: `latency` (default), `throughput`, `price`, or `off`. Description requests leave sorting unset for Auto Exacto tool routing. |
 | `GOOGLE_API_KEY` | Yes | Backend Google Maps, Street View, and Static Maps access. |
-| `GOOGLE_MAPS_MAP_ID` | No | Optional map ID, mainly useful to mirror frontend config. |
 | `SENTRY_DSN` | No | Backend Sentry DSN. |
 | `GO_ENV` | No | Backend runtime environment and Sentry environment label, default `development`. |
 | `SENTRY_ENABLED` | No | Set to `false` to disable backend Sentry initialization. |
 | `TRUSTED_PROXY_CIDRS` | No | Comma-separated CIDRs for the actual reverse proxy hops. Empty trusts no forwarding headers. |
-| `RATE_LIMIT_ENABLED` | No | Enables SQLite-backed rate limiting, default `true`. |
-| `RATE_LIMIT_MAX_REQUESTS` | No | Default rate-limit ceiling. Some handlers override per endpoint. |
-| `RATE_LIMIT_WINDOW_SECONDS` | No | Default rate-limit window. |
+| `RATE_LIMIT_ENABLED` | No | Enables SQLite-backed rate limiting, default `true`. Per-endpoint limits are defined in code. |
 | `MAP_DATA_AUTO_UPDATE` | No | Set to `true` to refresh local Natural Earth map data during geo initialization. Defaults to local-only startup. |
-| `CORS_ALLOWED_ORIGINS` | No | Loaded into backend config and reported by `/health`; production CORS headers are added by Nginx. |
-| `CORS_MAX_AGE` | No | Loaded into backend config, default `86400`. |
 | `PROXY_URL`, `PROXY_TYPE`, `PROXY_USER`, `PROXY_PASS` | No | Shared outbound proxy config. |
 | `AI_PROXY_URL`, `MAPS_PROXY_URL` | No | Service-specific outbound proxy overrides. |
 
@@ -161,7 +153,6 @@ Frontend variables live in `frontend/.env`.
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
-| `VITE_API_BASE_URL` | No | Historical config value; current browser API wrappers call same-origin `/api/v1`. |
 | `VITE_GOOGLE_MAPS_API_KEY` | Yes | Google Maps JavaScript API key for browser maps. |
 | `VITE_GOOGLE_MAPS_MAP_ID` | No | Optional Google Maps map ID for configured maps. |
 | `VITE_REALTIME_TRANSPORT` | No | Atlas Voice transport, default `backend-ws`; set to another value to use the WebRTC path (requires backend `REALTIME_WEBRTC_ENABLED=true`). |

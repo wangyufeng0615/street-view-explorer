@@ -44,17 +44,8 @@ type config struct {
 
 type SecurityConfig struct {
 	RateLimit struct {
-		Enabled       bool
-		MaxRequests   int
-		WindowSeconds int
-	}
-	CORS struct {
-		AllowedOrigins []string
-		MaxAge         int
-	}
-	Session struct {
-		Timeout int
-		Secure  bool
+		// Per-endpoint limits live in the API middleware; this only switches them.
+		Enabled bool
 	}
 	Realtime struct {
 		// WebRTCEnabled exposes /realtime/client-secret and /realtime/calls.
@@ -133,47 +124,24 @@ func New() Config {
 	}
 
 	cfg := &config{
-		serverAddress:  getEnvOrDefault("SERVER_ADDRESS", ":8080"),
-		sqlitePath:     getEnvOrDefault("SQLITE_PATH", "data/streetview.db"),
-		openAIAPIKey:   os.Getenv("AI_API_KEY"),
+		serverAddress:    getEnvOrDefault("SERVER_ADDRESS", ":8080"),
+		sqlitePath:       getEnvOrDefault("SQLITE_PATH", "data/streetview.db"),
+		openAIAPIKey:     os.Getenv("AI_API_KEY"),
 		googleMapsAPIKey: os.Getenv("GOOGLE_API_KEY"),
-		enableOpenAI:   getEnvOrDefault("ENABLE_AI", "true") == "true",
-		enableGoogleAPI: getEnvOrDefault("ENABLE_GOOGLE_API", "true") == "true",
-		proxyURL:       os.Getenv("PROXY_URL"),
-		proxyType:      getEnvOrDefault("PROXY_TYPE", "http"),
-		proxyUser:      os.Getenv("PROXY_USER"),
-		proxyPass:      os.Getenv("PROXY_PASS"),
-		openaiProxyURL: os.Getenv("AI_PROXY_URL"),
-		mapsProxyURL:   os.Getenv("MAPS_PROXY_URL"),
-		skipProxyCheck: false,
+		enableOpenAI:     getEnvOrDefault("ENABLE_AI", "true") == "true",
+		enableGoogleAPI:  getEnvOrDefault("ENABLE_GOOGLE_API", "true") == "true",
+		proxyURL:         os.Getenv("PROXY_URL"),
+		proxyType:        getEnvOrDefault("PROXY_TYPE", "http"),
+		proxyUser:        os.Getenv("PROXY_USER"),
+		proxyPass:        os.Getenv("PROXY_PASS"),
+		openaiProxyURL:   os.Getenv("AI_PROXY_URL"),
+		mapsProxyURL:     os.Getenv("MAPS_PROXY_URL"),
+		skipProxyCheck:   false,
 	}
 
 	// 加载安全配置
-	cfg.securityConfig = &SecurityConfig{
-		RateLimit: struct {
-			Enabled       bool
-			MaxRequests   int
-			WindowSeconds int
-		}{
-			Enabled:       getEnvOrDefault("RATE_LIMIT_ENABLED", "true") == "true",
-			MaxRequests:   getEnvAsIntOrDefault("RATE_LIMIT_MAX_REQUESTS", 100),
-			WindowSeconds: getEnvAsIntOrDefault("RATE_LIMIT_WINDOW_SECONDS", 60),
-		},
-		CORS: struct {
-			AllowedOrigins []string
-			MaxAge         int
-		}{
-			AllowedOrigins: strings.Split(getEnvOrDefault("CORS_ALLOWED_ORIGINS", "http://localhost:3000"), ","),
-			MaxAge:         getEnvAsIntOrDefault("CORS_MAX_AGE", 86400),
-		},
-		Session: struct {
-			Timeout int
-			Secure  bool
-		}{
-			Timeout: getEnvAsIntOrDefault("SESSION_TIMEOUT", 3600),
-			Secure:  getEnvOrDefault("SESSION_SECURE", "true") == "true",
-		},
-	}
+	cfg.securityConfig = &SecurityConfig{}
+	cfg.securityConfig.RateLimit.Enabled = getEnvOrDefault("RATE_LIMIT_ENABLED", "true") == "true"
 	cfg.securityConfig.Realtime.WebRTCEnabled = getEnvAsBoolOrDefault("REALTIME_WEBRTC_ENABLED", false)
 
 	return cfg
@@ -182,15 +150,6 @@ func New() Config {
 func getEnvOrDefault(key, defaultValue string) string {
 	if value := os.Getenv(key); value != "" {
 		return value
-	}
-	return defaultValue
-}
-
-func getEnvAsIntOrDefault(key string, defaultValue int) int {
-	if value := os.Getenv(key); value != "" {
-		if intValue, err := strconv.Atoi(value); err == nil {
-			return intValue
-		}
 	}
 	return defaultValue
 }

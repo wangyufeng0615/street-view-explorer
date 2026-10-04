@@ -15,8 +15,6 @@ import (
 const (
 	defaultAPIEndpoint     = "https://openrouter.ai/api/v1/chat/completions"
 	defaultModel           = "deepseek/deepseek-v4.1-flash"
-	defaultSceneModel      = "deepseek/deepseek-v4.1-flash"
-	defaultVisionModel     = "deepseek/deepseek-v4.1-flash"
 	defaultProviderSort    = "latency"
 	maxRetries             = 2
 	retryBaseDelay         = 500 * time.Millisecond
@@ -43,12 +41,10 @@ type Client interface {
 }
 
 type client struct {
-	apiKey          string
-	modelName       string
-	sceneModelName  string
-	visionModelName string
-	httpClient      *http.Client
-	endpoint        string
+	apiKey     string
+	modelName  string
+	httpClient *http.Client
+	endpoint   string
 }
 
 type webSearchTool struct {
@@ -65,9 +61,7 @@ type webSearchParameters struct {
 }
 
 type providerPreferences struct {
-	Sort           string   `json:"sort,omitempty"`
-	Order          []string `json:"order,omitempty"`
-	AllowFallbacks *bool    `json:"allow_fallbacks,omitempty"`
+	Sort string `json:"sort,omitempty"`
 }
 
 type reasoningConfig struct {
@@ -168,7 +162,7 @@ type chatStreamChunk struct {
 }
 
 // extractCitations deduplicates url_citation annotations into a Citation slice.
-func NewClient(apiKey string, modelName ...string) Client {
+func NewClient(apiKey string) Client {
 	// 从环境变量获取代理URL
 	proxyURLStr := os.Getenv("AI_PROXY_URL")
 	if proxyURLStr == "" {
@@ -245,66 +239,26 @@ func NewClient(apiKey string, modelName ...string) Client {
 		}
 	}
 
-	selectedModel := selectModel(proxyURLStr)
-	if len(modelName) > 0 && modelName[0] != "" {
-		selectedModel = modelName[0]
-	}
 	endpoint := strings.TrimSpace(os.Getenv("OPENROUTER_API_ENDPOINT"))
 	if endpoint == "" {
 		endpoint = defaultAPIEndpoint
 	}
 
 	return &client{
-		apiKey:          apiKey,
-		modelName:       selectedModel,
-		sceneModelName:  selectSceneModel(),
-		visionModelName: selectVisionModel(),
-		httpClient:      httpClient,
-		endpoint:        endpoint,
+		apiKey:     apiKey,
+		modelName:  selectModel(),
+		httpClient: httpClient,
+		endpoint:   endpoint,
 	}
 }
 
-func selectModel(proxyURLStr string) string {
+// selectModel returns the single OpenRouter model shared by descriptions,
+// interest regions and Geo Guess.
+func selectModel() string {
 	if configured := strings.TrimSpace(os.Getenv("OPENROUTER_MODEL")); configured != "" {
 		return configured
 	}
-	if configured := strings.TrimSpace(os.Getenv("AI_MODEL")); configured != "" {
-		return configured
-	}
-	if proxyURLStr == "" {
-		if configured := strings.TrimSpace(os.Getenv("CN_AI_MODEL")); configured != "" {
-			return configured
-		}
-	}
 	return defaultModel
-}
-
-func selectSceneModel() string {
-	if configured := strings.TrimSpace(os.Getenv("OPENROUTER_SCENE_MODEL")); configured != "" {
-		return configured
-	}
-	return defaultSceneModel
-}
-
-func (c *client) sceneModel() string {
-	if strings.TrimSpace(c.sceneModelName) != "" {
-		return c.sceneModelName
-	}
-	return defaultSceneModel
-}
-
-func selectVisionModel() string {
-	if configured := strings.TrimSpace(os.Getenv("OPENROUTER_VISION_MODEL")); configured != "" {
-		return configured
-	}
-	return defaultVisionModel
-}
-
-func (c *client) visionModel() string {
-	if strings.TrimSpace(c.visionModelName) != "" {
-		return c.visionModelName
-	}
-	return defaultVisionModel
 }
 
 func selectProviderPreferences() *providerPreferences {

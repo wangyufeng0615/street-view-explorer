@@ -75,9 +75,9 @@ backend/
 - Docker Compose 中后端数据库挂载在 `sqlite_data` volume，开发默认在 `backend/data/streetview.db`。
 - 本地开发固定前端端口是 `127.0.0.1:3100`；`make dev` / `make dev-start` 会把 `LOCAL_PROXY_URL` 注入为 `PROXY_URL`、`AI_PROXY_URL`、`MAPS_PROXY_URL` 以及大小写 HTTP(S)/ALL 代理环境变量。
 - Vite 构建输出目录是 `frontend/build`，Nginx Dockerfile 会复制这个目录。
-- `frontend/src/services/api.js` 当前使用同源 `/api/v1`，`VITE_API_BASE_URL` 是历史配置字段，不要假设它会改变请求根路径。
+- `frontend/src/services/api.js` 固定使用同源 `/api/v1`，没有可改请求根路径的环境变量。
 - Atlas Voice 默认走 `backend-ws`：浏览器连 `/api/v1/realtime/ws`，后端用 `OPENAI_API_KEY` 或 `REALTIME_API_KEY` 连 OpenAI Realtime。所有本地外部请求都应走 `AI_PROXY_URL` / `PROXY_URL`，豆包 TTS 可额外用 `DOUBAO_TTS_PROXY_URL`。
-- `CORSMiddleware()` 存在但 `main.go` 当前没有注册；部署态 CORS 主要由 `nginx/conf.d/default.conf` 处理。
+- 后端不处理跨域；部署态 CORS 由 `nginx/conf.d/default.conf` 处理。限流阈值写在 `RateLimitMiddleware()` 和各路由里，环境变量只有 `RATE_LIMIT_ENABLED` 一个总开关。
 - 字体只用 `index.css` 里的三个变量：`--font-sans`（英文系统字体，中文回退苹方/冬青黑体/微软雅黑/思源黑体）、`--font-serif`（Noto Serif SC，退到系统宋体和 Georgia）、`--font-mono`；不要在组件里另写字体栈。Noto Serif SC 由用到衬线体的页面调用 `loadNotoSerifSC()` 按需加载，只取 400/600 两档（更粗的标题落到 600）；首页等第一张全景出来（最多 3 秒）再加载，不和街景图块抢带宽。`index.html` 只做预连接，不再全局加载任何字体；表单控件统一 `font-family: inherit`。`<html lang>` 跟随界面语言（`zh-CN` / `en`），浏览器据此挑选中文字形。
 - 前端 ESLint 启用 `react-hooks` 规则，`exhaustive-deps` 是 error；有意省略依赖时用 `// eslint-disable-next-line react-hooks/exhaustive-deps -- 原因`。新增依赖前先确认它不会让 effect 多跑。
 
@@ -206,9 +206,9 @@ backend/
 - 前端入口是 `frontend/src/components/AtlasVoicePanel.jsx`，只挂在首页；运行时工具和 VAD 配置在 `frontend/src/utils/atlasVoiceRuntime.js`，共享 persona 在 `frontend/src/utils/atlasPersona.js` 和 `backend/internal/atlas/persona.go`。
 - 默认传输是 `VITE_REALTIME_TRANSPORT=backend-ws`：浏览器连同源 `/api/v1/realtime/ws`，后端再连 OpenAI Realtime。WebRTC 兼容路径会先拿 `/client-secret`，再走 `/calls`，后端默认关闭，启用时前后端要同时配置。
 - `/ws` 中继只放行前端实际发送的客户端事件（`realtime_client_events.go` 白名单）：`session.update` 只保留允许字段、三个 Atlas 工具和截断后的 instructions。前端新增事件类型或工具时必须同步更新白名单，否则会被静默丢弃。空闲 90 秒按两个方向共享计时。
-- 默认 Realtime 模型是 `gpt-realtime-2.1`，输出音色 `cedar`，转写模型 `gpt-4o-mini-transcribe`，turn detection 是 `semantic_vad` + `high`，支持被用户打断。
+- 默认 Realtime 模型是 `gpt-realtime-2.1-mini`（和生产一致），输出音色 `cedar`，转写模型 `gpt-4o-mini-transcribe`，turn detection 是 `semantic_vad` + `high`，支持被用户打断。
 - 工具集合在 `frontend/src/utils/atlasVoiceTools.js`：`navigate`（random/theme/place/coordinates/nearby）、`look_direction`、`read_current_place`。每个用户回合只允许一次导航尝试；具体地标/地址/店名走 `navigate` 的 place 模式，调用 `GET /api/v1/locations/search`。
-- `ATLAS_VOICE_PROVIDER=doubao` 时 OpenAI Realtime 只负责听写、文本、记忆和工具调用，后端 `/doubao-tts` 负责把最终文本转成 PCM 流。前端会排队播放并用短窗口忽略豆包外放回灌。
+- 生产设了 `ATLAS_VOICE_PROVIDER=doubao`（代码默认 `openai`，本地没有豆包凭据时保持默认）。此时 OpenAI Realtime 只负责听写、文本、记忆和工具调用，后端 `/doubao-tts` 负责把最终文本转成 PCM 流。前端会排队播放并用短窗口忽略豆包外放回灌。
 - 后端 Realtime WebSocket origin 校验允许同源、本地 `localhost/127.0.0.1/::1`，生产额外域名用 `OPENAI_REALTIME_ALLOWED_ORIGINS` / `REALTIME_ALLOWED_ORIGINS`。
 
 ## 安全与日志注意
@@ -240,10 +240,11 @@ backend/
 - `RATE_LIMIT_ENABLED`，默认 `true`
 - `PROXY_URL` / `AI_PROXY_URL` / `MAPS_PROXY_URL`
 - `OPENAI_API_KEY` / `REALTIME_API_KEY`，Atlas Voice 语音功能需要其一
-- `OPENAI_REALTIME_MODEL` / `OPENAI_REALTIME_API_BASE` / `OPENAI_REALTIME_WS_URL` / `OPENAI_REALTIME_VOICE`（默认 `cedar`）/ `OPENAI_REALTIME_TRANSCRIPTION_MODEL`
+- `OPENROUTER_MODEL`，默认 `deepseek/deepseek-v4.1-flash`；Atlas 讲解（带街景画面）、兴趣偏好转区域、猜地理 AI 共用这一个模型，必须支持图片输入
+- `OPENAI_REALTIME_MODEL`（默认 `gpt-realtime-2.1-mini`）/ `OPENAI_REALTIME_API_BASE` / `OPENAI_REALTIME_WS_URL` / `OPENAI_REALTIME_VOICE`（默认 `cedar`）/ `OPENAI_REALTIME_TRANSCRIPTION_MODEL`
 - `OPENAI_REALTIME_ALLOWED_ORIGINS` / `REALTIME_ALLOWED_ORIGINS`，额外允许的语音 WebSocket 浏览器来源
 - `REALTIME_WEBRTC_ENABLED`，默认 `false`；只在前端 `VITE_REALTIME_TRANSPORT=webrtc` 时开启
-- `ATLAS_VOICE_PROVIDER`，默认 `openai`；设为 `doubao` 时 OpenAI Realtime 只负责听写、文本回复和工具调用，音频由豆包 TTS 输出
+- `ATLAS_VOICE_PROVIDER`，默认 `openai`，生产用 `doubao`；设为 `doubao` 时 OpenAI Realtime 只负责听写、文本回复和工具调用，音频由豆包 TTS 输出
 - `DOUBAO_TTS_API_KEY`，或 `DOUBAO_TTS_APP_ID`/`DOUBAO_TTS_APPID` + `DOUBAO_TTS_ACCESS_KEY`/`DOUBAO_TTS_TOKEN`；豆包语音合成凭据
 - `DOUBAO_TTS_SPEAKER`（默认 `zh_male_m191_uranus_bigtts`，云舟 2.0 男声）/ `DOUBAO_TTS_RESOURCE_ID`（默认 `seed-tts-2.0`）/ `DOUBAO_TTS_FORMAT`（必须是 `pcm`）/ `DOUBAO_TTS_SAMPLE_RATE` / `DOUBAO_TTS_SPEECH_RATE` / `DOUBAO_TTS_PROXY_URL`
 - `SENTRY_DSN` / `SENTRY_ENABLED` / `GO_ENV`
