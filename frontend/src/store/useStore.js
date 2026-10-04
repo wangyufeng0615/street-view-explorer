@@ -152,7 +152,9 @@ function explorationModeKey(state) {
 // 不留"下一站已清空、当前站还没换"的中间状态
 function publishPrefetchedLocation() {
   const location =
-    prefetchSlot?.location && !prefetchSlot.error ? prefetchSlot.location : null;
+    prefetchSlot?.location && !prefetchSlot.error
+      ? prefetchSlot.location
+      : null;
   if (useStore.getState().prefetchedLocation !== location) {
     useStore.setState({ prefetchedLocation: location });
   }

@@ -138,7 +138,9 @@ describe("HomeFeed", () => {
       screen.getByTestId("pano-b").closest(".home-feed__slot").dataset.role,
     ).toBe("next");
     swipe(screen.getByTestId("pano-a"), 600, 300);
-    expect(onNext).toHaveBeenCalledWith(expect.objectContaining({ panoId: "b" }));
+    expect(onNext).toHaveBeenCalledWith(
+      expect.objectContaining({ panoId: "b" }),
+    );
   });
 
   it("loads the previous stop only once the user pulls down, then goes back", () => {
@@ -150,7 +152,9 @@ describe("HomeFeed", () => {
 
     swipe(screen.getByTestId("pano-b"), 200, 520);
     expect(screen.getByTestId("pano-a")).toBeTruthy();
-    expect(onPrev).toHaveBeenCalledWith(expect.objectContaining({ panoId: "a" }));
+    expect(onPrev).toHaveBeenCalledWith(
+      expect.objectContaining({ panoId: "a" }),
+    );
   });
 
   it("springs back without switching on a short drag or while busy", () => {

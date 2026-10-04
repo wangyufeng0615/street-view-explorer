@@ -12,10 +12,7 @@ import useStore from "../../store/useStore";
 import useFeedSwipe from "../../hooks/useFeedSwipe";
 import { locationFromStop } from "../../hooks/useHomeJourney";
 import { formatAddress } from "../../utils/addressUtils";
-import {
-  readLocalStorage,
-  writeLocalStorage,
-} from "../../utils/safeStorage";
+import { readLocalStorage, writeLocalStorage } from "../../utils/safeStorage";
 import {
   assignFeedSlots,
   EMPTY_FEED,
@@ -100,7 +97,11 @@ const FeedCaption = memo(function FeedCaption({
   const { t } = useTranslation();
   if (!label) return null;
   const open = (event) => {
-    if (event.type === "keydown" && event.key !== "Enter" && event.key !== " ") {
+    if (
+      event.type === "keydown" &&
+      event.key !== "Enter" &&
+      event.key !== " "
+    ) {
       return;
     }
     event.preventDefault();
@@ -140,7 +141,10 @@ function useSwipeHint({ enabled, ready }) {
   // 这次没滑就先收起，下次打开网页再提示，直到真正滑过一次
   useEffect(() => {
     if (state !== "shown") return undefined;
-    const timerId = window.setTimeout(() => setState("dismissed"), HINT_VISIBLE_MS);
+    const timerId = window.setTimeout(
+      () => setState("dismissed"),
+      HINT_VISIBLE_MS,
+    );
     return () => window.clearTimeout(timerId);
   }, [state]);
 
@@ -184,7 +188,11 @@ export default function HomeFeed({
     : -1;
   // 当前站还没记进旅程（刚到达的那一次渲染）时，旅程最后一站就是上一站
   const prevStop =
-    index > 0 ? journeyStops[index - 1] : index === -1 ? journeyStops.at(-1) : null;
+    index > 0
+      ? journeyStops[index - 1]
+      : index === -1
+        ? journeyStops.at(-1)
+        : null;
   const nextStop =
     index !== -1 && index < journeyStops.length - 1
       ? journeyStops[index + 1]
@@ -373,7 +381,11 @@ export default function HomeFeed({
         return;
       }
       const offset = dragOffset(dy);
-      animate(0, Math.min(SNAP_MAX_MS, 160 + Math.abs(offset) * 0.4), applyRest);
+      animate(
+        0,
+        Math.min(SNAP_MAX_MS, 160 + Math.abs(offset) * 0.4),
+        applyRest,
+      );
     },
     onCancel: () => {
       const motion = motionRef.current;
@@ -396,10 +408,7 @@ export default function HomeFeed({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 只在角色对应的卡片变化时重新摆放；摆放函数只读 ref
   }, [rolesKey, applyRest]);
 
-  useEffect(
-    () => () => window.clearTimeout(motionRef.current.timerId),
-    [],
-  );
+  useEffect(() => () => window.clearTimeout(motionRef.current.timerId), []);
 
   const excerpt = descError
     ? ""

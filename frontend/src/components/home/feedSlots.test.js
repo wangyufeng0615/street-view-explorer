@@ -4,7 +4,10 @@ import { assignFeedSlots, EMPTY_FEED, PENDING_KEY } from "./feedSlots";
 const place = (key) => ({ key, location: { pano_id: key }, label: key });
 
 function assign(steps) {
-  return steps.reduce((feed, wanted) => assignFeedSlots(feed, wanted), EMPTY_FEED);
+  return steps.reduce(
+    (feed, wanted) => assignFeedSlots(feed, wanted),
+    EMPTY_FEED,
+  );
 }
 
 describe("assignFeedSlots", () => {
@@ -63,8 +66,8 @@ describe("assignFeedSlots", () => {
   it("returns the same assignment when nothing changed", () => {
     const a = place("a");
     const feed = assign([{ current: a, next: null, prev: null }]);
-    expect(assignFeedSlots(feed, { current: { ...a }, next: null, prev: null })).toBe(
-      feed,
-    );
+    expect(
+      assignFeedSlots(feed, { current: { ...a }, next: null, prev: null }),
+    ).toBe(feed);
   });
 });

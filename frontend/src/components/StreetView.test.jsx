@@ -669,7 +669,10 @@ describe("StreetView as a feed card prepared in the background", () => {
     );
 
     expect(onViewChanged).toHaveBeenCalledWith(
-      expect.objectContaining({ panoId: "RVHISCP2VhnDsPJUbAybGQ", heading: 212 }),
+      expect.objectContaining({
+        panoId: "RVHISCP2VhnDsPJUbAybGQ",
+        heading: 212,
+      }),
     );
     expect(onPovChanged).toHaveBeenCalledWith(212);
     // 外部朝向是上一张卡片的值，不能把这张卡片的画面扭过去

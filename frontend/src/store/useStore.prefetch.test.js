@@ -657,9 +657,7 @@ describe("for the phone feed", () => {
       pano_id: NEXT.pano_id,
     });
 
-    await useStore
-      .getState()
-      .loadRandomLocation(true, { userInitiated: true });
+    await useStore.getState().loadRandomLocation(true, { userInitiated: true });
     expect(useStore.getState().location.pano_id).toBe(NEXT.pano_id);
     expect(useStore.getState().prefetchedLocation).toBeNull();
   });
@@ -700,7 +698,9 @@ describe("returning to a place", () => {
   it("still asks again in another language or after a failure", async () => {
     const streams = controllableStreams();
     settleCurrentPlace({ description: null });
-    const failed = useStore.getState().loadLocationDescription(CURRENT.pano_id, 1);
+    const failed = useStore
+      .getState()
+      .loadLocationDescription(CURRENT.pano_id, 1);
     streams[0].fail();
     await failed;
     useStore.getState().loadLocationDescription(CURRENT.pano_id);

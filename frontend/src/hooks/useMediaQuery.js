@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 
 function matches(query) {
-  return typeof window !== "undefined" && Boolean(window.matchMedia?.(query).matches);
+  return (
+    typeof window !== "undefined" && Boolean(window.matchMedia?.(query).matches)
+  );
 }
 
 // 跟随媒体查询的结果；屏幕旋转、拖窗口跨过断点时更新
