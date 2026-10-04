@@ -625,3 +625,93 @@ describe("StreetView location switching", () => {
     expect(panorama.listeners.get("pano_changed").size).toBe(0);
   });
 });
+
+describe("StreetView as a feed card prepared in the background", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    MockStreetViewPanorama.instances = [];
+    resetInteractionTipForTests();
+    setDocumentVisibility("visible");
+    setDocumentFocus(true);
+    loadGoogleMapsWhenVisible.mockResolvedValue(mockMaps());
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+    vi.clearAllMocks();
+  });
+
+  async function renderLoadedCard(props = {}) {
+    const view = render(
+      <StreetView panoId="RVHISCP2VhnDsPJUbAybGQ" paused {...props} />,
+    );
+    await advanceTimers(250);
+    const panorama = MockStreetViewPanorama.instances[0];
+    await act(async () => panorama.emit("status_changed"));
+    return { ...view, panorama };
+  }
+
+  it("reports its view and heading the moment it becomes the current card", async () => {
+    const { rerender, panorama } = await renderLoadedCard();
+    panorama.pov = { heading: 212, pitch: 4 };
+    const onViewChanged = vi.fn();
+    const onPovChanged = vi.fn();
+
+    rerender(
+      <StreetView
+        panoId="RVHISCP2VhnDsPJUbAybGQ"
+        paused={false}
+        heading={90}
+        onViewChanged={onViewChanged}
+        onPovChanged={onPovChanged}
+      />,
+    );
+
+    expect(onViewChanged).toHaveBeenCalledWith(
+      expect.objectContaining({ panoId: "RVHISCP2VhnDsPJUbAybGQ", heading: 212 }),
+    );
+    expect(onPovChanged).toHaveBeenCalledWith(212);
+    // 外部朝向是上一张卡片的值，不能把这张卡片的画面扭过去
+    expect(panorama.getPov().heading).toBe(212);
+  });
+
+  it("reports a failure that happened before anyone was listening", async () => {
+    const view = render(<StreetView panoId="RVHISCP2VhnDsPJUbAybGQ" paused />);
+    await advanceTimers(250);
+    const panorama = MockStreetViewPanorama.instances[0];
+    panorama.status = "ZERO_RESULTS";
+    await act(async () => panorama.emit("status_changed"));
+
+    const onLoadError = vi.fn();
+    view.rerender(
+      <StreetView
+        panoId="RVHISCP2VhnDsPJUbAybGQ"
+        paused={false}
+        onLoadError={onLoadError}
+      />,
+    );
+    expect(onLoadError).toHaveBeenCalledWith("error.streetViewNotAvailable");
+  });
+
+  it("does not spend the one-time tip while waiting in the background", async () => {
+    const { rerender } = await renderLoadedCard();
+    await advanceTimers(4000);
+    expect(screen.queryByText("streetview.interactionTip")).toBeNull();
+
+    rerender(<StreetView panoId="pano-next" />);
+    await advanceTimers(250);
+    await act(async () =>
+      MockStreetViewPanorama.instances[0].emit("status_changed"),
+    );
+    await advanceTimers(3000);
+    expect(screen.getByText("streetview.interactionTip")).toBeTruthy();
+  });
+
+  it("hides the zoom and pan buttons on the phone feed", async () => {
+    await renderLoadedCard({ compactControls: true });
+    const { options } = MockStreetViewPanorama.instances[0];
+    expect(options.zoomControl).toBe(false);
+    expect(options.panControl).toBe(false);
+  });
+});

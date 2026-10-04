@@ -22,7 +22,7 @@ vi.mock("../i18n", () => ({
   },
 }));
 
-import useStore from "./useStore";
+import useStore, { forgetFinishedDescriptionsForTests } from "./useStore";
 import i18n from "../i18n";
 import {
   deleteExplorationPreference,
@@ -31,6 +31,9 @@ import {
   lookupLocation,
   getLocalizedAddress,
 } from "../services/api";
+
+// 写完的讲解按全景缓存在模块里，用例之间清空
+beforeEach(() => forgetFinishedDescriptionsForTests());
 
 describe("exploration preference synchronization", () => {
   afterEach(() => vi.unstubAllGlobals());

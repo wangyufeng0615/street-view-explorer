@@ -33,7 +33,10 @@ vi.mock("../services/api", () => ({
 
 vi.mock("../i18n", () => ({ default: i18nMock.instance }));
 
-import useStore from "./useStore";
+import useStore, { forgetFinishedDescriptionsForTests } from "./useStore";
+
+// 写完的讲解按全景缓存在模块里，用例之间清空
+beforeEach(() => forgetFinishedDescriptionsForTests());
 
 const CURRENT = { pano_id: "pano-current", latitude: 1, longitude: 2 };
 const NEXT = { pano_id: "pano-next", latitude: 3, longitude: 4 };
@@ -621,5 +624,93 @@ describe("falling back to the normal path", () => {
     expect(streams[0].signal.aborted).toBe(true);
     await useStore.getState().loadRandomLocation();
     expect(useStore.getState().location).toMatchObject(OTHER);
+  });
+});
+
+describe("for the phone feed", () => {
+  it("prefetches the first place once its panorama shows, without waiting for the narration", () => {
+    randomLocations();
+    controllableStreams();
+    settleCurrentPlace({
+      userExploreCount: 0,
+      description: null,
+      isDescriptionLoading: true,
+    });
+
+    expect(
+      useStore.getState().maybePrefetchNext({ eager: true, landed: false }),
+    ).toBe(false);
+    expect(
+      useStore.getState().maybePrefetchNext({ eager: true, landed: true }),
+    ).toBe(true);
+    expect(prefetchCalls()).toHaveLength(1);
+  });
+
+  it("shows the prefetched place to the next card and clears it once used", async () => {
+    randomLocations();
+    controllableStreams();
+    settleCurrentPlace();
+    useStore.getState().maybePrefetchNext({ eager: true, landed: true });
+    await flush();
+
+    expect(useStore.getState().prefetchedLocation).toMatchObject({
+      pano_id: NEXT.pano_id,
+    });
+
+    await useStore
+      .getState()
+      .loadRandomLocation(true, { userInitiated: true });
+    expect(useStore.getState().location.pano_id).toBe(NEXT.pano_id);
+    expect(useStore.getState().prefetchedLocation).toBeNull();
+  });
+
+  it("clears the shown place when the prefetch is dropped", async () => {
+    randomLocations();
+    controllableStreams();
+    settleCurrentPlace();
+    useStore.getState().maybePrefetchNext({ eager: true, landed: true });
+    await flush();
+    expect(useStore.getState().prefetchedLocation).not.toBeNull();
+
+    emitLanguageChanged("en");
+    expect(useStore.getState().prefetchedLocation).toBeNull();
+  });
+});
+
+describe("returning to a place", () => {
+  it("shows the narration written earlier in this visit without asking Atlas again", async () => {
+    const streams = controllableStreams();
+    settleCurrentPlace({ description: null });
+    const first = useStore.getState().loadLocationDescription(CURRENT.pano_id);
+    streams[0].finish("第一次写好的讲解");
+    await first;
+
+    useStore.getState().applyNavigatedLocation(OTHER);
+    useStore.getState().applyNavigatedLocation(CURRENT);
+    await useStore.getState().loadLocationDescription(CURRENT.pano_id);
+
+    expect(streams).toHaveLength(1);
+    expect(useStore.getState()).toMatchObject({
+      description: "第一次写好的讲解",
+      isDescriptionLoading: false,
+      descriptionError: null,
+    });
+  });
+
+  it("still asks again in another language or after a failure", async () => {
+    const streams = controllableStreams();
+    settleCurrentPlace({ description: null });
+    const failed = useStore.getState().loadLocationDescription(CURRENT.pano_id, 1);
+    streams[0].fail();
+    await failed;
+    useStore.getState().loadLocationDescription(CURRENT.pano_id);
+    expect(streams).toHaveLength(2);
+    streams[1].finish("中文讲解");
+    await flush();
+
+    i18nMock.instance.resolvedLanguage = "en";
+    useStore.getState().loadLocationDescription(CURRENT.pano_id);
+    expect(streams).toHaveLength(3);
+    expect(streams[2].language).toBe("en");
   });
 });

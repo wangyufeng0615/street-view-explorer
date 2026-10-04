@@ -1084,93 +1084,431 @@ button.home-where__option:hover:not(:disabled),
   }
 }
 
-/* 手机：街景在上，地图和来信在下；操作栏贴着街景底边 */
+/* 手机：全屏街景卡片上下滑动换站（HomeFeed），右侧竖排操作，来信和地图收进底部抽屉。
+   JS 用同一个断点给外壳加 home-shell--feed */
 @media (max-width: 720px) {
   .home-shell {
     --home-edge: 12px;
     --home-control-height: 44px;
     --home-side-width: 0px;
-    --home-stage-height: 52vh;
     --streetview-tip-top: 64px;
-  }
-
-  .home-stage {
-    bottom: auto;
-    height: var(--home-stage-height);
-  }
-
-  .home-side {
-    top: var(--home-stage-height);
-    left: 0;
-    width: auto;
-    padding: 12px 12px 0;
-    box-shadow: none;
-  }
-
-  .home-minimap {
-    height: 96px;
-    border-radius: 10px;
-  }
-
-  .home-map-panel {
-    left: var(--home-edge);
-    right: var(--home-edge);
-    width: auto;
-    height: 56vh;
-  }
-
-  /* 街景底边留给 Google 标志和版权行（约 26px），按使用条款不能压住 */
-  .home-bottom {
-    top: calc(var(--home-stage-height) - var(--home-control-height) - 32px);
-    bottom: auto;
-    left: 50%;
-    width: calc(100% - 2 * var(--home-edge));
-  }
-
-  .home-dock {
-    gap: 6px;
-  }
-
-  /* 手机上次要按钮只留文字，把宽度让给"下一站" */
-  .home-dock__button {
-    gap: 4px;
-    padding: 0 8px;
-  }
-
-  .home-dock__button > svg,
-  .home-dock .atlas-voice-glyph {
-    display: none;
-  }
-
-  .home-dock .atlas-voice-button {
-    padding: 0 8px;
-  }
-
-  .home-dock__where-label {
-    max-width: 72px;
-  }
-
-  .home-dock__next {
-    flex: 1;
-    min-width: 0;
-    padding: 0 14px;
-  }
-
-  .home-dock__kbd {
-    display: none;
-  }
-
-  .home-dock__popover {
-    width: 100%;
-  }
-
-  /* 浮层向上展开，高度不能超过街景区域，否则会顶到导航栏外面 */
-  .home-journey {
-    max-height: max(120px, calc(var(--home-stage-height) - 190px));
+    /* 卡片底边留给 Google 标志和版权行（约 26px），按使用条款不能压住 */
+    --feed-bottom: calc(env(safe-area-inset-bottom, 0px) + 40px);
+    --feed-rail-width: 64px;
   }
 }
 
+.home-shell--feed .home-stage {
+  right: 0;
+}
+
+/* 暗角画在每张卡片里，跟着卡片一起滑 */
+.home-shell--feed .home-stage::after {
+  display: none;
+}
+
+.home-feed {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: #1c1712;
+  /* 滑动和缩放手势全部由页面和街景自己处理，浏览器不滚动、不下拉刷新 */
+  touch-action: none;
+  overscroll-behavior: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.home-feed__slot {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: #1c1712;
+  will-change: transform;
+  contain: layout paint;
+}
+
+.home-feed__shade {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background:
+    linear-gradient(
+      to bottom,
+      rgba(26, 16, 8, 0.5) 0,
+      rgba(26, 16, 8, 0.2) 80px,
+      transparent 150px
+    ),
+    linear-gradient(
+      to top,
+      rgba(26, 16, 8, 0.78) 0,
+      rgba(26, 16, 8, 0.55) 140px,
+      rgba(26, 16, 8, 0.2) 260px,
+      transparent 360px
+    );
+}
+
+/* 字幕：地名、来信开头四行，点开是完整来信和地图 */
+.home-feed__caption {
+  position: absolute;
+  left: var(--home-edge);
+  right: calc(var(--feed-rail-width) + var(--home-edge));
+  bottom: var(--feed-bottom);
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px;
+  margin: -4px;
+  border-radius: 10px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.home-feed__place {
+  display: -webkit-box;
+  overflow: hidden;
+  font-family: var(--home-serif);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+.home-feed__excerpt {
+  display: -webkit-box;
+  overflow: hidden;
+  color: rgba(255, 245, 230, 0.9);
+  font-size: 14px;
+  line-height: 1.6;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  line-clamp: 4;
+}
+
+/* "展开"是字幕里唯一的操作，做成实底小按钮，一眼能看出可以点 */
+.home-feed__more {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  padding: 6px 10px 6px 12px;
+  border-radius: 8px;
+  background: rgba(255, 245, 230, 0.18);
+  color: var(--home-text);
+  font-size: 13px;
+  font-weight: 600;
+  text-shadow: none;
+}
+
+.home-feed__more::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  margin-top: 3px;
+  border-top: 1.5px solid currentColor;
+  border-left: 1.5px solid currentColor;
+  transform: rotate(45deg);
+}
+
+.home-feed__caption:active .home-feed__more {
+  background: rgba(255, 245, 230, 0.28);
+}
+
+/* 下一站还没取到时的空卡片；滑上来后由出发遮罩接手 */
+.home-feed__pending {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  background: #1c1712;
+  color: var(--home-text-muted);
+}
+
+.home-feed__pending svg {
+  animation: homeCompass 2.2s ease-in-out infinite;
+}
+
+/* 成为当前卡片后由出发遮罩显示罗盘和出发提示，这里不再叠一个；
+   滑到空卡片一定要等网络，遮罩不再延迟出现 */
+.home-feed__slot[data-role="current"] .home-feed__pending svg {
+  visibility: hidden;
+}
+
+.home-feed:has(.home-feed__slot[data-role="current"] .home-feed__pending)
+  .home-arrival.is-visible {
+  transition-delay: 0s;
+}
+
+/* 第一次进来时提示上滑，滑过一次就不再出现 */
+.home-feed__hint {
+  position: absolute;
+  top: 54%;
+  left: 50%;
+  z-index: 12;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: max-content;
+  max-width: calc(100% - 2 * var(--home-edge));
+  color: var(--home-text);
+  text-align: center;
+  text-shadow: var(--home-text-shadow);
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 10px);
+  transition:
+    opacity 0.3s ease,
+    transform 0.3s ease;
+}
+
+.home-feed__hint.is-visible {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.home-feed__hint-arrow {
+  filter: drop-shadow(0 1px 2px rgba(26, 16, 8, 0.55));
+  animation: homeFeedHint 1.6s ease-in-out infinite;
+}
+
+.home-feed__hint-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.home-feed__hint-sub {
+  color: rgba(255, 245, 230, 0.78);
+  font-size: 12.5px;
+}
+
+@keyframes homeFeedHint {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: translateY(6px);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(-6px);
+  }
+}
+
+/* —— 右侧竖排操作：语音、去哪儿、旅程 —— */
+
+.home-shell--feed .home-bottom {
+  top: auto;
+  right: 4px;
+  bottom: calc(var(--feed-bottom) - 6px);
+  left: auto;
+  width: var(--feed-rail-width);
+  transform: none;
+  container-type: normal;
+}
+
+.home-dock--rail {
+  flex-direction: column;
+  gap: 6px;
+}
+
+.home-dock--rail .atlas-voice-panel {
+  order: 0;
+}
+
+.home-dock--rail .home-dock__where {
+  order: 1;
+}
+
+.home-dock--rail .home-dock__button:not(.home-dock__where) {
+  order: 2;
+}
+
+.home-dock--rail .home-dock__next {
+  order: 3;
+}
+
+.home-dock--rail .home-dock__button,
+.home-dock--rail .atlas-voice-button {
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  width: var(--feed-rail-width);
+  height: auto;
+  min-height: 58px;
+  padding: 6px 2px;
+  border-radius: 12px;
+  font-size: 11.5px;
+  line-height: 1.2;
+}
+
+.home-shell--feed .home-dock--rail .home-dock__button > svg,
+.home-shell--feed .home-dock--rail .atlas-voice-glyph {
+  display: flex;
+}
+
+.home-dock--rail .home-dock__button > svg,
+.home-dock--rail .atlas-voice-glyph svg {
+  width: 24px;
+  height: 24px;
+}
+
+/* 竖排按钮很窄：文字最多折成两行（"Atlas Voice"、"正在连接 Atlas..."） */
+.home-dock--rail .atlas-voice-label,
+.home-dock--rail .home-dock__where-label {
+  display: -webkit-box;
+  max-width: 100%;
+  font-size: 11.5px;
+  text-align: center;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+.home-dock--rail .home-dock__count,
+.home-dock--rail .home-dock__kbd {
+  display: none;
+}
+
+.home-dock--rail .home-dock__next {
+  min-width: 0;
+  width: var(--feed-rail-width);
+  height: 40px;
+  padding: 0;
+  font-size: 13px;
+}
+
+/* 触摸屏上靠上滑换站；按钮只留给读屏软件 */
+@media (pointer: coarse) {
+  .home-dock--rail .home-dock__next {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+/* 旅程和"去哪儿"从屏幕底部升起，宽度占满；底边让出 Google 标志和版权行 */
+.home-dock--rail .home-dock__popover {
+  position: fixed;
+  right: var(--home-edge);
+  bottom: calc(var(--feed-bottom) - 6px);
+  left: var(--home-edge);
+  width: auto;
+  max-height: 70dvh;
+  overflow-y: auto;
+  transform: none;
+}
+
+/* 语音回复浮在竖排按钮左边 */
+.home-dock--rail .atlas-voice-log {
+  right: calc(100% + 6px);
+  bottom: auto;
+  top: 0;
+  max-height: 160px;
+}
+
+/* —— 来信抽屉：纸面从底部升起，上面是两张小地图，下面是 Atlas 全文 —— */
+
+.home-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 49;
+  background: rgba(20, 14, 8, 0.45);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+
+.home-sheet-backdrop.is-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.home-shell--feed .home-side {
+  position: fixed;
+  top: auto;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 50;
+  gap: 12px;
+  width: auto;
+  height: min(80dvh, 760px);
+  padding: 0 12px;
+  border-radius: 18px 18px 0 0;
+  box-shadow: 0 -16px 40px rgba(26, 16, 8, 0.35);
+  outline: none;
+  visibility: hidden;
+  transform: translateY(102%);
+  transition:
+    transform 0.3s cubic-bezier(0.22, 0.8, 0.24, 1),
+    visibility 0s linear 0.3s;
+}
+
+.home-shell--feed .home-side.is-open {
+  visibility: visible;
+  transform: none;
+  transition: transform 0.32s cubic-bezier(0.22, 0.8, 0.24, 1);
+}
+
+.home-sheet__header {
+  position: relative;
+  display: flex;
+  flex: 0 0 auto;
+  justify-content: center;
+  height: 30px;
+}
+
+.home-sheet__grabber {
+  width: 36px;
+  height: 4px;
+  margin-top: 8px;
+  border-radius: 2px;
+  background: rgba(122, 92, 52, 0.3);
+}
+
+.home-sheet__close {
+  position: absolute;
+  top: 6px;
+  right: -2px;
+  color: var(--home-paper-ink-soft);
+}
+
+.home-sheet__close:hover {
+  background: rgba(122, 92, 52, 0.1);
+  color: var(--home-paper-ink);
+}
+
+.home-shell--feed .home-minimap {
+  height: 96px;
+  border-radius: 10px;
+}
+
+.home-shell--feed .atlas-letter__body {
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
+}
+
+.home-shell--feed .home-map-panel {
+  left: var(--home-edge);
+  right: var(--home-edge);
+  width: auto;
+  height: 56dvh;
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .home-feed__hint-arrow,
+  .home-feed__pending svg,
   .home-arrival__compass,
   .home-popover,
   .home-map-panel {

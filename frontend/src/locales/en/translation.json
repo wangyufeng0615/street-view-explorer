@@ -473,5 +473,10 @@
   "home.voice.start": "Start Atlas Voice",
   "ai.detailedFailed": "Atlas couldn't go on just now. Please try again.",
   "home.where.randomLabel": "Anywhere",
-  "home.where.placeholder": "e.g. Hokkaido, Iceland, desert roads"
+  "home.where.placeholder": "e.g. Hokkaido, Iceland, desert roads",
+  "home.feed.openLetter": "Letter and maps",
+  "home.feed.closeLetter": "Close the letter",
+  "home.feed.writing": "Atlas is writing about this stop…",
+  "home.feed.hint": "Swipe up for the next stop",
+  "home.feed.hintRotate": "Drag sideways to look around, pull down to go back"
 }

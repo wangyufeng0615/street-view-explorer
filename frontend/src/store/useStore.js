@@ -44,6 +44,24 @@ let prefetchSlot = null;
 // 讲解失败后的手动重试、语言变化、换地点或取消都会让它失效。
 let prefetchServedDescription = null;
 
+// 本次打开网页里写完的讲解，按全景和语言记下。滑回看过的站（手机上很常见）
+// 直接显示，不再让 Atlas 重写一遍、多花一次 AI 调用
+const FINISHED_DESCRIPTION_LIMIT = 30;
+const finishedDescriptions = new Map();
+
+function rememberDescription(panoId, language, entry) {
+  const key = `${panoId}:${language}`;
+  finishedDescriptions.delete(key);
+  finishedDescriptions.set(key, entry);
+  if (finishedDescriptions.size > FINISHED_DESCRIPTION_LIMIT) {
+    finishedDescriptions.delete(finishedDescriptions.keys().next().value);
+  }
+}
+
+export function forgetFinishedDescriptionsForTests() {
+  finishedDescriptions.clear();
+}
+
 // 清空当前位置时一并清掉讲解和视角，避免旧地点内容残留
 const CLEARED_LOCATION_STATE = {
   location: null,
@@ -129,11 +147,23 @@ function explorationModeKey(state) {
   return null;
 }
 
+// 预取到的地点放进 store，手机首页的下一张卡片据此提前加载街景。
+// 只在槽位拿到位置或被丢弃时写入；被取用时由 applyPrefetchedLocation 和新位置一起清空，
+// 不留"下一站已清空、当前站还没换"的中间状态
+function publishPrefetchedLocation() {
+  const location =
+    prefetchSlot?.location && !prefetchSlot.error ? prefetchSlot.location : null;
+  if (useStore.getState().prefetchedLocation !== location) {
+    useStore.setState({ prefetchedLocation: location });
+  }
+}
+
 // 丢弃还没被接管的预取并中止它的请求；已接管的流归当前讲解请求管理
 function discardPrefetch() {
   const slot = prefetchSlot;
   prefetchSlot = null;
   if (slot && !slot.subscriber) slot.controller.abort();
+  publishPrefetchedLocation();
 }
 
 function isPrefetchCurrent(slot) {
@@ -149,6 +179,7 @@ async function runPrefetch(slot) {
     });
     if (!isPrefetchCurrent(slot)) return;
     slot.location = locationFromResponse(resp, "random", slot.language);
+    publishPrefetchedLocation();
 
     const result = await streamLocationDescription(
       slot.location.pano_id,
@@ -169,6 +200,11 @@ async function runPrefetch(slot) {
     slot.citations = result.data.citations || null;
     slot.researchStatus = result.data.research_status || "unverified";
     slot.done = true;
+    rememberDescription(slot.location.pano_id, slot.language, {
+      description: slot.text,
+      citations: slot.citations,
+      researchStatus: slot.researchStatus,
+    });
     slot.subscriber?.({ type: "done" });
   } catch (error) {
     if (signal.aborted) return;
@@ -179,6 +215,7 @@ async function runPrefetch(slot) {
       // 本次不重试，等下一次满足预取条件再试
       console.warn("预取下一站失败:", error);
       prefetchSlot = null;
+      publishPrefetchedLocation();
     }
   }
 }
@@ -231,6 +268,7 @@ function applyPrefetchedLocation(slot, set, get) {
     // 与预取讲解使用的画面一致，街景以 0 度初始化
     heading: 0,
     lastRefreshTime: Date.now(),
+    prefetchedLocation: null,
     description: slot.text || null,
     descriptionCitations: slot.done ? slot.citations : null,
     descriptionResearchStatus: slot.done ? slot.researchStatus : null,
@@ -314,6 +352,8 @@ const useStore = create(
       lastRefreshTime: Date.now() - RATE_LIMIT_MS,
       // 本次会话用户主动点"去探险"或按空格的次数；第一站不预取
       userExploreCount: 0,
+      // 预取好的下一站（只读展示用，取用仍走 loadRandomLocation）
+      prefetchedLocation: null,
 
       // ===== Description相关状态 =====
       description: null,
@@ -616,6 +656,25 @@ const useStore = create(
           }
           prefetchServedDescription = null;
         }
+        const finished =
+          retryCount === 0 &&
+          finishedDescriptions.get(`${panoId}:${currentLanguage}`);
+        if (finished) {
+          clearTimeout(descriptionRetryTimer);
+          descriptionRetryTimer = null;
+          activeDescriptionRequest?.controller.abort();
+          activeDescriptionRequest = null;
+          set({
+            isDescriptionLoading: false,
+            description: finished.description,
+            descriptionCitations: finished.citations,
+            descriptionResearchStatus: finished.researchStatus,
+            descriptionError: null,
+            descriptionRetries: 0,
+            descriptionRequestKey: `finished:${panoId}:${currentLanguage}:${++descriptionRequestSequence}`,
+          });
+          return Promise.resolve();
+        }
         const currentView =
           currentState.streetViewView?.panoId === panoId
             ? currentState.streetViewView
@@ -686,11 +745,16 @@ const useStore = create(
             }
 
             if (resp.success && resp.data?.description) {
-              set({
+              const finishedEntry = {
                 description: resp.data.description,
-                descriptionCitations: resp.data.citations || null,
-                descriptionResearchStatus:
-                  resp.data.research_status || "unverified",
+                citations: resp.data.citations || null,
+                researchStatus: resp.data.research_status || "unverified",
+              };
+              rememberDescription(panoId, currentLanguage, finishedEntry);
+              set({
+                description: finishedEntry.description,
+                descriptionCitations: finishedEntry.citations,
+                descriptionResearchStatus: finishedEntry.researchStatus,
                 descriptionError: null,
               });
             } else if (!controller.signal.aborted) {
@@ -772,8 +836,14 @@ const useStore = create(
         });
       },
 
-      // 首页在讲解状态、位置、浮层或页面可见性变化时调用；满足条件才开始预取
-      maybePrefetchNext: ({ overlayOpen = false } = {}) => {
+      // 首页在讲解状态、位置、浮层或页面可见性变化时调用；满足条件才开始预取。
+      // eager：手机上滑切换，下一张卡片要提前备好，第一站也预取，当前全景出来就开始，
+      // 不等讲解写完（landed 表示当前全景已经显示，避免和它抢图块带宽）
+      maybePrefetchNext: ({
+        overlayOpen = false,
+        eager = false,
+        landed = false,
+      } = {}) => {
         if (!PREFETCH_NEXT_ENABLED) return false;
         if (
           prefetchSlot &&
@@ -790,7 +860,7 @@ const useStore = create(
           descriptionRetryTimer === null &&
           Boolean(state.description || state.descriptionError);
         if (
-          state.userExploreCount < 1 ||
+          (eager ? !landed : state.userExploreCount < 1) ||
           overlayOpen ||
           (typeof document !== "undefined" &&
             document.visibilityState === "hidden") ||
@@ -799,7 +869,7 @@ const useStore = create(
           state.isLoadingLocation ||
           !modeKey ||
           !state.location?.pano_id ||
-          !descriptionFinished
+          (!eager && !descriptionFinished)
         ) {
           return false;
         }

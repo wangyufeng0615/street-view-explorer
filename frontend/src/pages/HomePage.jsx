@@ -15,6 +15,8 @@ import HomeMiniMap from "../components/home/HomeMiniMap";
 import HomeDock from "../components/home/HomeDock";
 import AtlasLetter from "../components/home/AtlasLetter";
 import ArrivalOverlay from "../components/home/ArrivalOverlay";
+import HomeFeed from "../components/home/HomeFeed";
+import { CloseGlyph } from "../components/home/HomeGlyphs";
 import { preloadGoogleMaps } from "../utils/googleMaps";
 import { loadNotoSerifSC } from "../utils/pageFonts";
 import {
@@ -37,7 +39,14 @@ import useExplorationMode, {
 } from "../hooks/useExplorationMode";
 import useKeyboardNavigation from "../hooks/useKeyboardNavigation";
 import useStore from "../store/useStore";
-import useHomeJourney from "../hooks/useHomeJourney";
+import useHomeJourney, { locationFromStop } from "../hooks/useHomeJourney";
+import useMediaQuery from "../hooks/useMediaQuery";
+import useDismiss from "../hooks/useDismiss";
+
+// 手机竖屏：全屏街景卡片上下滑动换站，来信和地图收进底部抽屉。断点和 HomePage.css 一致
+const FEED_QUERY = "(max-width: 720px)";
+// 只有触摸屏才能上下滑；窄窗口的电脑用操作栏里的"下一站"和空格
+const TOUCH_QUERY = "(pointer: coarse)";
 
 // Stop covering the street view even if the panorama never reports ready.
 const LANDING_TIMEOUT_MS = 8000;
@@ -154,6 +163,8 @@ export default function HomePage({ footprintOverlayOpen = false }) {
   });
   const activeLanguage = i18n.resolvedLanguage || i18n.language || "en";
   const isLanguageReady = i18n.isInitialized && Boolean(activeLanguage);
+  const isFeed = useMediaQuery(FEED_QUERY);
+  const isTouch = useMediaQuery(TOUCH_QUERY);
 
   // 使用自定义钩子
   const {
@@ -222,6 +233,12 @@ export default function HomePage({ footprintOverlayOpen = false }) {
   // 用户主动探索（按钮、空格、错误页重试），计入预取的触发条件
   const handleExplore = useCallback(() => {
     loadRandomLocation(false, { userInitiated: true });
+  }, [loadRandomLocation]);
+
+  // 上滑换站：切换动画本身已经限速，正在出发时也滑不动，不再套 1 秒限流，
+  // 否则连续快滑会被"操作太快"挡回去
+  const handleSwipeExplore = useCallback(() => {
+    loadRandomLocation(true, { userInitiated: true });
   }, [loadRandomLocation]);
 
   // 使用键盘导航钩子
@@ -353,8 +370,13 @@ export default function HomePage({ footprintOverlayOpen = false }) {
   // 当前讲解结束后在后台预取下一站；是否满足条件由 store 判断
   const hasDescription = Boolean(description);
   useEffect(() => {
+    // 手机上滑切换要提前备好下一张卡片：当前全景一出来就预取，第一站也预取
     const tryPrefetch = () =>
-      maybePrefetchNext({ overlayOpen: footprintOverlayOpen || coverOpen });
+      maybePrefetchNext({
+        overlayOpen: footprintOverlayOpen || coverOpen,
+        eager: isFeed,
+        landed: hasStreetViewView,
+      });
     tryPrefetch();
     document.addEventListener("visibilitychange", tryPrefetch);
     return () => document.removeEventListener("visibilitychange", tryPrefetch);
@@ -362,6 +384,8 @@ export default function HomePage({ footprintOverlayOpen = false }) {
     maybePrefetchNext,
     footprintOverlayOpen,
     coverOpen,
+    isFeed,
+    hasStreetViewView,
     location?.pano_id,
     isLoading,
     isLoadingDesc,
@@ -485,54 +509,129 @@ export default function HomePage({ footprintOverlayOpen = false }) {
   // 回到旅程里的某一站：直接用记下的全景，不再按坐标重新查找（可能落到别的全景，也会多记一次足迹）
   const handleRevisit = useCallback(
     (stop) => {
-      const known = Object.fromEntries(
-        Object.entries(stop.address || {}).filter(([, value]) => value),
-      );
-      applyNavigatedLocation({
-        formatted_address: stop.label,
-        ...known,
-        pano_id: stop.panoId,
-        latitude: stop.lat,
-        longitude: stop.lng,
-      });
+      applyNavigatedLocation(locationFromStop(stop));
     },
     [applyNavigatedLocation],
   );
 
+  // 手机上的来信抽屉：地图第一次打开抽屉时才创建，不看的人不产生地图加载
+  const [isLetterOpen, setLetterOpen] = useState(false);
+  const [hasOpenedLetter, setHasOpenedLetter] = useState(false);
+  const sideRef = useRef(null);
+  const letterOpen = isFeed && isLetterOpen;
+  const openLetter = useCallback(() => {
+    setLetterOpen(true);
+    setHasOpenedLetter(true);
+  }, []);
+  const closeLetter = useCallback(() => setLetterOpen(false), []);
+  useDismiss(letterOpen, sideRef, closeLetter);
+  useEffect(() => {
+    if (letterOpen) sideRef.current?.focus({ preventScroll: true });
+  }, [letterOpen]);
+
+  // 上滑：回过头之后先沿着旅程往后走，走到头再出发去新地点；下拉：回到旅程里的上一站
+  const handleSwipeNext = useCallback(
+    (stop) => (stop ? handleRevisit(stop) : handleSwipeExplore()),
+    [handleRevisit, handleSwipeExplore],
+  );
+  const handleSwipePrev = useCallback(
+    (stop) => {
+      if (stop) handleRevisit(stop);
+    },
+    [handleRevisit],
+  );
+
+  const isBusy = isLoading || isSavingPreference || isMapLocationLoading;
+
+  const arrivalOverlay = (
+    <ArrivalOverlay
+      visible={showArrival}
+      error={isLoading ? null : error}
+      busy={isSavingPreference}
+      onRetry={handleExplore}
+      onGoRandom={
+        explorationMode === EXPLORATION_MODES.CUSTOM ? handlePickRandom : null
+      }
+    />
+  );
+
   return (
-    <div className="home-shell">
+    <div className={`home-shell${isFeed ? " home-shell--feed" : ""}`}>
       <div className="home-stage">
-        <StreetViewContainer
-          latitude={location?.latitude}
-          longitude={location?.longitude}
-          panoId={location?.pano_id}
-          paused={footprintOverlayOpen || coverOpen}
-          onPovChanged={handlePovChanged}
-          onViewChanged={handleViewChanged}
-          onLoadError={handleStreetViewError}
-        />
-        <ArrivalOverlay
-          visible={showArrival}
-          error={isLoading ? null : error}
-          busy={isSavingPreference}
-          onRetry={handleExplore}
-          onGoRandom={
-            explorationMode === EXPLORATION_MODES.CUSTOM
-              ? handlePickRandom
-              : null
-          }
-        />
+        {isFeed ? (
+          <HomeFeed
+            location={location}
+            journeyStops={journeyStops}
+            isBusy={isBusy}
+            paused={footprintOverlayOpen || coverOpen || letterOpen}
+            hasLanded={hasStreetViewView}
+            swipeEnabled={isTouch && !letterOpen && !coverOpen}
+            description={description}
+            isLoadingDesc={isLoadingDesc}
+            descError={descError}
+            onNext={handleSwipeNext}
+            onPrev={handleSwipePrev}
+            onOpenLetter={openLetter}
+            onPovChanged={handlePovChanged}
+            onViewChanged={handleViewChanged}
+            onLoadError={handleStreetViewError}
+          >
+            {arrivalOverlay}
+          </HomeFeed>
+        ) : (
+          <>
+            <StreetViewContainer
+              latitude={location?.latitude}
+              longitude={location?.longitude}
+              panoId={location?.pano_id}
+              paused={footprintOverlayOpen || coverOpen}
+              onPovChanged={handlePovChanged}
+              onViewChanged={handleViewChanged}
+              onLoadError={handleStreetViewError}
+            />
+            {arrivalOverlay}
+          </>
+        )}
       </div>
 
       <HomeNav onOpenFootprint={handleOpenFootprint} />
 
-      <aside className="home-side">
-        <HomeMiniMap
-          location={location}
-          onMapLocationPick={handleMapLocationPick}
-          isMapPickLoading={isMapLocationLoading}
-          mapPickStatus={mapPickStatus}
+      {isFeed && (
+        <div
+          className={`home-sheet-backdrop${letterOpen ? " is-visible" : ""}`}
+          aria-hidden="true"
         />
+      )}
+      <aside
+        className={`home-side${letterOpen ? " is-open" : ""}`}
+        ref={sideRef}
+        tabIndex={isFeed ? -1 : undefined}
+        role={isFeed ? "dialog" : undefined}
+        aria-label={isFeed ? t("home.letter.label") : undefined}
+        aria-hidden={isFeed && !letterOpen ? true : undefined}
+        inert={isFeed && !letterOpen ? "" : undefined}
+      >
+        {isFeed && (
+          <div className="home-sheet__header">
+            <span className="home-sheet__grabber" aria-hidden="true" />
+            <button
+              type="button"
+              className="home-icon-button home-sheet__close"
+              aria-label={t("home.feed.closeLetter")}
+              onClick={closeLetter}
+            >
+              <CloseGlyph />
+            </button>
+          </div>
+        )}
+        {(!isFeed || hasOpenedLetter) && (
+          <HomeMiniMap
+            location={location}
+            onMapLocationPick={handleMapLocationPick}
+            isMapPickLoading={isMapLocationLoading}
+            mapPickStatus={mapPickStatus}
+          />
+        )}
         <AtlasLetter
           location={location}
           description={description}
@@ -548,7 +647,8 @@ export default function HomePage({ footprintOverlayOpen = false }) {
 
       <div className="home-bottom">
         <HomeDock
-          isBusy={isLoading || isSavingPreference || isMapLocationLoading}
+          layout={isFeed ? "rail" : "bar"}
+          isBusy={isBusy}
           onNext={handleExplore}
           explorationMode={explorationMode}
           explorationInterest={explorationInterest}

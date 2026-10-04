@@ -472,5 +472,10 @@
   "home.voice.start": "开始语音模式",
   "ai.detailedFailed": "Atlas 这会儿没能接着讲下去，请再试一次。",
   "home.where.randomLabel": "随机目的地",
-  "home.where.placeholder": "比如：北海道、冰岛、沙漠公路"
+  "home.where.placeholder": "比如：北海道、冰岛、沙漠公路",
+  "home.feed.openLetter": "展开来信和地图",
+  "home.feed.closeLetter": "收起来信",
+  "home.feed.writing": "Atlas 正在写这一站…",
+  "home.feed.hint": "上滑去下一站",
+  "home.feed.hintRotate": "左右拖动环顾四周，下拉回到上一站"
 }

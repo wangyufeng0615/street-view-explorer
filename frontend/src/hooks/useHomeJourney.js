@@ -25,6 +25,20 @@ export function appendJourneyStop(stops, stop) {
   return next;
 }
 
+// 回到旅程里的某一站：直接用记下的全景和地址，不再按坐标重新查找
+export function locationFromStop(stop) {
+  const known = Object.fromEntries(
+    Object.entries(stop.address || {}).filter(([, value]) => value),
+  );
+  return {
+    formatted_address: stop.label,
+    ...known,
+    pano_id: stop.panoId,
+    latitude: stop.lat,
+    longitude: stop.lng,
+  };
+}
+
 /**
  * Places visited in this browser tab, oldest first. Kept in sessionStorage so
  * a reload keeps the trip, while a new tab starts a new one.

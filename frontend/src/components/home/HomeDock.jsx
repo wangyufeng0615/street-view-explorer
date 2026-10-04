@@ -242,7 +242,10 @@ function JourneyPanel({ stops, currentPanoId, isBusy, onRevisit }) {
   );
 }
 
+// layout："bar" 是街景底部一排按钮；"rail" 是手机上滑模式右侧竖排的按钮，
+// 那里换站靠上滑，"下一站"只在有鼠标的窄窗口里显示（读屏软件始终能找到）
 const HomeDock = memo(function HomeDock({
+  layout = "bar",
   isBusy,
   onNext,
   explorationMode,
@@ -285,7 +288,10 @@ const HomeDock = memo(function HomeDock({
   const stopCount = t("home.journey.count", { count: stops.length });
 
   return (
-    <div className="home-dock" ref={dockRef}>
+    <div
+      className={`home-dock${layout === "rail" ? " home-dock--rail" : ""}`}
+      ref={dockRef}
+    >
       {openPanel === "where" && (
         <WherePanel
           explorationMode={explorationMode}

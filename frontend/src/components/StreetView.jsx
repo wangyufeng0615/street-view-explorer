@@ -178,6 +178,9 @@ export default function StreetView({
   onViewChanged,
   onLoadError,
   paused = false,
+  // 手机上滑切换时，提示由外层给出；街景控件只留方向箭头，右侧让给操作栏
+  interactionTip = true,
+  compactControls = false,
 }) {
   const panoramaRef = useRef(null);
   const panoramaInstanceRef = useRef(null); // 存储街景实例的引用，换位置时复用
@@ -197,28 +200,49 @@ export default function StreetView({
   const mountedRef = useRef(true); // 跟踪组件是否已挂载
   // 被其他全屏层遮挡时暂停自动旋转（IntersectionObserver 检测不到遮挡）
   const pausedRef = useRef(paused);
+  const interactionTipRef = useRef(interactionTip);
+  interactionTipRef.current = interactionTip;
   // 保存翻译键而不是译文，切换语言时不需要重建街景
   const [error, setError] = useState(null);
   const [isNetworkError, setIsNetworkError] = useState(false);
   const [showInteractionTip, setShowInteractionTip] = useState(false);
   const { t } = useTranslation();
 
+  // 已经加载好的街景（手机上预先备好的下一张卡片）换上新的监听方时，
+  // 立刻补报一次当前朝向和视野，不必等用户拖动或自动旋转
+  const isLoadSettled = () =>
+    locationLoadRef.current.active && !locationLoadRef.current.pending;
+
   useEffect(() => {
     onPovChangedRef.current = onPovChanged;
+    const panorama = panoramaInstanceRef.current;
+    if (onPovChanged && panorama && isLoadSettled()) {
+      const currentHeading = normalizeHeading(panorama.getPov().heading);
+      lastNotifiedHeadingRef.current = Math.round(currentHeading);
+      onPovChanged(currentHeading);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 只在监听方变化时补报，辅助函数只读 ref
   }, [onPovChanged]);
 
   useEffect(() => {
     onViewChangedRef.current = onViewChanged;
+    const panorama = panoramaInstanceRef.current;
+    if (onViewChanged && panorama && isLoadSettled() && !error) {
+      notifyViewChanged(panorama);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 只在监听方变化时补报；error 取本次渲染的值即可
   }, [onViewChanged]);
 
   useEffect(() => {
     onLoadErrorRef.current = onLoadError;
   }, [onLoadError]);
 
-  // 每个位置开始加载时 error 会先清空，所以这里每次失败都会通知一次
+  // 每个位置开始加载时 error 会先清空，所以这里每次失败都会通知一次；
+  // 预先备好的卡片加载失败时还没有监听方，换上监听方后补报
   useEffect(() => {
-    if (error) onLoadErrorRef.current?.(error);
-  }, [error]);
+    if (error) onLoadError?.(error);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- onLoadError 由 ref 同步，这里只关心出错和监听方出现
+  }, [error, Boolean(onLoadError)]);
 
   useEffect(() => {
     latestHeadingRef.current = heading;
@@ -371,7 +395,10 @@ export default function StreetView({
   useEffect(() => {
     const panorama = panoramaInstanceRef.current;
     const numericHeading = Number(heading);
-    if (!panorama || !Number.isFinite(numericHeading)) {
+    // 暂停（被遮住或是手机上的备用卡片）时不跟随外部朝向。这个 effect 排在
+    // paused 的 effect 前面：卡片被换成当前卡片的那次渲染里，pausedRef 仍是 true，
+    // 外部朝向不会把它刚才的画面扭过去，随后由补报把外部朝向对齐到画面
+    if (!panorama || !Number.isFinite(numericHeading) || pausedRef.current) {
       return;
     }
 
@@ -451,8 +478,16 @@ export default function StreetView({
       }
     }, AUTO_ROTATE_START_DELAY_MS);
 
-    // 每次打开网页只提示一次；沿路走动（pano_changed）和换站都不再重复弹出
-    if (load.hasScheduledTip || interactionTipShown) return;
+    // 每次打开网页只提示一次；沿路走动（pano_changed）和换站都不再重复弹出。
+    // 后台备好的卡片不弹，免得把唯一一次提示用在看不见的地方
+    if (
+      load.hasScheduledTip ||
+      interactionTipShown ||
+      !interactionTipRef.current ||
+      pausedRef.current
+    ) {
+      return;
+    }
     load.hasScheduledTip = true;
     load.tipTimeoutId = setTimeout(() => {
       load.tipTimeoutId = null;
@@ -521,6 +556,8 @@ export default function StreetView({
       // The home page is already full-bleed and keeps its corners for the
       // nav and side column, so the panorama controls sit on the right edge.
       fullscreenControl: false,
+      zoomControl: !compactControls,
+      panControl: !compactControls,
       zoomControlOptions: { position: maps.ControlPosition.RIGHT_CENTER },
       panControlOptions: { position: maps.ControlPosition.RIGHT_CENTER },
     });
