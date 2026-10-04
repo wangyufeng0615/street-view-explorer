@@ -38,6 +38,7 @@ The frontend is React 18 with Vite. `frontend/vite.config.js` sets:
 Routes:
 
 - `/` uses `HomePage` for random Street View exploration.
+- On the first home visit in a tab (no `lat`/`lng` in the URL), `HomePage` renders `CoverOverlay` on top: a random full-bleed satellite image from `data/coverPlaces.js` (Sentinel-2 cloudless 2016 © EOX, CC BY 4.0) with the title and a "Set off with Atlas" button. It never advances on its own; the button, Space or Enter fades it out to Street View and Escape skips it. The first stop loads underneath with Street View paused and prefetch held back, and the chosen image starts downloading as soon as the cover is chosen. Images live in `public/cover/` and are rebuilt by `scripts/build_cover_images.py`.
 - `/footprints` opened from the home page is a background-location overlay: `HomePage` stays mounted (street view paused) and closing returns to it. A direct visit renders only `FootprintPage`, without loading the home page, a random location or a description.
 - `/agent` uses `AgentPage` for Odyssey journey setup.
 - `/agent/letter/:id` uses `LetterPage` for public letters.

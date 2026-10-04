@@ -13,6 +13,31 @@ const mocks = vi.hoisted(() => ({
   streetViewMounts: 0,
   streetViewProps: [],
   preloadGoogleMaps: vi.fn(),
+  showCover: false,
+  preloadCoverImage: vi.fn(),
+}));
+
+// 封面桩：只验证首页怎样挂载、暂停街景和收起它
+vi.mock("./utils/coverGate", () => ({
+  shouldShowCover: () => mocks.showCover,
+  coverPlaceForThisVisit: () => ({
+    id: "namib",
+    zh: "纳米布沙海",
+    en: "Namib",
+    lat: 0,
+    lng: 0,
+  }),
+  preloadCoverImage: mocks.preloadCoverImage,
+}));
+
+vi.mock("./components/cover/CoverOverlay", () => ({
+  default: ({ place, onClose }) => (
+    <div data-testid="cover" data-place={place.id}>
+      <button type="button" onClick={onClose}>
+        enter street view
+      </button>
+    </div>
+  ),
 }));
 
 // 首页用真实组件，只把重的子组件换成桩；街景桩记录挂载次数和收到的 paused
@@ -103,6 +128,45 @@ async function expectBackOnHome() {
   expect(getRandomLocation).toHaveBeenCalledTimes(1);
   expect(streamLocationDescription).toHaveBeenCalledTimes(1);
 }
+
+describe("home cover", () => {
+  beforeEach(() => {
+    mocks.streetViewMounts = 0;
+    mocks.streetViewProps = [];
+    mocks.showCover = true;
+    getRandomLocation.mockResolvedValue({ success: true, data: PLACE });
+    window.history.replaceState(null, "", "/");
+  });
+
+  afterEach(() => {
+    cleanup();
+    mocks.showCover = false;
+    useStore.setState(INITIAL_STORE_STATE, true);
+    vi.clearAllMocks();
+    window.history.replaceState(null, "", "/");
+  });
+
+  it("loads the first stop under the cover with Street View paused", async () => {
+    render(<App />);
+
+    expect((await screen.findByTestId("cover")).dataset.place).toBe("namib");
+    // 决定显示封面的同时就开始下载封面图
+    expect(mocks.preloadCoverImage).toHaveBeenCalledTimes(1);
+    await waitFor(() =>
+      expect(lastStreetViewProps()).toMatchObject({
+        panoId: "pano-home",
+        paused: true,
+      }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "enter street view" }));
+
+    await waitFor(() => expect(screen.queryByTestId("cover")).toBeNull());
+    expect(lastStreetViewProps().paused).toBe(false);
+    expect(mocks.streetViewMounts).toBe(1);
+    expect(getRandomLocation).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe("footprint routes", () => {
   beforeEach(() => {

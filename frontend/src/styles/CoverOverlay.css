@@ -1,0 +1,231 @@
+/* 首页封面：满屏卫星图上只有一行标题和出发按钮，四角是细框、坐标和影像出处 */
+.cover {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  overflow: hidden;
+  background: #123a5e;
+  color: #fff;
+  font-family: var(--font-sans);
+  transition: opacity 0.9s ease;
+}
+
+.cover--leaving {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* 图片四周多留一点，缓慢缩放漂移时不露边 */
+.cover__image {
+  position: absolute;
+  inset: -4%;
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+  opacity: 0;
+  transition: opacity 1.2s ease;
+  animation: cover-drift 90s ease-in-out infinite alternate;
+  will-change: transform;
+}
+
+.cover--ready .cover__image {
+  opacity: 1;
+}
+
+@keyframes cover-drift {
+  from {
+    transform: scale(1.04) translate3d(1.5%, 1%, 0);
+  }
+
+  to {
+    transform: scale(1.1) translate3d(-1.5%, -1%, 0);
+  }
+}
+
+/* 标题后面一层很淡的暗色光晕，浅色的沙漠和盐湖上也读得清 */
+.cover__shade {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(
+      ellipse 46% 26% at 50% 43%,
+      rgba(4, 14, 28, 0.34),
+      rgba(4, 14, 28, 0) 100%
+    ),
+    radial-gradient(
+      ellipse 80% 70% at 50% 42%,
+      rgba(4, 16, 32, 0) 40%,
+      rgba(4, 16, 32, 0.32) 100%
+    ),
+    linear-gradient(180deg, rgba(4, 16, 32, 0.22), rgba(4, 16, 32, 0) 45%);
+}
+
+.cover__frame {
+  position: absolute;
+  inset: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  pointer-events: none;
+}
+
+.cover__mark,
+.cover__coord {
+  position: absolute;
+  font-size: 11px;
+  letter-spacing: 0.24em;
+  color: rgba(255, 255, 255, 0.82);
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.45);
+}
+
+.cover__mark {
+  left: 40px;
+  top: 38px;
+}
+
+.cover__coord {
+  right: 40px;
+  bottom: 38px;
+}
+
+.cover__credit {
+  position: absolute;
+  left: 40px;
+  bottom: 38px;
+  max-width: calc(100% - 340px);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.6);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+}
+
+.cover__hero {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 36vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 30px;
+  padding: 0 32px;
+  text-align: center;
+  animation: cover-rise 1.2s cubic-bezier(0.16, 0.84, 0.24, 1) both;
+}
+
+.cover__title {
+  margin: 0;
+  font-size: clamp(30px, 4.6vw, 66px);
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  /* 字距在最后一个字后面多留一截，左侧补回来保持视觉居中 */
+  padding-left: 0.14em;
+  line-height: 1.25;
+  text-shadow: 0 2px 26px rgba(3, 18, 36, 0.6);
+}
+
+.cover__cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  height: 50px;
+  padding: 0 28px;
+  border: 0;
+  border-radius: 6px;
+  background: #fff;
+  color: #123a5e;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  cursor: pointer;
+  box-shadow: 0 8px 30px rgba(3, 18, 36, 0.3);
+  animation: cover-rise 1.2s cubic-bezier(0.16, 0.84, 0.24, 1) 0.35s both;
+  transition:
+    transform 0.3s ease,
+    box-shadow 0.3s ease;
+}
+
+.cover__cta:hover,
+.cover__cta:focus-visible {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 36px rgba(3, 18, 36, 0.38);
+  outline: none;
+}
+
+@keyframes cover-rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* 手机竖屏：标题在 "Atlas" 后折成两行，坐标挪到右上，出处单独放在底部；
+   每张图按各自的看点取景 */
+@media (max-width: 600px) {
+  .cover__image {
+    background-position: var(--cover-pos-mobile, center);
+  }
+
+  .cover__frame {
+    inset: 14px;
+  }
+
+  .cover__mark {
+    left: 28px;
+    top: 28px;
+  }
+
+  .cover__coord {
+    right: 28px;
+    top: 28px;
+    bottom: auto;
+  }
+
+  .cover__credit {
+    left: 28px;
+    right: 28px;
+    bottom: 26px;
+    max-width: none;
+    font-size: 9.5px;
+    line-height: 1.5;
+    text-align: center;
+  }
+
+  .cover__hero {
+    top: 33vh;
+    gap: 26px;
+  }
+
+  .cover__title {
+    font-size: clamp(30px, 10vw, 42px);
+    letter-spacing: 0.12em;
+    padding-left: 0.12em;
+  }
+
+  .cover__line {
+    display: block;
+  }
+
+  .cover__cta {
+    height: 48px;
+    padding: 0 24px;
+    font-size: 14px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cover__image,
+  .cover__hero,
+  .cover__cta {
+    animation: none;
+  }
+
+  .cover,
+  .cover__image {
+    transition-duration: 0.2s;
+  }
+}

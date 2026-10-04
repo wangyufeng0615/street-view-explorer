@@ -17,11 +17,17 @@ import AtlasLetter from "../components/home/AtlasLetter";
 import ArrivalOverlay from "../components/home/ArrivalOverlay";
 import { preloadGoogleMaps } from "../utils/googleMaps";
 import { loadNotoSerifSC } from "../utils/pageFonts";
+import {
+  coverPlaceForThisVisit,
+  preloadCoverImage,
+  shouldShowCover,
+} from "../utils/coverGate";
 import "../styles/animations.css";
 import "../styles/HomePage.css";
 
 // Lazy load components that are not immediately visible
 const Toast = lazy(() => import("../components/Toast"));
+const CoverOverlay = lazy(() => import("../components/cover/CoverOverlay"));
 
 // 自定义钩子
 import useLocationData from "../hooks/useLocationData";
@@ -128,6 +134,16 @@ export default function HomePage({ footprintOverlayOpen = false }) {
     (state) => state.applyNavigatedLocation,
   );
   const isMapLocationLoading = useStore((state) => state.isMapLocationLoading);
+  // 首次进入先显示封面，首页照常在底下加载第一站；封面开着时暂停街景和预取。
+  // 决定显示的同时就开始下载封面图，不等封面组件的代码加载完。
+  const [cover, setCover] = useState(() => {
+    if (!shouldShowCover()) return null;
+    const place = coverPlaceForThisVisit();
+    preloadCoverImage(place);
+    return place;
+  });
+  const closeCover = useCallback(() => setCover(null), []);
+  const coverOpen = Boolean(cover);
   const urlLocationRef = useRef(getLocationFromURL());
   const hasLoadedInitialLocationRef = useRef(false);
   const mapPickResetTimerRef = useRef(null);
@@ -338,13 +354,14 @@ export default function HomePage({ footprintOverlayOpen = false }) {
   const hasDescription = Boolean(description);
   useEffect(() => {
     const tryPrefetch = () =>
-      maybePrefetchNext({ overlayOpen: footprintOverlayOpen });
+      maybePrefetchNext({ overlayOpen: footprintOverlayOpen || coverOpen });
     tryPrefetch();
     document.addEventListener("visibilitychange", tryPrefetch);
     return () => document.removeEventListener("visibilitychange", tryPrefetch);
   }, [
     maybePrefetchNext,
     footprintOverlayOpen,
+    coverOpen,
     location?.pano_id,
     isLoading,
     isLoadingDesc,
@@ -489,7 +506,7 @@ export default function HomePage({ footprintOverlayOpen = false }) {
           latitude={location?.latitude}
           longitude={location?.longitude}
           panoId={location?.pano_id}
-          paused={footprintOverlayOpen}
+          paused={footprintOverlayOpen || coverOpen}
           onPovChanged={handlePovChanged}
           onViewChanged={handleViewChanged}
           onLoadError={handleStreetViewError}
@@ -549,6 +566,23 @@ export default function HomePage({ footprintOverlayOpen = false }) {
       {showToast && (
         <Suspense fallback={null}>
           <Toast message={toastMessage} visible />
+        </Suspense>
+      )}
+
+      {cover && (
+        <Suspense
+          fallback={
+            <div
+              style={{
+                position: "fixed",
+                inset: 0,
+                zIndex: 10000,
+                background: "#123a5e",
+              }}
+            />
+          }
+        >
+          <CoverOverlay place={cover} onClose={closeCover} />
         </Suspense>
       )}
     </div>
