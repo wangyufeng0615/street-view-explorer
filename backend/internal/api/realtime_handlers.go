@@ -25,7 +25,7 @@ import (
 
 const (
 	defaultRealtimeModel              = "gpt-realtime-2.1-mini"
-	defaultRealtimeVoice              = "marin"
+	defaultRealtimeVoice              = "cedar"
 	defaultRealtimeTranscriptionModel = "gpt-4o-mini-transcribe"
 )
 
@@ -949,11 +949,11 @@ func upstreamErrorMessage(payload map[string]any) string {
 }
 
 func realtimeTurnDetectionConfig() realtimeTurnDetection {
-	vadType := strings.ToLower(envFirstNonEmpty("semantic_vad", "OPENAI_REALTIME_VAD_TYPE", "REALTIME_VAD_TYPE"))
+	vadType := strings.ToLower(envFirstNonEmpty("semantic_vad", "OPENAI_REALTIME_VAD_TYPE"))
 	if vadType == "server_vad" {
-		threshold := clampFloat(envFloat(0.5, "OPENAI_REALTIME_VAD_THRESHOLD", "REALTIME_VAD_THRESHOLD"), 0.0, 1.0)
-		prefixPaddingMS := clampInt(envInt(250, "OPENAI_REALTIME_VAD_PREFIX_PADDING_MS", "REALTIME_VAD_PREFIX_PADDING_MS"), 0, 1000)
-		silenceDurationMS := clampInt(envInt(350, "OPENAI_REALTIME_VAD_SILENCE_DURATION_MS", "REALTIME_VAD_SILENCE_DURATION_MS"), 100, 2000)
+		threshold := clampFloat(envFloat(0.5, "OPENAI_REALTIME_VAD_THRESHOLD"), 0.0, 1.0)
+		prefixPaddingMS := clampInt(envInt(250, "OPENAI_REALTIME_VAD_PREFIX_PADDING_MS"), 0, 1000)
+		silenceDurationMS := clampInt(envInt(350, "OPENAI_REALTIME_VAD_SILENCE_DURATION_MS"), 100, 2000)
 		return realtimeTurnDetection{
 			Type:              "server_vad",
 			Threshold:         &threshold,
@@ -973,7 +973,7 @@ func realtimeTurnDetectionConfig() realtimeTurnDetection {
 }
 
 func realtimeVADEagerness() string {
-	switch strings.ToLower(envFirstNonEmpty("high", "OPENAI_REALTIME_VAD_EAGERNESS", "REALTIME_VAD_EAGERNESS")) {
+	switch strings.ToLower(envFirstNonEmpty("high", "OPENAI_REALTIME_VAD_EAGERNESS")) {
 	case "low":
 		return "low"
 	case "medium", "auto":
@@ -1071,16 +1071,10 @@ func isAllowedRealtimeOrigin(r *http.Request) bool {
 
 func realtimeAllowedOrigins() []string {
 	origins := []string{"https://earth.wangyufeng.org"}
-	for _, key := range []string{
-		"OPENAI_REALTIME_ALLOWED_ORIGINS",
-		"REALTIME_ALLOWED_ORIGINS",
-		"APP_ALLOWED_ORIGINS",
-	} {
-		for _, origin := range strings.Split(os.Getenv(key), ",") {
-			origin = strings.TrimSpace(origin)
-			if origin != "" {
-				origins = append(origins, origin)
-			}
+	for _, origin := range strings.Split(os.Getenv("OPENAI_REALTIME_ALLOWED_ORIGINS"), ",") {
+		origin = strings.TrimSpace(origin)
+		if origin != "" {
+			origins = append(origins, origin)
 		}
 	}
 	return origins

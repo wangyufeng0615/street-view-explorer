@@ -405,7 +405,7 @@ func (c doubaoTTSConfig) configured() bool {
 
 func (c doubaoTTSConfig) validate() error {
 	if !c.configured() {
-		return errors.New("Doubao TTS is not configured. Set DOUBAO_TTS_API_KEY, or DOUBAO_TTS_APP_ID plus DOUBAO_TTS_ACCESS_KEY/DOUBAO_TTS_TOKEN")
+		return errors.New("Doubao TTS is not configured. Set DOUBAO_TTS_API_KEY, or DOUBAO_TTS_APP_ID plus DOUBAO_TTS_ACCESS_KEY")
 	}
 	if warning := doubaoTTSResourceWarning(c.ResourceID); warning != "" {
 		return errors.New(warning)
@@ -426,15 +426,15 @@ func doubaoTTSResourceWarning(resourceID string) string {
 
 func doubaoTTSConfigFromEnv() doubaoTTSConfig {
 	return doubaoTTSConfig{
-		Endpoint:     envFirstNonEmpty(defaultDoubaoTTSEndpoint, "DOUBAO_TTS_ENDPOINT", "VOLCENGINE_TTS_ENDPOINT"),
-		APIKey:       envFirstNonEmpty("", "DOUBAO_TTS_API_KEY", "DOUBAO_API_KEY", "VOLCENGINE_TTS_API_KEY", "VOLCENGINE_API_KEY", "VOLC_TTS_API_KEY", "VOLC_API_KEY", "TTS_API_KEY"),
-		AppID:        envFirstNonEmpty("", "DOUBAO_TTS_APP_ID", "DOUBAO_TTS_APPID", "VOLCENGINE_TTS_APP_ID", "VOLCENGINE_TTS_APPID"),
-		AppKey:       envFirstNonEmpty("", "DOUBAO_TTS_APP_KEY", "VOLCENGINE_TTS_APP_KEY"),
-		AccessKey:    envFirstNonEmpty("", "DOUBAO_TTS_ACCESS_KEY", "DOUBAO_TTS_ACCESS_TOKEN", "DOUBAO_TTS_TOKEN", "DOUBAO_ACCESS_KEY", "DOUBAO_TOKEN", "VOLCENGINE_TTS_ACCESS_KEY", "VOLCENGINE_TTS_TOKEN", "VOLC_ACCESS_KEY", "VOLC_ACCESS_TOKEN"),
-		ResourceID:   envFirstNonEmpty(defaultDoubaoTTSResourceID, "DOUBAO_TTS_RESOURCE_ID", "VOLCENGINE_TTS_RESOURCE_ID"),
-		Speaker:      envFirstNonEmpty(defaultDoubaoTTSSpeaker, "DOUBAO_TTS_SPEAKER", "DOUBAO_TTS_VOICE_TYPE", "VOLCENGINE_TTS_SPEAKER"),
-		Format:       strings.ToLower(envFirstNonEmpty(defaultDoubaoTTSFormat, "DOUBAO_TTS_FORMAT", "DOUBAO_TTS_ENCODING", "VOLCENGINE_TTS_FORMAT")),
-		SampleRate:   envInt(defaultDoubaoTTSSampleRate, "DOUBAO_TTS_SAMPLE_RATE", "VOLCENGINE_TTS_SAMPLE_RATE"),
+		Endpoint:     envFirstNonEmpty(defaultDoubaoTTSEndpoint, "DOUBAO_TTS_ENDPOINT"),
+		APIKey:       envFirstNonEmpty("", "DOUBAO_TTS_API_KEY"),
+		AppID:        envFirstNonEmpty("", "DOUBAO_TTS_APP_ID"),
+		AppKey:       envFirstNonEmpty("", "DOUBAO_TTS_APP_KEY"),
+		AccessKey:    envFirstNonEmpty("", "DOUBAO_TTS_ACCESS_KEY"),
+		ResourceID:   envFirstNonEmpty(defaultDoubaoTTSResourceID, "DOUBAO_TTS_RESOURCE_ID"),
+		Speaker:      envFirstNonEmpty(defaultDoubaoTTSSpeaker, "DOUBAO_TTS_SPEAKER"),
+		Format:       strings.ToLower(envFirstNonEmpty(defaultDoubaoTTSFormat, "DOUBAO_TTS_FORMAT")),
+		SampleRate:   envInt(defaultDoubaoTTSSampleRate, "DOUBAO_TTS_SAMPLE_RATE"),
 		SpeechRate:   envInt(0, "DOUBAO_TTS_SPEECH_RATE"),
 		LoudnessRate: envInt(0, "DOUBAO_TTS_LOUDNESS_RATE"),
 		Emotion:      envFirstNonEmpty("", "DOUBAO_TTS_EMOTION"),
@@ -444,9 +444,6 @@ func doubaoTTSConfigFromEnv() doubaoTTSConfig {
 
 func atlasVoiceProvider() string {
 	provider := strings.ToLower(strings.TrimSpace(os.Getenv("ATLAS_VOICE_PROVIDER")))
-	if provider == "" {
-		provider = strings.ToLower(strings.TrimSpace(os.Getenv("VOICE_AUDIO_PROVIDER")))
-	}
 	switch provider {
 	case atlasVoiceProviderDoubao:
 		return atlasVoiceProviderDoubao

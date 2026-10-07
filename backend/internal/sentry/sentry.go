@@ -313,7 +313,6 @@ func sensitiveEnvKeys() []string {
 		"OPENAI_API_KEY",
 		"REALTIME_API_KEY",
 		"DOUBAO_TTS_API_KEY",
-		"DOUBAO_TTS_TOKEN",
 		"DOUBAO_TTS_ACCESS_KEY",
 		"SENTRY_DSN",
 	}

@@ -46,7 +46,6 @@ func TestRealtimeOriginAllowsSameOrigin(t *testing.T) {
 
 func TestAtlasVoiceProviderDefaultsToOpenAI(t *testing.T) {
 	t.Setenv("ATLAS_VOICE_PROVIDER", "")
-	t.Setenv("VOICE_AUDIO_PROVIDER", "")
 
 	if got := atlasVoiceProvider(); got != atlasVoiceProviderOpenAI {
 		t.Fatalf("atlasVoiceProvider() = %q, want %q", got, atlasVoiceProviderOpenAI)
@@ -55,7 +54,6 @@ func TestAtlasVoiceProviderDefaultsToOpenAI(t *testing.T) {
 
 func TestAtlasVoiceProviderCanUseDoubao(t *testing.T) {
 	t.Setenv("ATLAS_VOICE_PROVIDER", "doubao")
-	t.Setenv("VOICE_AUDIO_PROVIDER", "")
 
 	if got := atlasVoiceProvider(); got != atlasVoiceProviderDoubao {
 		t.Fatalf("atlasVoiceProvider() = %q, want %q", got, atlasVoiceProviderDoubao)
@@ -64,9 +62,7 @@ func TestAtlasVoiceProviderCanUseDoubao(t *testing.T) {
 
 func TestRealtimeTurnDetectionDefaultsToHighSemanticVAD(t *testing.T) {
 	t.Setenv("OPENAI_REALTIME_VAD_TYPE", "")
-	t.Setenv("REALTIME_VAD_TYPE", "")
 	t.Setenv("OPENAI_REALTIME_VAD_EAGERNESS", "")
-	t.Setenv("REALTIME_VAD_EAGERNESS", "")
 
 	config := realtimeTurnDetectionConfig()
 	if config.Type != "semantic_vad" {
@@ -129,30 +125,18 @@ func TestDoubaoTTSConfigReadsCredentials(t *testing.T) {
 	}
 }
 
-func TestDoubaoTTSConfigReadsAPIKeyAliases(t *testing.T) {
-	t.Setenv("VOLCENGINE_API_KEY", "test-volcengine-api-key")
+func TestDoubaoTTSConfigReadsAppIDAndAccessKey(t *testing.T) {
+	t.Setenv("DOUBAO_TTS_APP_ID", "test-app-id")
+	t.Setenv("DOUBAO_TTS_ACCESS_KEY", "test-access-key")
 
 	config := doubaoTTSConfigFromEnv()
 	if !config.configured() {
-		t.Fatal("expected Doubao TTS config to be configured from VOLCENGINE_API_KEY")
-	}
-	if config.APIKey != "test-volcengine-api-key" {
-		t.Fatalf("APIKey = %q", config.APIKey)
-	}
-}
-
-func TestDoubaoTTSConfigReadsAppIDAndTokenAliases(t *testing.T) {
-	t.Setenv("DOUBAO_TTS_APPID", "test-app-id")
-	t.Setenv("DOUBAO_TTS_TOKEN", "test-access-token")
-
-	config := doubaoTTSConfigFromEnv()
-	if !config.configured() {
-		t.Fatal("expected Doubao TTS config to be configured from APPID and TOKEN aliases")
+		t.Fatal("expected Doubao TTS config to be configured from app ID and access key")
 	}
 	if config.AppID != "test-app-id" {
 		t.Fatalf("AppID = %q", config.AppID)
 	}
-	if config.AccessKey != "test-access-token" {
+	if config.AccessKey != "test-access-key" {
 		t.Fatalf("AccessKey = %q", config.AccessKey)
 	}
 }

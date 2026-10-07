@@ -43,9 +43,8 @@ func main() {
 	doubaoTTSAPIKey := flag.String("doubao-tts-api-key", "", "豆包语音合成新版控制台 API Key")
 	doubaoTTSAppID := flag.String("doubao-tts-app-id", "", "豆包语音合成 App ID / App Key")
 	doubaoTTSAccessKey := flag.String("doubao-tts-access-key", "", "豆包语音合成 Access Token / Access Key")
-	doubaoTTSToken := flag.String("doubao-tts-token", "", "豆包语音合成 Access Token，等同于 --doubao-tts-access-key")
 	doubaoTTSSpeaker := flag.String("doubao-tts-speaker", "", "豆包语音合成音色 speaker / voice_type")
-	doubaoTTSResourceID := flag.String("doubao-tts-resource-id", "", "豆包语音合成 Resource ID，默认 volc.service_type.10029")
+	doubaoTTSResourceID := flag.String("doubao-tts-resource-id", "", "豆包语音合成 Resource ID，默认 seed-tts-2.0")
 	doubaoTTSSpeechRate := flag.Int("doubao-tts-speech-rate", 0, "豆包语音合成语速，-50 到 100，默认 0")
 	skipProxyCheck := flag.Bool("skip-proxy-check", false, "跳过代理健康检查")
 	flag.Parse()
@@ -121,9 +120,6 @@ func main() {
 	}
 	if *doubaoTTSAccessKey != "" {
 		os.Setenv("DOUBAO_TTS_ACCESS_KEY", *doubaoTTSAccessKey)
-	}
-	if *doubaoTTSToken != "" {
-		os.Setenv("DOUBAO_TTS_TOKEN", *doubaoTTSToken)
 	}
 	if *doubaoTTSSpeaker != "" {
 		os.Setenv("DOUBAO_TTS_SPEAKER", *doubaoTTSSpeaker)

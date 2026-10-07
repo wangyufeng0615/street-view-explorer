@@ -127,11 +127,11 @@ Backend variables live in `backend/.env`.
 | `OPENAI_REALTIME_TRANSCRIPTION_MODEL` | No | Input transcription model, default `gpt-4o-mini-transcribe`. |
 | `OPENAI_REALTIME_VAD_TYPE`, `OPENAI_REALTIME_VAD_EAGERNESS` | No | Realtime turn detection tuning, default `semantic_vad` with `high` eagerness for faster voice replies. |
 | `OPENAI_REALTIME_VAD_THRESHOLD`, `OPENAI_REALTIME_VAD_PREFIX_PADDING_MS`, `OPENAI_REALTIME_VAD_SILENCE_DURATION_MS` | No | Optional `server_vad` tuning when `OPENAI_REALTIME_VAD_TYPE=server_vad`. Defaults are `0.5`, `250`, and `350`. |
-| `OPENAI_REALTIME_ALLOWED_ORIGINS`, `REALTIME_ALLOWED_ORIGINS` | No | Comma-separated browser origins allowed to open the backend Realtime WebSocket. Same-origin and local dev hosts are allowed automatically. |
+| `OPENAI_REALTIME_ALLOWED_ORIGINS` | No | Comma-separated browser origins allowed to open the backend Realtime WebSocket. Same-origin and local dev hosts are allowed automatically. |
 | `REALTIME_WEBRTC_ENABLED` | No | Enables the legacy WebRTC endpoints (`/realtime/client-secret`, `/realtime/calls`). Default `false`; enable only with `VITE_REALTIME_TRANSPORT=webrtc`. |
 | `ATLAS_VOICE_PROVIDER` | No | Atlas Voice audio provider, default `openai`. Production sets `doubao`, which keeps OpenAI Realtime for text/tools and synthesizes speech with Doubao TTS. |
 | `DOUBAO_TTS_API_KEY` | No | Doubao TTS API key for the new Volcengine console. Alternative to app ID plus access token. |
-| `DOUBAO_TTS_APP_ID` / `DOUBAO_TTS_APPID`, `DOUBAO_TTS_ACCESS_KEY` / `DOUBAO_TTS_TOKEN` | No | Doubao TTS app credentials when not using `DOUBAO_TTS_API_KEY`. |
+| `DOUBAO_TTS_APP_ID`, `DOUBAO_TTS_ACCESS_KEY` | No | Doubao TTS app credentials when not using `DOUBAO_TTS_API_KEY`. |
 | `DOUBAO_TTS_SPEAKER` | No | Doubao TTS speaker / voice type, default `zh_male_m191_uranus_bigtts` (Yunzhou 2.0 male). |
 | `DOUBAO_TTS_RESOURCE_ID` | No | Doubao TTS resource ID, default `seed-tts-2.0` for Doubao TTS 2.0 voices. |
 | `DOUBAO_TTS_FORMAT`, `DOUBAO_TTS_SAMPLE_RATE` | No | Doubao TTS stream format and sample rate. Atlas currently expects `pcm` and defaults to `24000`. |
@@ -163,7 +163,6 @@ Frontend variables live in `frontend/.env`.
 | `VITE_REALTIME_VAD_THRESHOLD`, `VITE_REALTIME_VAD_PREFIX_PADDING_MS`, `VITE_REALTIME_VAD_SILENCE_DURATION_MS` | No | Browser `server_vad` tuning when `VITE_REALTIME_VAD_TYPE=server_vad`. |
 | `VITE_REALTIME_RESPONSE_WATCHDOG_MS` | No | Voice UI no-response notice timeout, default `9000`. |
 | `VITE_ATLAS_VOICE_PROVIDER` | No | Optional frontend override for the audio provider. Usually leave unset and let the backend `/api/v1/realtime/voice-config` drive it. |
-| `VITE_REALTIME_AUDIO_PROVIDER` | No | Backward-compatible alias for the frontend voice provider override. |
 | `VITE_SENTRY_DSN` | No | Frontend Sentry DSN. |
 | `VITE_SENTRY_ENVIRONMENT` | No | Frontend Sentry environment. |
 | `VITE_VERSION` | No | Included in frontend Sentry release metadata. |

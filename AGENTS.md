@@ -210,7 +210,7 @@ backend/
 - 默认 Realtime 模型是 `gpt-realtime-2.1-mini`（和生产一致），输出音色 `cedar`，转写模型 `gpt-4o-mini-transcribe`，turn detection 是 `semantic_vad` + `high`，支持被用户打断。
 - 工具集合在 `frontend/src/utils/atlasVoiceTools.js`：`navigate`（random/theme/place/coordinates/nearby）、`look_direction`、`read_current_place`。每个用户回合只允许一次导航尝试；具体地标/地址/店名走 `navigate` 的 place 模式，调用 `GET /api/v1/locations/search`。
 - 生产设了 `ATLAS_VOICE_PROVIDER=doubao`（代码默认 `openai`，本地没有豆包凭据时保持默认）。此时 OpenAI Realtime 只负责听写、文本、记忆和工具调用，后端 `/doubao-tts` 负责把最终文本转成 PCM 流。前端会排队播放并用短窗口忽略豆包外放回灌。
-- 后端 Realtime WebSocket origin 校验允许同源、本地 `localhost/127.0.0.1/::1`，生产额外域名用 `OPENAI_REALTIME_ALLOWED_ORIGINS` / `REALTIME_ALLOWED_ORIGINS`。
+- 后端 Realtime WebSocket origin 校验允许同源、本地 `localhost/127.0.0.1/::1`，生产额外域名用 `OPENAI_REALTIME_ALLOWED_ORIGINS`。
 
 ## 安全与日志注意
 
@@ -223,7 +223,7 @@ backend/
 - Atlas 讲解时反向地理编码失败会退回点位已保存的地址继续讲；街景画面取不到仍然直接失败，因为讲解必须基于真实画面。
 - 普通讲解整段语言不对（闸门没放出任何文字）且第一次在 12 秒内失败时，后端原地再请求一次，访客只多等一会儿；"再多讲讲"不重试。兴趣偏好接口只有模型给不出区域时才提示"无法理解"，AI 服务故障按普通错误上报。
 - 讲解请求在真正调用 AI 之前就被取消（用户切站，包括画面已就绪但还没发出 AI 请求）时退还小时预算，客户端主动断开不按后端错误上报；讲解前取场景图最多 6 秒、反查地址最多 1.5 秒；上游返回的 `Retry-After` 最多等 2 秒。随机选点的反查地址最多并发 2 个，被降权的候选晚 0.5 秒才反查，避免一次随机花掉多次地理编码。
-- Realtime 日志以 `[ATLAS_VOICE]` 开头，包含时延、provider、VAD 摘要和工具输出摘要；不要记录或外发 `OPENAI_API_KEY`、`REALTIME_API_KEY`、`DOUBAO_TTS_API_KEY`、`DOUBAO_TTS_TOKEN`。
+- Realtime 日志以 `[ATLAS_VOICE]` 开头，包含时延、provider、VAD 摘要和工具输出摘要；不要记录或外发 `OPENAI_API_KEY`、`REALTIME_API_KEY`、`DOUBAO_TTS_API_KEY`、`DOUBAO_TTS_ACCESS_KEY`。
 - 分支发布时先 push 当前分支，再用 `make deploy-remote REMOTE_BRANCH=$(git branch --show-current)`，保持本地、origin、VPS 三边一致；远端有 tracked dirty 文件时部署脚本会拒绝继续。
 - 生产部署后至少确认 `docker compose ps`、后端 `/health`、nginx `/nginx_status`，再用一个非法 zoom 请求确认新后端已生效。
 
@@ -243,10 +243,10 @@ backend/
 - `OPENAI_API_KEY` / `REALTIME_API_KEY`，Atlas Voice 语音功能需要其一
 - `OPENROUTER_MODEL`，默认 `deepseek/deepseek-v4.1-flash`；Atlas 讲解（带街景画面）、兴趣偏好转区域、猜地理 AI 共用这一个模型，必须支持图片输入
 - `OPENAI_REALTIME_MODEL`（默认 `gpt-realtime-2.1-mini`）/ `OPENAI_REALTIME_API_BASE` / `OPENAI_REALTIME_WS_URL` / `OPENAI_REALTIME_VOICE`（默认 `cedar`）/ `OPENAI_REALTIME_TRANSCRIPTION_MODEL`
-- `OPENAI_REALTIME_ALLOWED_ORIGINS` / `REALTIME_ALLOWED_ORIGINS`，额外允许的语音 WebSocket 浏览器来源
+- `OPENAI_REALTIME_ALLOWED_ORIGINS`，额外允许的语音 WebSocket 浏览器来源
 - `REALTIME_WEBRTC_ENABLED`，默认 `false`；只在前端 `VITE_REALTIME_TRANSPORT=webrtc` 时开启
 - `ATLAS_VOICE_PROVIDER`，默认 `openai`，生产用 `doubao`；设为 `doubao` 时 OpenAI Realtime 只负责听写、文本回复和工具调用，音频由豆包 TTS 输出
-- `DOUBAO_TTS_API_KEY`，或 `DOUBAO_TTS_APP_ID`/`DOUBAO_TTS_APPID` + `DOUBAO_TTS_ACCESS_KEY`/`DOUBAO_TTS_TOKEN`；豆包语音合成凭据
+- `DOUBAO_TTS_API_KEY`，或 `DOUBAO_TTS_APP_ID` + `DOUBAO_TTS_ACCESS_KEY`；豆包语音合成凭据。豆包的每项配置只认一个变量名，不再接受 `VOLCENGINE_*`、`DOUBAO_TTS_TOKEN` 等旧别名
 - `DOUBAO_TTS_SPEAKER`（默认 `zh_male_m191_uranus_bigtts`，云舟 2.0 男声）/ `DOUBAO_TTS_RESOURCE_ID`（默认 `seed-tts-2.0`）/ `DOUBAO_TTS_FORMAT`（必须是 `pcm`）/ `DOUBAO_TTS_SAMPLE_RATE` / `DOUBAO_TTS_SPEECH_RATE` / `DOUBAO_TTS_PROXY_URL`
 - `SENTRY_DSN` / `SENTRY_ENABLED` / `GO_ENV`
 
@@ -262,7 +262,7 @@ backend/
 - `VITE_REALTIME_VOICE`，默认 `cedar`
 - `VITE_REALTIME_OUTPUT_SPEED`，默认 `1`
 - `VITE_REALTIME_VAD_TYPE` / `VITE_REALTIME_VAD_EAGERNESS` / `VITE_REALTIME_VAD_THRESHOLD` / `VITE_REALTIME_VAD_PREFIX_PADDING_MS` / `VITE_REALTIME_VAD_SILENCE_DURATION_MS`
-- `VITE_ATLAS_VOICE_PROVIDER` / `VITE_REALTIME_AUDIO_PROVIDER`，可选前端覆盖；通常留空，由后端 `/api/v1/realtime/voice-config` 决定
+- `VITE_ATLAS_VOICE_PROVIDER`，可选前端覆盖；通常留空，由后端 `/api/v1/realtime/voice-config` 决定
 - `VITE_SENTRY_DSN`
 - `VITE_VERSION`
 

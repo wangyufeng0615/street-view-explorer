@@ -34,9 +34,7 @@ export const ASSISTANT_ECHO_TAIL_MS = Math.max(
     450,
 );
 export const VOICE_PROVIDER_OVERRIDE =
-  import.meta.env.VITE_ATLAS_VOICE_PROVIDER ||
-  import.meta.env.VITE_REALTIME_AUDIO_PROVIDER ||
-  "";
+  import.meta.env.VITE_ATLAS_VOICE_PROVIDER || "";
 
 export const DEFAULT_VOICE_CONFIG = Object.freeze({
   provider: "openai",
