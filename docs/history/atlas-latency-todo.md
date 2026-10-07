@@ -1,5 +1,7 @@
 # TODO: Atlas 来信时延基准与优化
 
+> 历史记录：验证矩阵停在 2026-09-05，没有继续执行，只作重新测量时的参考。当前路由以 `docs/runbook.md` 为准。
+
 状态：第一轮实验和路由优化已完成，跨地区基准待补齐（2026-09-05）
 
 已完成的固定地点实验、选用的 Exa fast 搜索、限制及回滚方式见 [实验记录](atlas-latency-2026-09-05.md)。实验里的 Fireworks 优先路由只针对旧模型 `deepseek/deepseek-v4-flash-vision-exp`，换成 V4.1 Flash 后已于 2026-10-04 从代码删除。以下矩阵仍是待完成的验证范围，不代表已有跨地区 P50/P95 结果。重测排序和搜索引擎时以当前路由为基线；优先用 `OPENROUTER_DESCRIPTION_PROVIDER_SORT` 单独控制来信路径。

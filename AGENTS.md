@@ -45,7 +45,7 @@ go run cmd/server/main.go --openai-proxy http://127.0.0.1:10086 --maps-proxy htt
 ```text
 frontend/src/
 ├── components/     # StreetView, GlobalMap, PreviewMap, AtlasVoicePanel, GameFeedback 等；home/ 是首页组件（导航、小地图、Atlas 来信、底部操作栏、加载遮罩）
-├── pages/          # HomePage, AgentPage, LetterPage, GeoGamePage, GeoBattlePage
+├── pages/          # HomePage, FootprintPage, AgentPage, LetterPage, GeoGamePage, GeoBattleHubPage, GeoBattlePage
 ├── hooks/          # useLocationData, useExplorationMode, useKeyboardNavigation, useGameFeedback 等
 ├── store/          # Zustand 状态管理
 ├── services/       # api.js，同源 /api/v1 包装
@@ -94,6 +94,8 @@ backend/
 
 ## API 路由
 
+这里是接口清单的唯一维护处（README 只放链接），以 `backend/internal/api/routes.go` 为准；新增或删除接口时同步这里。
+
 ### 基础探索
 
 - `GET /api/v1/locations/random` - 随机街景位置，支持 `lang` 和 `source`。`prefetch=1` 是首页预取下一站：照常存位置但不写足迹，服务端内存记下"本会话预取过的全景"（15 分钟、每会话最多 2 个）。
@@ -103,6 +105,7 @@ backend/
 - `GET /api/v1/locations/search` - 通过 Google Places/Geocoding 搜索具体地点或地标，并跳到附近街景。
 - `GET /api/v1/locations/:panoId/description` - AI 简短描述。
 - `GET /api/v1/locations/:panoId/detailed-description` - AI 详细描述。
+- `GET /api/v1/locations/:panoId/streetview-frame` - 按指定朝向/俯仰/视角返回街景截图，供来信和语音做画面依据。
 - `GET /api/v1/visits` - 全站共享的 Atlas 足迹历史；写入仍保留 session 作为账本字段，读取不按用户过滤。`fields=map` 只返回 pano_id/latitude/longitude/formatted_address，足迹页使用；默认返回完整字段。
 - `POST /api/v1/preferences/exploration` - 设置探索偏好。
 - `POST /api/v1/preferences/exploration/remove` - 删除探索偏好。
@@ -146,6 +149,11 @@ backend/
 - `POST /api/v1/geo/online/matchmaking` - 加入随机匹配队列。
 - `GET /api/v1/geo/online/matchmaking` - 查询匹配状态。
 - `DELETE /api/v1/geo/online/matchmaking` - 取消匹配。
+
+### 运维
+
+- `GET /health` - 健康检查，含数据库连通性；容器健康检查用 `/app/main health` 调它。
+- `GET /test/sentry` - Sentry 测试接口，非生产环境默认开启，生产需 `SENTRY_TEST_ENDPOINT_ENABLED=true`。
 
 ## Geo Game 实现要点
 
@@ -216,7 +224,7 @@ backend/
 
 - `make clean` 保留数据卷；只有显式 `make destroy-data CONFIRM_DELETE_DATA=yes` 才删除当前 Compose 项目的数据卷，执行前必须备份。
 
-- `RateLimitMiddleware()` 默认开启；`/api/v1/locations/search` 是每 IP 每分钟 45 次；`/api/v1/geo/ai-guess` 是每 IP 每分钟 30 次；`/api/v1/geo/satellite` 和 `/api/v1/geo/online/rooms/:roomId/image` 是每 IP 每分钟 180 次；Realtime session / WebSocket / Doubao TTS 入口是每 IP 每分钟 20 次，`/api/v1/realtime/voice-config` 是 120 次；在线对战建房、加入、ready 和 `POST /matchmaking` 是每 IP 每分钟 20 次（每次开局会生成 5 轮题目并调用大量 Google 接口）；`/api/v1/locations/lookup` 和 `/address` 每次都要反查地址，是每 IP 每分钟 30 次。AI 描述全局小时预算另有每 IP 四分之一份额，上游失败会退还。
+- 限流默认开启，各接口阈值的唯一维护处是 `docs/runbook.md` 的 Rate limits 一节，代码以 `middleware.go` 的 `rateLimitRuleFor` 为准；改阈值时同步那里。
 - 限流表 `expires_at` 统一写成 UTC 定宽字符串（`rateLimitTime`），不要直接绑定 `time.Time`；启动迁移会清掉旧格式行。
 - Google Static Maps 请求失败日志会隐藏 `GOOGLE_API_KEY`；不要把旧本地日志或生产日志原样外发，尤其是 2026-05-03 之前生成的地图错误日志。
 - `[ERROR]` 日志会附带脱敏后的底层原因（`AppError` 取 `InternalMsg`），排查上游失败时直接看 `error=` 字段。
@@ -229,54 +237,16 @@ backend/
 
 ## 环境变量
 
-后端必须配置：
+完整清单只在 `README.md` 的 Configuration 表里维护，新增、改名或删除变量时同步那张表和两份 `.env.example`。必须配置的只有：后端 `AI_API_KEY`、`GOOGLE_API_KEY`，前端 `VITE_GOOGLE_MAPS_API_KEY`；用语音还需要 `REALTIME_API_KEY`（或 `OPENAI_API_KEY`），生产用豆包发声时再加 `DOUBAO_TTS_API_KEY`。
 
-- `AI_API_KEY`
-- `GOOGLE_API_KEY`
-
-后端常用可选：
-
-- `SERVER_ADDRESS`，默认 `:8080`
-- `SQLITE_PATH`，默认 `data/streetview.db`
-- `RATE_LIMIT_ENABLED`，默认 `true`
-- `PROXY_URL` / `AI_PROXY_URL` / `MAPS_PROXY_URL`
-- `OPENAI_API_KEY` / `REALTIME_API_KEY`，Atlas Voice 语音功能需要其一
-- `OPENROUTER_MODEL`，默认 `deepseek/deepseek-v4.1-flash`；Atlas 讲解（带街景画面）、兴趣偏好转区域、猜地理 AI 共用这一个模型，必须支持图片输入
-- `OPENAI_REALTIME_MODEL`（默认 `gpt-realtime-2.1-mini`）/ `OPENAI_REALTIME_API_BASE` / `OPENAI_REALTIME_WS_URL` / `OPENAI_REALTIME_VOICE`（默认 `cedar`）/ `OPENAI_REALTIME_TRANSCRIPTION_MODEL`
-- `OPENAI_REALTIME_ALLOWED_ORIGINS`，额外允许的语音 WebSocket 浏览器来源
-- `REALTIME_WEBRTC_ENABLED`，默认 `false`；只在前端 `VITE_REALTIME_TRANSPORT=webrtc` 时开启
-- `ATLAS_VOICE_PROVIDER`，默认 `openai`，生产用 `doubao`；设为 `doubao` 时 OpenAI Realtime 只负责听写、文本回复和工具调用，音频由豆包 TTS 输出
-- `DOUBAO_TTS_API_KEY`，或 `DOUBAO_TTS_APP_ID` + `DOUBAO_TTS_ACCESS_KEY`；豆包语音合成凭据。豆包的每项配置只认一个变量名，不再接受 `VOLCENGINE_*`、`DOUBAO_TTS_TOKEN` 等旧别名
-- `DOUBAO_TTS_SPEAKER`（默认 `zh_male_m191_uranus_bigtts`，云舟 2.0 男声）/ `DOUBAO_TTS_RESOURCE_ID`（默认 `seed-tts-2.0`）/ `DOUBAO_TTS_FORMAT`（必须是 `pcm`）/ `DOUBAO_TTS_SAMPLE_RATE` / `DOUBAO_TTS_SPEECH_RATE` / `DOUBAO_TTS_PROXY_URL`
-- `SENTRY_DSN` / `SENTRY_ENABLED` / `GO_ENV`
-
-前端必须配置：
-
-- `VITE_GOOGLE_MAPS_API_KEY`
-
-前端常用可选：
-
-- `VITE_GOOGLE_MAPS_MAP_ID`
-- `VITE_REALTIME_TRANSPORT`，默认 `backend-ws`
-- `VITE_REALTIME_TRANSCRIPTION_MODEL`
-- `VITE_REALTIME_VOICE`，默认 `cedar`
-- `VITE_REALTIME_OUTPUT_SPEED`，默认 `1`
-- `VITE_REALTIME_VAD_TYPE` / `VITE_REALTIME_VAD_EAGERNESS` / `VITE_REALTIME_VAD_THRESHOLD` / `VITE_REALTIME_VAD_PREFIX_PADDING_MS` / `VITE_REALTIME_VAD_SILENCE_DURATION_MS`
-- `VITE_ATLAS_VOICE_PROVIDER`，可选前端覆盖；通常留空，由后端 `/api/v1/realtime/voice-config` 决定
-- `VITE_SENTRY_DSN`
-- `VITE_VERSION`
+- 文字、看图、猜地理共用一个模型 `OPENROUTER_MODEL`（默认 `deepseek/deepseek-v4.1-flash`），必须支持图片输入。
+- 豆包的每项配置只认 `DOUBAO_TTS_*` 一个变量名，不再接受 `VOLCENGINE_*`、`DOUBAO_TTS_TOKEN` 等旧别名。
+- `VITE_DEV_PORT`、`VITE_API_PROXY_TARGET` 从命令行环境读取，写进 `frontend/.env` 无效。
+- 部署脚本每次会改写生产的 `SENTRY_RELEASE` 和 `VITE_VERSION`。
 
 ## 文档位置
 
 - `README.md` - 面向新人和外部读者的入口。
 - `docs/architecture.md` - 当前架构、数据流和状态机。
 - `docs/runbook.md` - 安装、冒烟、部署和故障排查。
-
-## 可靠性修复（2026-09-05）
-
-- 实际生产入口是 SG `/opt/street-view-explorer`，部署用 `make deploy-remote REMOTE_HOST=sg REMOTE_DIR=/opt/street-view-explorer REMOTE_BRANCH=main REMOTE_SUDO=1`；使用前核对运行状态，不沿用 KR 默认值。
-- SQLite 连接参数使用 modernc `_pragma`；限流提交失败必须返回错误并清理连接上的事务。
-- `TRUSTED_PROXY_CIDRS` 只填写真实代理跳的 CIDR，空值不信任转发头。
-- 来信正文不缓存。`research_status` 区分上游确认过搜索的 `verified` 和没有执行证据的 `unverified`；后者在 UI 明示，不能根据 tool_choice 推断已执行。
-- 足迹 `distinct=1` 按 panorama 分页，展示加载数量和全站总数；低缩放级别聚合图钉。
-- WebSocket、备题预算、备份和回滚流程以 `docs/runbook.md` 为准。
+- `docs/history/` - 已结束的实验记录和历史说明，只作参考，不代表当前状态。

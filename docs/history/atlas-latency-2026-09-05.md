@@ -1,5 +1,7 @@
 # Atlas latency experiment — 2026-09-05
 
+> Historical record (2026-09-05). The Fireworks preference described here applied only to `deepseek/deepseek-v4-flash-vision-exp` and was removed on 2026-10-04 after the switch to V4.1 Flash; the rollback recipe below no longer applies. Current routing is described in `docs/runbook.md`.
+
 ## Method
 
 Paid, opt-in tests ran in a separate process on the SG production host. They used the production description functions and model (`deepseek/deepseek-v4-flash-vision-exp`), one fixed 640×480 Google Street View frame at -13.53770,-172.39409, the same Paia address context, and unchanged prompt, language validation, token caps and evidence budgets. Standard calls retain a 25-second model deadline; detailed calls retain 60 seconds. Calls were sequential, with variant order rotated between rounds; languages were Chinese, English, Chinese. The frame was fetched once per experiment and shared by its variants.

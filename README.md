@@ -90,7 +90,7 @@ go run cmd/server/main.go --openai-proxy http://127.0.0.1:10086 --maps-proxy htt
 ```bash
 make deploy       # docker compose build + up -d
 make deploy-remote # ssh to REMOTE_HOST=sg (sudo), pull REMOTE_BRANCH (default main), deploy, and verify
-make check        # backend tests, frontend lint/typecheck/tests/build, nginx CSP
+make check        # nginx CSP, backend tests, frontend format/lint/typecheck/tests/build
 make check-cleanup # real Docker cleanup test using an isolated disposable volume
 make clean        # stop/remove Compose containers and networks; retain SQLite
 ```
@@ -132,6 +132,8 @@ Backend variables live in `backend/.env`.
 | `ATLAS_VOICE_PROVIDER` | No | Atlas Voice audio provider, default `openai`. Production sets `doubao`, which keeps OpenAI Realtime for text/tools and synthesizes speech with Doubao TTS. |
 | `DOUBAO_TTS_API_KEY` | No | Doubao TTS API key for the new Volcengine console. Alternative to app ID plus access token. |
 | `DOUBAO_TTS_APP_ID`, `DOUBAO_TTS_ACCESS_KEY` | No | Doubao TTS app credentials when not using `DOUBAO_TTS_API_KEY`. |
+| `DOUBAO_TTS_APP_KEY` | No | Optional `X-Api-App-Key` header for app-credential accounts that require it. |
+| `DOUBAO_TTS_ENDPOINT` | No | Doubao TTS endpoint, default `https://openspeech.bytedance.com/api/v3/tts/unidirectional`. |
 | `DOUBAO_TTS_SPEAKER` | No | Doubao TTS speaker / voice type, default `zh_male_m191_uranus_bigtts` (Yunzhou 2.0 male). |
 | `DOUBAO_TTS_RESOURCE_ID` | No | Doubao TTS resource ID, default `seed-tts-2.0` for Doubao TTS 2.0 voices. |
 | `DOUBAO_TTS_FORMAT`, `DOUBAO_TTS_SAMPLE_RATE` | No | Doubao TTS stream format and sample rate. Atlas currently expects `pcm` and defaults to `24000`. |
@@ -139,10 +141,18 @@ Backend variables live in `backend/.env`.
 | `DOUBAO_TTS_PROXY_URL` | No | Doubao-specific outbound proxy. Falls back to `AI_PROXY_URL` or `PROXY_URL`. |
 | `OPENROUTER_MODEL` | No | The single OpenRouter model for Atlas descriptions (with the current Street View frame), interest-region generation, and Geo Guess satellite-image analysis, default `deepseek/deepseek-v4.1-flash`. It must accept image input. Geo Guess disables model reasoning and caps the response to keep latency bounded. |
 | `OPENROUTER_PROVIDER_SORT` | No | Geo Guess vision-provider preference: `latency` (default), `throughput`, `price`, or `off`. Description requests leave sorting unset for Auto Exacto tool routing. |
+| `OPENROUTER_DESCRIPTION_PROVIDER_SORT` | No | Atlas description provider routing. Unset uses OpenRouter's automatic routing; `latency`, `throughput`, or `price` forces a sort. |
+| `OPENROUTER_DESCRIPTION_SEARCH` | No | Set to `auto` to let OpenRouter choose the web-search engine; unset uses Exa fast search. |
+| `OPENROUTER_API_ENDPOINT` | No | Chat completions endpoint, default `https://openrouter.ai/api/v1/chat/completions`. |
 | `GOOGLE_API_KEY` | Yes | Backend Google Maps, Street View, and Static Maps access. |
 | `SENTRY_DSN` | No | Backend Sentry DSN. |
 | `GO_ENV` | No | Backend runtime environment and Sentry environment label, default `development`. |
 | `SENTRY_ENABLED` | No | Set to `false` to disable backend Sentry initialization. |
+| `SENTRY_SAMPLE_RATE` | No | Backend trace sample rate, default `0.1` in production and `1.0` elsewhere. |
+| `SENTRY_RELEASE` | No | Backend Sentry release. `scripts/remote_deploy.sh` rewrites it to `streetview@<commit>` on each deploy. |
+| `SENTRY_TEST_ENDPOINT_ENABLED` | No | Exposes `GET /test/sentry` in production when `true`; it is always available outside production. |
+| `ENABLE_AI` | No | Default `true`. `false` skips the model call for Atlas descriptions (other AI features are unaffected). |
+| `ENABLE_GOOGLE_API` | No | Default `true`. `false` makes Atlas descriptions skip reverse geocoding and the Street View frame. |
 | `TRUSTED_PROXY_CIDRS` | No | Comma-separated CIDRs for the actual reverse proxy hops. Empty trusts no forwarding headers. |
 | `RATE_LIMIT_ENABLED` | No | Enables SQLite-backed rate limiting, default `true`. Per-endpoint limits are defined in code. |
 | `MAP_DATA_AUTO_UPDATE` | No | Set to `true` to refresh local Natural Earth map data during geo initialization. Defaults to local-only startup. |
@@ -165,7 +175,12 @@ Frontend variables live in `frontend/.env`.
 | `VITE_ATLAS_VOICE_PROVIDER` | No | Optional frontend override for the audio provider. Usually leave unset and let the backend `/api/v1/realtime/voice-config` drive it. |
 | `VITE_SENTRY_DSN` | No | Frontend Sentry DSN. |
 | `VITE_SENTRY_ENVIRONMENT` | No | Frontend Sentry environment. |
-| `VITE_VERSION` | No | Included in frontend Sentry release metadata. |
+| `VITE_SENTRY_TRACES_SAMPLE_RATE` | No | Frontend trace sample rate, default `0.1` in production builds and `1.0` in development. |
+| `VITE_VERSION` | No | Included in frontend Sentry release metadata. `scripts/remote_deploy.sh` rewrites it to the deployed commit. |
+| `VITE_REALTIME_AUDIO_MAX_BUFFERED_BYTES` | No | Microphone frames are dropped while the voice WebSocket send buffer exceeds this many bytes, default `131072`. |
+| `VITE_ASSISTANT_ECHO_TAIL_MS` | No | With Doubao output, microphone input stays muted this long after Atlas audio ends to avoid speaker echo, default `450`. |
+
+`VITE_DEV_PORT` (default `3100`) and `VITE_API_PROXY_TARGET` (default `http://localhost:8080`) configure the Vite dev server. They are read from the shell environment, not from `frontend/.env`; `make dev` sets both.
 
 ## User Routes
 
@@ -182,54 +197,7 @@ Frontend variables live in `frontend/.env`.
 
 All standard JSON endpoints return a `{ "success": boolean, "data": ..., "error": ... }` shape. Browser requests include `X-Session-ID`; the backend generates one if missing.
 
-### Locations and Preferences
-
-- `GET /api/v1/locations/random`
-- `GET /api/v1/locations/lookup`
-- `GET /api/v1/locations/search` - resolves a concrete place/landmark query through Google Places/Geocoding, then loads nearby Street View.
-- `GET /api/v1/locations/:panoId/description`
-- `GET /api/v1/locations/:panoId/detailed-description`
-- `GET /api/v1/locations/:panoId/streetview-frame` - returns an exact heading/pitch/FOV frame used by Atlas descriptions and Atlas Voice visual context.
-- `GET /api/v1/visits` - shared site-wide visit history; accepts `source=random|shared|lookup|map_pick`. Atlas footprints request `source=random`.
-- `POST /api/v1/preferences/exploration`
-- `POST /api/v1/preferences/exploration/remove`
-
-### Odyssey Agent Journey
-
-- `POST /api/v1/agent/journeys`
-- `GET /api/v1/agent/journeys`
-- `GET /api/v1/agent/journeys/:id`
-- `PUT /api/v1/agent/journeys/:id/status`
-- `GET /api/v1/agent/journeys/:id/public-letter`
-- `GET /api/v1/agent/explore`
-- `GET /api/v1/agent/streetview`
-- `POST /api/v1/agent/journeys/:id/stops`
-- `GET /api/v1/agent/journeys/:id/stops`
-- `POST /api/v1/agent/journeys/:id/letter`
-
-### Atlas Voice / Realtime
-
-- `GET /api/v1/realtime/voice-config` - returns the active speech provider and Doubao TTS readiness.
-- `GET /api/v1/realtime/client-secret` - creates a short-lived OpenAI Realtime session for the WebRTC path (disabled unless `REALTIME_WEBRTC_ENABLED=true`).
-- `POST /api/v1/realtime/calls` - proxies WebRTC SDP offers to OpenAI Realtime (same switch).
-- `GET /api/v1/realtime/ws` - same-origin WebSocket relay for the default voice transport.
-- `POST /api/v1/realtime/doubao-tts` - streams Doubao TTS PCM chunks as NDJSON when `ATLAS_VOICE_PROVIDER=doubao`.
-
-### Geo Game and Online Duel
-
-- `GET /api/v1/geo/satellite`
-- `POST /api/v1/geo/ai-guess`
-- `POST /api/v1/geo/online/rooms`
-- `POST /api/v1/geo/online/rooms/join`
-- `GET /api/v1/geo/online/rooms/:roomId`
-- `POST /api/v1/geo/online/rooms/:roomId/ready`
-- `POST /api/v1/geo/online/rooms/:roomId/zoom-out`
-- `POST /api/v1/geo/online/rooms/:roomId/guess`
-- `POST /api/v1/geo/online/rooms/:roomId/leave`
-- `GET /api/v1/geo/online/rooms/:roomId/image`
-- `POST /api/v1/geo/online/matchmaking`
-- `GET /api/v1/geo/online/matchmaking`
-- `DELETE /api/v1/geo/online/matchmaking`
+The full endpoint list lives in the "API 路由" section of [AGENTS.md](AGENTS.md); `backend/internal/api/routes.go` is the source of truth. Rate limits are listed in [docs/runbook.md](docs/runbook.md#rate-limits).
 
 ## Architecture Notes
 

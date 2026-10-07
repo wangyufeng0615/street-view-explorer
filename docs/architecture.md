@@ -1,8 +1,8 @@
 # Architecture
 
-Maintenance boundaries: the OpenRouter client separates HTTP/stream transport (`transport.go`), citations, description stream validation, letter generation, interest-region generation and vision guessing into dedicated files in the same Go package. The frontend keeps single-player state in `geoGameState.js`, result UI in `GeoGameResults.jsx`, the duel hub in `GeoBattleHubPage.jsx`, duel results in `GeoBattleResults.jsx`, and snapshot ordering in `geoBattleSnapshot.js`. Atlas Voice retains session orchestration in the panel and delegates audio conversion, navigation, session memory and tool declarations to `atlasVoiceAudio`, `atlasVoiceNavigation`, `atlasVoiceMemory` and `atlasVoiceTools`. These extractions preserve request timing and page lifecycles; empty audio input now stays empty during resampling.
-
 This document describes the current runtime architecture of Street View Explorer.
+
+Maintenance boundaries: the OpenRouter client separates HTTP/stream transport (`transport.go`), citations, description stream validation, letter generation, interest-region generation and vision guessing into dedicated files in the same Go package. The frontend keeps single-player state in `geoGameState.js`, result UI in `GeoGameResults.jsx`, the duel hub in `GeoBattleHubPage.jsx`, duel results in `GeoBattleResults.jsx`, and snapshot ordering in `geoBattleSnapshot.js`. Atlas Voice retains session orchestration in the panel and delegates audio conversion, navigation, session memory and tool declarations to `atlasVoiceAudio`, `atlasVoiceNavigation`, `atlasVoiceMemory` and `atlasVoiceTools`.
 
 ## System Shape
 
@@ -21,6 +21,7 @@ Go backend (Gin)
   +-- Google Maps APIs: Street View, Static Maps, geocoding, places
   +-- OpenRouter: AI descriptions and satellite-image guesses
   +-- OpenAI Realtime: Atlas Voice live speech sessions
+  +-- Volcengine (Doubao) TTS: Atlas Voice speech output in production
 ```
 
 The frontend uses a persistent anonymous `X-Session-ID`. The backend validates that header and creates one when missing. Preference state and online duel membership depend on that session identity. Visit writes keep the session for bookkeeping. The Atlas footprint map reads the shared site-wide history filtered to `source=random`, so shared links, manual lookups, and map picks do not masquerade as Atlas travel.
@@ -30,7 +31,7 @@ The frontend uses a persistent anonymous `X-Session-ID`. The backend validates t
 The frontend is React 18 with Vite. `frontend/vite.config.js` sets:
 
 - dev server port `3100` by default;
-- `/api` proxy to `http://localhost:8080`;
+- `/api` proxy to `VITE_API_PROXY_TARGET` from the shell environment (default `http://localhost:8080`);
 - production output directory `build`;
 - manual chunks for vendor, i18n, and Zustand;
 - Vite env prefix `VITE_`.
@@ -71,13 +72,13 @@ Key middleware:
 - request logging with special successful-agent request logging;
 - input validation for request size, `panoId`, and page query bounds;
 - session management through `X-Session-ID`;
-- SQLite-backed rate limiting when enabled, including tighter limits for random locations, geo AI guesses, satellite image proxy calls, and Atlas Voice Realtime session entrypoints. Paid text descriptions are limited separately (12 standard and 6 detailed requests per IP per minute) and also have global hourly budgets (360 standard and 120 detailed); these paths fail closed if the limiter is unavailable.
+- SQLite-backed per-IP rate limiting when enabled, with per-route limits and global hourly budgets for paid descriptions (exact numbers live in [the runbook](runbook.md#rate-limits)); cost-sensitive paths fail closed if the limiter is unavailable.
 
 Random Earth exploration uses one strategy lane per request: 60% broad coverage (sub-linear population weighting), 30% country-fair, and 10% small-country/frontier. Twelve coordinates from that lane are sampled without repeating a country inside the batch, then resolved concurrently. Each Street View metadata lookup is capped at 25km, and the reverse-geocoded ISO country must match the sampled target country. The first session-novel result wins; exact panorama matches and locations within 50km of the latest 100 random visits receive progressively stronger soft penalties, with a short grace window before a repeated-area fallback is accepted. Repeats remain allowed when no timely novel result is available. A previously verified global random panorama can cap unconstrained random-Earth latency at 1.5 seconds, but country-constrained and interest-constrained requests never use an out-of-scope reservoir fallback. Random visit rows retain the origin coordinate, final coordinate, snap distance, strategy, country codes, radius, and winning candidate number for distribution audits.
 
 Atlas descriptions fetch reverse-geocoded location metadata and the current Street View frame in parallel, then combine that visual context with one focused OpenRouter web search. Visible observations are grounded only in the frame. Descriptions, interest-region generation, and Geo Guess share one image-capable model configured by `OPENROUTER_MODEL` (default `deepseek/deepseek-v4.1-flash`). A failed frame fetch stops the description instead of silently producing a false visual account. Atlas Voice also uses `GET /api/v1/locations/:panoId/streetview-frame` and inserts the latest frame into the Realtime conversation as a silent `input_image` item. `MapsService` keeps bounded TTL caches for location metadata and panorama/view frames. Automatic rotation does not continuously fetch voice frames: the latest view is refreshed when the user speaks or a scene-changing tool completes, with same-scene in-flight requests deduplicated. A failed scene change deletes the previous image context so Atlas cannot describe a stale location.
 
-Text descriptions accept `stream=1` and return `status`, `delta`, `done`, or `error` SSE events. OpenRouter uses the `openrouter:web_search` server tool instead of the deprecated web plugin. Atlas is instructed to make one focused research call with a bounded result/context budget, the server-tool loop is capped at one call, reasoning is disabled for this cost-sensitive path, and the backend reports `research_status=verified` when OpenRouter usage confirms at least one web-search request, or `unverified` otherwise; missing evidence is shown in the UI. Description requests default to Exa fast search with automatic provider routing. `OPENROUTER_DESCRIPTION_PROVIDER_SORT` can select a latency/throughput/price sort, and `OPENROUTER_DESCRIPTION_SEARCH=auto` restores automatic search-engine selection. The bounded experiment and its limitations are recorded in [the latency report](atlas-latency-2026-09-05.md). The UI language is repeated as a system-level output contract; the first streamed paragraph is gated to reduce research narration and wrong-language output; the full result is validated again and rejected on a final language mismatch. Interest-region generation uses a separate JSON-only system prompt. The final `done` event replaces streamed draft text with the sanitized body and citation list.
+Text descriptions accept `stream=1` and return `status`, `delta`, `done`, or `error` SSE events. OpenRouter uses the `openrouter:web_search` server tool instead of the deprecated web plugin. Atlas is instructed to make one focused research call with a bounded result/context budget, the server-tool loop is capped at one call, reasoning is disabled for this cost-sensitive path, and the backend reports `research_status=verified` when OpenRouter usage confirms at least one web-search request, or `unverified` otherwise; missing evidence is shown in the UI. Description requests default to Exa fast search with automatic provider routing. `OPENROUTER_DESCRIPTION_PROVIDER_SORT` can select a latency/throughput/price sort, and `OPENROUTER_DESCRIPTION_SEARCH=auto` restores automatic search-engine selection. The bounded experiment and its limitations are recorded in [the latency report](history/atlas-latency-2026-09-05.md). The UI language is repeated as a system-level output contract; the first streamed paragraph is gated to reduce research narration and wrong-language output; the full result is validated again and rejected on a final language mismatch. Interest-region generation uses a separate JSON-only system prompt. The final `done` event replaces streamed draft text with the sanitized body and citation list.
 
 The standard Atlas letter keeps its bounded three-paragraph structure, but its voice contract requires one grounded first-person reaction, one light aside to the reader, varied sentence length, and no report-style transitions. The bracketed arrival thought must be specific to the verified place instead of a reusable stage direction. While the first description is pending, the card header carries the single visible status (`Atlas 正翻着地图…` / `Atlas is tracing the map…`) and the body uses an unlabeled visual progress trail, avoiding duplicate Atlas status copy while retaining an accessible live status.
 
@@ -211,7 +212,7 @@ Leaving behavior:
 
 `docker-compose.yml` builds:
 
-- `backend` from `backend/docker/Dockerfile`;
+- `backend` from `backend/docker/Dockerfile`, which also ships `backend/data/maps` so an empty data volume is seeded with the Natural Earth files;
 - `nginx` from `nginx/Dockerfile`, which builds the frontend first and copies `frontend/build`.
 
 Nginx:

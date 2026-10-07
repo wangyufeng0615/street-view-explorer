@@ -44,7 +44,7 @@ make dev-stop
 
 ## Verification Commands
 
-After installing frontend dependencies with `cd frontend && yarn install --frozen-lockfile`, run `make check` from the repository root. It runs the nginx CSP check, all backend tests, and frontend lint, typecheck, tests and production build. GitHub Actions runs the same command for main pushes and pull requests with Go from `backend/go.mod`, Node 24 and Yarn 1.22.22. No production credentials are supplied; paid Atlas latency tests remain opt-in and are disabled in CI.
+After installing frontend dependencies with `cd frontend && yarn install --frozen-lockfile`, run `make check` from the repository root. It runs the nginx CSP check, all backend tests, and frontend format check, lint, typecheck, tests and production build. GitHub Actions runs the same command for main pushes and pull requests with Go from `backend/go.mod`, Node 24 and Yarn 1.22.22. No production credentials are supplied.
 
 `yarn typecheck` checks TypeScript and explicitly opted-in JavaScript (`// @ts-check`), including single-player state and result JSX, voice audio/navigation/memory, battle snapshot ordering and fetch cancellation. `geoGameTypes.ts` defines state, action and result contracts; `type-tests/contracts.ts` verifies incorrect coordinates, actions, audio and JSX props are rejected. This is incremental coverage, not repository-wide JS/JSX typing. The no-emit TypeScript target is ES2020 to support the typed-array iteration already used at runtime; Vite still controls the emitted browser target.
 
@@ -190,7 +190,7 @@ REMOTE_GIT_REMOTE=origin
 HEALTH_TIMEOUT=240
 ```
 
-`make deploy-remote` runs on the VPS: `git fetch`, `git checkout`, `git pull --ff-only`, `make deploy`, then waits for backend and nginx health checks. It also verifies backend `/health`, nginx `/nginx_status` from inside the nginx container, prints container/image IDs and start times, and checks that pano IDs containing `.` are no longer rejected by input validation. If the local remote name differs from the VPS remote name, set `LOCAL_GIT_REMOTE` and `REMOTE_GIT_REMOTE` separately.
+`make deploy-remote` runs on the VPS: `git fetch`, `git checkout`, `git pull --ff-only`, rewrites `SENTRY_RELEASE` in `backend/.env` and `VITE_VERSION` in `frontend/.env` to the deployed commit, then `make deploy`, then waits for backend and nginx health checks. It also verifies backend `/health`, nginx `/nginx_status` from inside the nginx container, prints container/image IDs and start times, and checks that pano IDs containing `.` are no longer rejected by input validation. If the local remote name differs from the VPS remote name, set `LOCAL_GIT_REMOTE` and `REMOTE_GIT_REMOTE` separately.
 
 The remote deploy script refuses to continue when tracked files in `REMOTE_DIR` are dirty. For an exact release mirror, clean or discard deliberate temporary remote-only files before deploying; do not leave a stash or `docker-compose.override.yml` unless it is intentionally part of operations.
 
@@ -249,7 +249,7 @@ Use `--skip-proxy-check` only when the proxy health check itself is unreliable b
 ### Frontend cannot reach API
 
 - In development, confirm Vite is running on port 3100 and backend on 8080.
-- Check `frontend/vite.config.js`: `/api` is proxied to `http://localhost:8080`.
+- Check `frontend/vite.config.js`: `/api` is proxied to `VITE_API_PROXY_TARGET` from the shell environment (default `http://localhost:8080`; `make dev` sets it).
 - Browser API wrappers always use same-origin `/api/v1`; no environment variable reroutes them.
 
 ### Atlas Voice stays connecting
@@ -278,7 +278,7 @@ Use `--skip-proxy-check` only when the proxy health check itself is unreliable b
 - In proxy-restricted networks, set `AI_PROXY_URL` or shared `PROXY_URL`. A direct OpenRouter response like `This model is not available in your region` means the key and model can be valid while the current egress region is blocked.
 - Atlas descriptions, interest-region generation, and Geo Guess all use `OPENROUTER_MODEL` (default `deepseek/deepseek-v4.1-flash`). Descriptions fetch the current Street View frame in parallel with reverse geocoding; a frame-fetch failure is visible and stops generation so Atlas cannot pretend to see a missing image. Geo Guess disables model reasoning and caps output at 480 tokens to stay within its 30-second request budget.
 - Geo Guess prefers vision providers sorted by latency. Set `OPENROUTER_PROVIDER_SORT=throughput`, `price`, or `off` to change only the Geo Guess policy.
-- Description search uses `engine=exa, mode=fast`; the ordinary/deep evidence budgets remain 4/6 results and 3000/2500 characters per result. Description requests use OpenRouter automatic provider routing (Auto Exacto); `OPENROUTER_DESCRIPTION_PROVIDER_SORT=latency`, `throughput`, or `price` explicitly selects a sort instead. `OPENROUTER_DESCRIPTION_SEARCH=auto` restores automatic search-engine selection. See [the dated experiment](atlas-latency-2026-09-05.md); the samples do not establish a latency SLA.
+- Description search uses `engine=exa, mode=fast`; the ordinary/deep evidence budgets remain 4/6 results and 3000/2500 characters per result. Description requests use OpenRouter automatic provider routing (Auto Exacto); `OPENROUTER_DESCRIPTION_PROVIDER_SORT=latency`, `throughput`, or `price` explicitly selects a sort instead. `OPENROUTER_DESCRIPTION_SEARCH=auto` restores automatic search-engine selection. See [the dated experiment](history/atlas-latency-2026-09-05.md); the samples do not establish a latency SLA.
 - Timing logs distinguish context preparation, stream opening, upstream first text, visible first text, and completion. `upstream_identity` records the generation ID and `reported_provider` without logging prompts, images, or credentials. The stream's provider label can differ from the generation API's `provider_name`; use the generation ID to reconcile the actual model/provider in Activity/API, rather than treating the stream label as proof. Empty identity means it was not reported.
 - AI endpoints can take longer than normal JSON calls; the streaming frontend timeout is 45 seconds for the first Atlas letter and 75 seconds for the detailed follow-up. These include frame/geocoding preparation and transport in addition to the model budgets (25 and 60 seconds). The backend retries transient OpenRouter statuses (`408`, `429`, and `5xx`) before streaming begins. OpenRouter usage logs should show at least one web-search request for either description path.
 
@@ -311,24 +311,34 @@ Use `--skip-proxy-check` only when the proxy health check itself is unreliable b
 
 ### Backend startup waits on map data
 
-- Existing local Natural Earth map data is used by default; startup does not remote-check for updates.
+- Natural Earth map data ships in the repository (`backend/data/maps`) and in the backend image. Docker seeds an empty `sqlite_data` volume with it on first mount, so a fresh host does not download anything; startup does not remote-check for updates.
+- If the files are missing (for example a volume restored without them), the backend downloads them from GitHub at startup and fails to start if that download fails.
 - To refresh map data during geo initialization, set `MAP_DATA_AUTO_UPDATE=true`.
 
 ### Rate limits
 
-- SQLite-backed rate limiting is enabled by default.
-- Paid description limits are 12 standard and 6 detailed requests per IP per minute, with global hourly budgets of 360 and 120 respectively. A limiter storage failure intentionally returns `503` before an OpenRouter request is made.
+This section is the single place that lists the limits; the code is `rateLimitRuleFor` in `backend/internal/api/middleware.go`. Update both together.
+
+- SQLite-backed rate limiting is enabled by default. Set `RATE_LIMIT_ENABLED=false` only for local debugging.
+- Per IP per minute:
+
+  | Endpoint | Limit |
+  | --- | --- |
+  | `GET /locations/random` | 120 |
+  | `GET /locations/search` | 45 |
+  | `GET /locations/lookup`, `GET /locations/address` | 30 each (each call is a billed reverse geocode) |
+  | `GET /locations/:panoId/streetview-frame` | 60 |
+  | `GET /locations/:panoId/description` / `detailed-description` | 12 / 6 |
+  | `POST /geo/ai-guess` | 30 |
+  | `GET /geo/satellite`, `GET /geo/online/rooms/:roomId/image` | 180 each |
+  | Duel create / join / ready, `POST /geo/online/matchmaking` | 20 each (matchmaking status polling uses the default) |
+  | `/realtime/client-secret`, `/realtime/calls`, `/realtime/ws`, `/realtime/doubao-tts` | 20 each |
+  | `GET /realtime/voice-config` | 120 |
+  | `POST /preferences/exploration` | 30, plus hourly caps of 60 per session, 500 per IP and 2000 site-wide |
+  | Everything else | 200 |
+
+- Paid descriptions also have global hourly budgets of 360 standard and 120 detailed requests; each IP may use at most a quarter of either budget, and failed upstream calls are refunded. A limiter storage failure on these cost-sensitive paths returns `503` before any OpenRouter request.
 - Odyssey clients should send traveler IDs only as `Authorization: Bearer <ID>`. Query-token support is legacy compatibility and must not be used in generated letters or browser URLs.
-- `/api/v1/locations/random` has a per-IP limit of 120 requests per minute.
-- `/api/v1/locations/search` has a per-IP limit of 45 requests per minute.
-- `/api/v1/geo/ai-guess` has a per-IP limit of 30 requests per minute.
-- `/api/v1/geo/satellite` and `/api/v1/geo/online/rooms/:roomId/image` have a per-IP limit of 180 requests per minute.
-- `/api/v1/realtime/client-secret`, `/api/v1/realtime/calls`, `/api/v1/realtime/ws`, and `/api/v1/realtime/doubao-tts` have a per-IP limit of 20 requests per minute.
-- `/api/v1/realtime/voice-config` has a per-IP limit of 120 requests per minute.
-- Online duel room create/join/ready and `POST /api/v1/geo/online/matchmaking` have a per-IP limit of 20 requests per minute each; matchmaking status polling keeps the default limit.
-- AI description hourly budgets also cap each IP at a quarter of the global budget; failed upstream calls are refunded.
-- `/api/v1/preferences/exploration` has tighter per-IP and per-session limits.
-- Set `RATE_LIMIT_ENABLED=false` only for local debugging.
 
 ## Reliability and deployment controls
 
@@ -340,14 +350,16 @@ Use `--skip-proxy-check` only when the proxy health check itself is unreliable b
 - `/api/v1/visits?source=random&distinct=1` paginates unique panoramas. The footprints page requests at most 5000 places, states the loaded count separately from the total, and clusters markers by map zoom.
 - The source checkout may be owned by the SSH login user while Docker requires sudo. Use `REMOTE_SUDO=1`; the deploy script trusts only the selected checkout for that process. It requires actual health checks, a missing-panorama 404, and invalid-zoom 400. It never prints raw production logs on failure.
 
-### SG production target (verified 2026-09-05)
+### SG production target
 
-The active target is `sg:/opt/street-view-explorer` (SSH user `ubuntu`, sudo for Docker), behind Cloudflare and then Caddy on `earth.wangyufeng.org`. The host Caddyfile (`/etc/caddy/Caddyfile`, Caddy 2.6, not in this repo) sets `X-Forwarded-For`/`X-Real-IP` from `CF-Connecting-IP` only when the peer matches a static list of Cloudflare ranges (https://www.cloudflare.com/ips/), and from the direct peer otherwise, so per-IP limits see real clients. Refresh that list when Cloudflare publishes new ranges; validate with `caddy validate --adapter caddyfile` and apply with `systemctl reload caddy`. KR's Docker service is inactive. The original archive matched commit `106364f` before its Git metadata was restored; local `.env` files and the existing `street-view-explorer_sqlite_data` volume are retained.
+The active target is `sg:/opt/street-view-explorer` (SSH user `ubuntu`, sudo for Docker), behind Cloudflare and then Caddy on `earth.wangyufeng.org`. The host Caddyfile (`/etc/caddy/Caddyfile`, Caddy 2.6, not in this repo) sets `X-Forwarded-For`/`X-Real-IP` from `CF-Connecting-IP` only when the peer matches a static list of Cloudflare ranges (https://www.cloudflare.com/ips/), and from the direct peer otherwise, so per-IP limits see real clients. Refresh that list when Cloudflare publishes new ranges; validate with `caddy validate --adapter caddyfile` and apply with `systemctl reload caddy`.
 
-The host requires Git, GNU Make, curl, and Docker with Compose v2 and a running daemon. The deployment script checks these before changing the checkout. GNU Make was installed on SG on 2026-09-05; no host reboot is needed for application deployment.
+The host requires Git, GNU Make, curl, and Docker with Compose v2 and a running daemon. The deployment script checks these before changing the checkout. No host reboot is needed for application deployment.
+
+The Makefile defaults already target SG (`REMOTE_HOST=sg`, `REMOTE_DIR=/opt/street-view-explorer`, `REMOTE_BRANCH=main`, `REMOTE_SUDO=1`), so a main release is just:
 
 ```bash
-make deploy-remote REMOTE_HOST=sg REMOTE_DIR=/opt/street-view-explorer REMOTE_BRANCH=main REMOTE_SUDO=1
+make deploy-remote
 ```
 
 Before changing a release, record its commit and container image IDs and create an online SQLite backup plus a protected source/config archive under `/var/backups/streetview/`. For rollback, use the recorded prior image IDs for both services (the deploy script also tags the images that were serving before the release as `streetview-backend:previous` and `streetview-nginx:previous`, and after a healthy release prunes only untagged images and builder cache beyond 3GB), retain the same Compose project and data volume, and repeat health and API checks. `make clean` now retains volumes but still stops services; never use `make destroy-data` during rollback. A database restore requires stopping the backend and separately confirming data retention; application rollback alone does not restore an older database.
