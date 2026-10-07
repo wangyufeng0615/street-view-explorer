@@ -1,0 +1,7 @@
+# 后端镜像只需要源码和自带的地图数据，本地数据库、日志和 .env 不进构建上下文
+*
+!go.mod
+!go.sum
+!cmd/
+!internal/
+!data/maps/

@@ -52,11 +52,11 @@ check-config:
 
 deploy: check-config
 	@echo "正在构建和部署服务..."
-	docker compose build --progress=plain
+	$(COMPOSE) build --progress=plain
 	@echo "构建完成，启动服务..."
-	docker compose up -d
+	$(COMPOSE) up -d
 	@echo "检查服务状态..."
-	docker compose ps
+	$(COMPOSE) ps
 	@echo "部署完成！"
 
 deploy-remote:

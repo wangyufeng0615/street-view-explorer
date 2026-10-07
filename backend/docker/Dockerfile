@@ -28,8 +28,8 @@ RUN apk add --no-cache ca-certificates tzdata
 # 复制编译好的应用
 COPY --from=builder /app/main .
 
-# 创建数据目录
-RUN mkdir -p /app/data
+# 自带地图数据：数据卷第一次挂载时 Docker 会把它复制进去，新机器启动不依赖外网下载
+COPY data/maps/ ./data/maps/
 
 # 设置时区
 ENV TZ=Asia/Shanghai

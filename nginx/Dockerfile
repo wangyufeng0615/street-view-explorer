@@ -30,9 +30,6 @@ COPY --from=frontend-builder /app/build /usr/share/nginx/html
 # 复制nginx配置文件
 COPY nginx/conf.d/default.conf /etc/nginx/conf.d/default.conf
 
-# 创建nginx状态页面目录（用于健康检查）
-RUN mkdir -p /usr/share/nginx/html/nginx_status
-
 # 健康检查 - 使用wget检查nginx状态（不使用--spider避免HEAD请求问题）
 # 用 127.0.0.1 而非 localhost：部分环境 localhost 解析到 IPv6 [::1]，而 nginx 只监听 IPv4
 HEALTHCHECK --interval=30s --timeout=3s \

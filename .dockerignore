@@ -1,0 +1,6 @@
+# nginx 镜像只需要前端源码（含 frontend/.env，构建时注入 VITE_ 变量）和 nginx 配置
+*
+!frontend/
+frontend/node_modules
+frontend/build
+!nginx/conf.d/

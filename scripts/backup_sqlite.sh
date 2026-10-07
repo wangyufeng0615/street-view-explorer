@@ -5,7 +5,7 @@
 # backup API, so it is safe while the backend is writing in WAL mode, verifies
 # the copy with PRAGMA integrity_check, and keeps KEEP_DAYS of gzip snapshots.
 # Files are group-readable by BACKUP_GROUP so an off-host machine can pull them
-# over a read-only rsync login.
+# over SSH through a tar-only forced command (see docs/runbook.md).
 set -Eeuo pipefail
 
 VOLUME="${VOLUME:-street-view-explorer_sqlite_data}"
