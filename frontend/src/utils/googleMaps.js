@@ -1,4 +1,21 @@
 import i18n from "../i18n";
+import { setMapsReachability } from "./mapsReachability";
+
+// 脚本这么久还没加载好，基本就是连不上 Google（中国大陆的网络通常是请求一直挂着，
+// 要等到 30 秒超时才报错）。先按连不上提示用户，后台继续等，加载成功再自动恢复
+const MAPS_SLOW_MS = 8000;
+
+// 连不上的错误带这个标记，街景组件据此交给页面统一提示，自己不再显示一行报错
+function unreachableError(message) {
+  const error = new Error(message);
+  error.mapsUnreachable = true;
+  return error;
+}
+
+// Google 拒绝密钥或额度时会调用这个全局函数，地图里显示它自己的报错框
+if (typeof window !== "undefined") {
+  window.gm_authFailure = () => setMapsReachability("unavailable");
+}
 
 // 全局状态管理
 let googleMapsPromise = null;
@@ -150,12 +167,21 @@ export function loadGoogleMapsScript() {
       const timeoutId = setTimeout(() => {
         isLoadingScript = false;
         cleanup();
-        reject(new Error("Google Maps loading timed out"));
+        setMapsReachability("unreachable");
+        const error = unreachableError("Google Maps loading timed out");
+        reject(error);
+        deferredLoadResolvers.forEach(({ reject }) => reject(error));
+        deferredLoadResolvers = [];
       }, 30000);
+      const slowId = setTimeout(
+        () => setMapsReachability("unreachable"),
+        MAPS_SLOW_MS,
+      );
 
       // Cleanup function
       const cleanup = () => {
         clearTimeout(timeoutId);
+        clearTimeout(slowId);
         if (window[callbackName]) {
           delete window[callbackName];
         }
@@ -168,6 +194,7 @@ export function loadGoogleMapsScript() {
         if (isGoogleMapsLoaded()) {
           isLoadingScript = false;
           isApiLoaded = true;
+          setMapsReachability("ok");
 
           // Performance marking
           if (window.performance && window.performance.mark) {
@@ -207,7 +234,8 @@ export function loadGoogleMapsScript() {
       script.onerror = () => {
         isLoadingScript = false;
         cleanup();
-        const error = new Error("Google Maps script loading error");
+        setMapsReachability("unreachable");
+        const error = unreachableError("Google Maps script loading error");
         reject(error);
         deferredLoadResolvers.forEach(({ reject }) => reject(error));
         deferredLoadResolvers = [];

@@ -9,6 +9,7 @@ import React, {
 import { useTranslation } from "react-i18next";
 import useDismiss from "../../hooks/useDismiss";
 import useStore from "../../store/useStore";
+import { useMapsReachability } from "../../utils/mapsReachability";
 import { CloseGlyph, ExpandGlyph } from "./HomeGlyphs";
 
 const GlobalMap = lazy(() => import("../GlobalMap"));
@@ -81,6 +82,10 @@ const HomeMiniMap = memo(function HomeMiniMap({
     setMapLocation(location);
   }
   const hasLocation = Boolean(mapLocation) && mapReady;
+  // 连不上 Google（或密钥被拒）时地图只会是一块空白，换成一句说明，也不再提供放大
+  const reachability = useMapsReachability();
+  const mapsDown =
+    reachability === "unreachable" || reachability === "unavailable";
 
   const collapse = (restoreFocus) => {
     setExpanded(false);
@@ -126,7 +131,12 @@ const HomeMiniMap = memo(function HomeMiniMap({
           ["nearby", PreviewMap, "mini-nearby"],
         ].map(([value, MapComponent, mapId]) => (
           <div key={value} className="home-minimap">
-            {hasLocation && (
+            {mapsDown && (
+              <span className="home-minimap__notice">
+                {t(`home.map.${reachability}`)}
+              </span>
+            )}
+            {hasLocation && !mapsDown && (
               <Suspense fallback={null}>
                 <MapComponent
                   latitude={mapLocation.latitude}
@@ -135,16 +145,18 @@ const HomeMiniMap = memo(function HomeMiniMap({
                 />
               </Suspense>
             )}
-            <button
-              type="button"
-              className="home-minimap__open"
-              aria-label={`${t("home.map.expand")}: ${t(`home.map.${value}`)}`}
-              onClick={(event) => openPanel(value, event.currentTarget)}
-            >
-              <span className="home-minimap__badge">
-                <ExpandGlyph size={13} />
-              </span>
-            </button>
+            {!mapsDown && (
+              <button
+                type="button"
+                className="home-minimap__open"
+                aria-label={`${t("home.map.expand")}: ${t(`home.map.${value}`)}`}
+                onClick={(event) => openPanel(value, event.currentTarget)}
+              >
+                <span className="home-minimap__badge">
+                  <ExpandGlyph size={13} />
+                </span>
+              </button>
+            )}
           </div>
         ))}
       </div>

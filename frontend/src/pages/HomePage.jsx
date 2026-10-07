@@ -15,6 +15,7 @@ import HomeMiniMap from "../components/home/HomeMiniMap";
 import HomeDock from "../components/home/HomeDock";
 import AtlasLetter from "../components/home/AtlasLetter";
 import ArrivalOverlay from "../components/home/ArrivalOverlay";
+import StreetViewNotice from "../components/home/StreetViewNotice";
 import HomeFeed from "../components/home/HomeFeed";
 import { CloseGlyph } from "../components/home/HomeGlyphs";
 import { preloadGoogleMaps } from "../utils/googleMaps";
@@ -42,6 +43,7 @@ import useStore from "../store/useStore";
 import useHomeJourney, { locationFromStop } from "../hooks/useHomeJourney";
 import useMediaQuery from "../hooks/useMediaQuery";
 import useDismiss from "../hooks/useDismiss";
+import { useMapsReachability } from "../utils/mapsReachability";
 
 // 手机竖屏：全屏街景卡片上下滑动换站，来信和地图收进底部抽屉。断点和 HomePage.css 一致
 const FEED_QUERY = "(max-width: 720px)";
@@ -498,7 +500,11 @@ export default function HomePage({ footprintOverlayOpen = false }) {
     Boolean(location?.pano_id) &&
     !hasStreetViewView &&
     landingTimedOutPano !== location.pano_id;
-  const showArrival = isLoading || isLanding;
+  // 连不上 Google 时街景永远落不了地：不再盖着出发提示干等，换成统一的说明
+  const mapsReachability = useMapsReachability();
+  const mapsDown =
+    mapsReachability === "unreachable" || mapsReachability === "unavailable";
+  const showArrival = isLoading || (isLanding && !mapsDown);
 
   const journeyStops = useHomeJourney(location, activeLanguage);
 
@@ -555,9 +561,16 @@ export default function HomePage({ footprintOverlayOpen = false }) {
     />
   );
 
+  // 出发中或这一站没取到时由出发遮罩说明；其余时候只要连不上 Google 就一直显示
+  const locationFailed = !isLoading && Boolean(error);
+  const streetViewNotice =
+    mapsDown && !showArrival && !locationFailed ? (
+      <StreetViewNotice kind={mapsReachability} />
+    ) : null;
+
   return (
     <div className={`home-shell${isFeed ? " home-shell--feed" : ""}`}>
-      <div className="home-stage">
+      <div className={`home-stage${mapsDown ? " is-maps-down" : ""}`}>
         {isFeed ? (
           <HomeFeed
             location={location}
@@ -577,6 +590,7 @@ export default function HomePage({ footprintOverlayOpen = false }) {
             onLoadError={handleStreetViewError}
           >
             {arrivalOverlay}
+            {streetViewNotice}
           </HomeFeed>
         ) : (
           <>
@@ -590,6 +604,7 @@ export default function HomePage({ footprintOverlayOpen = false }) {
               onLoadError={handleStreetViewError}
             />
             {arrivalOverlay}
+            {streetViewNotice}
           </>
         )}
       </div>

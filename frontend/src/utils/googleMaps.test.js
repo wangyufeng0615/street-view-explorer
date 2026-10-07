@@ -89,3 +89,40 @@ it("swallows preload failures so the page can retry later", async () => {
   loadGoogleMapsScript().catch(() => {});
   expect(document.querySelectorAll("script[data-google-maps]")).toHaveLength(1);
 });
+
+it("tells the page Google is unreachable after 8 seconds and recovers if the script loads later", async () => {
+  const { loadGoogleMapsScript } = await import("./googleMaps");
+  const { getMapsReachability } = await import("./mapsReachability");
+  const pending = loadGoogleMapsScript();
+  vi.advanceTimersByTime(7999);
+  expect(getMapsReachability()).toBe("unknown");
+  vi.advanceTimersByTime(1);
+  expect(getMapsReachability()).toBe("unreachable");
+
+  const [script] = document.querySelectorAll("script[data-google-maps]");
+  window.google = { maps: { Map: function Map() {} } };
+  window[new URL(script.src).searchParams.get("callback")]();
+  await pending;
+  expect(getMapsReachability()).toBe("ok");
+});
+
+it("marks Google unreachable when the script fails, so the panorama leaves the message to the page", async () => {
+  const { loadGoogleMapsScript } = await import("./googleMaps");
+  const { getMapsReachability } = await import("./mapsReachability");
+  const pending = loadGoogleMapsScript();
+  document
+    .querySelector("script[data-google-maps]")
+    .dispatchEvent(new Event("error"));
+  await expect(pending).rejects.toMatchObject({ mapsUnreachable: true });
+  expect(getMapsReachability()).toBe("unreachable");
+});
+
+it("keeps a rejected key as unavailable even if the script loads", async () => {
+  await import("./googleMaps");
+  const { getMapsReachability, setMapsReachability } = await import(
+    "./mapsReachability"
+  );
+  window.gm_authFailure();
+  setMapsReachability("ok");
+  expect(getMapsReachability()).toBe("unavailable");
+});

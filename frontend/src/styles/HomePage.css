@@ -497,6 +497,19 @@
   cursor: pointer;
 }
 
+/* 连不上 Google 时小地图里的说明 */
+.home-minimap__notice {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 8px;
+  color: var(--home-paper-ink-soft);
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: center;
+}
+
 /* 放在右上角：地图底边是 Google 标志和版权文字，按使用条款不能遮挡 */
 .home-minimap__badge {
   position: absolute;
@@ -992,6 +1005,39 @@ button.home-where__option:hover:not(:disabled),
   height: 38px;
   padding: 0 18px;
   font-size: 14px;
+}
+
+/* 街景整体用不了时的说明卡片：和出发遮罩同一位置、同一样式，但不压暗画面，
+   卡片以外的地方不拦触摸，手机上照样能上下滑、读来信 */
+.home-sv-notice {
+  position: absolute;
+  inset: 0;
+  z-index: 15;
+  display: grid;
+  place-items: center;
+  padding: 0 var(--home-edge);
+  pointer-events: none;
+}
+
+/* 这时街景里没有画面，只有 Google 自己的报错框或空白，整块藏起来，露出深色底和字幕 */
+.home-stage.is-maps-down .street-view-container {
+  visibility: hidden;
+}
+
+/* 等出发提示淡出（0.25 秒）后再出现，两张卡片不叠在一起 */
+.home-sv-notice .home-arrival__card {
+  transform: none;
+  animation: homePopIn 0.2s ease-out 0.25s both;
+}
+
+.home-sv-notice .home-arrival__card--error {
+  max-width: min(440px, calc(100vw - 2 * var(--home-edge)));
+}
+
+/* 避免最后一行只剩一两个字 */
+.home-sv-notice .home-arrival__error {
+  font-size: 14px;
+  text-wrap: pretty;
 }
 
 /* —— 动画 —— */
@@ -1537,6 +1583,7 @@ button.home-where__option:hover:not(:disabled),
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .home-sv-notice .home-arrival__card,
   .home-feed__hint-arrow,
   .home-feed__pending svg,
   .home-arrival__compass,

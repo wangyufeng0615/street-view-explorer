@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { loadGoogleMapsWhenVisible } from "../utils/googleMaps";
+import { useMapsReachability } from "../utils/mapsReachability";
 import {
   isOfficialPanoId,
   resolveOfficialPanoId,
@@ -92,16 +93,9 @@ const styles = {
   errorText: {
     fontSize: "18px",
     color: "rgba(255, 245, 230, 0.95)",
-    marginBottom: "8px",
     fontWeight: "500",
     lineHeight: "1.4",
     maxWidth: "400px",
-  },
-  errorSubText: {
-    fontSize: "14px",
-    color: "rgba(255, 245, 230, 0.6)",
-    maxWidth: "300px",
-    lineHeight: "1.5",
   },
 };
 
@@ -204,9 +198,12 @@ export default function StreetView({
   interactionTipRef.current = interactionTip;
   // 保存翻译键而不是译文，切换语言时不需要重建街景
   const [error, setError] = useState(null);
-  const [isNetworkError, setIsNetworkError] = useState(false);
   const [showInteractionTip, setShowInteractionTip] = useState(false);
   const { t } = useTranslation();
+  // 连不上 Google 或密钥被拒时，首页在整个街景区域给出统一提示，这里的报错都让给它
+  const reachability = useMapsReachability();
+  const mapsDown =
+    reachability === "unreachable" || reachability === "unavailable";
 
   // 已经加载好的街景（手机上预先备好的下一张卡片）换上新的监听方时，
   // 立刻补报一次当前朝向和视野，不必等用户拖动或自动旋转
@@ -461,7 +458,6 @@ export default function StreetView({
     load.loadTimeoutId = null;
 
     setError(null);
-    setIsNetworkError(false);
     notifyViewChanged(panorama);
 
     // 延迟启动自动旋转，让街景先完全加载
@@ -511,7 +507,6 @@ export default function StreetView({
     load.pending = false;
     clearLocationTimers(load);
     setError("error.streetViewNotAvailable");
-    setIsNetworkError(false);
     stopAutoRotate();
   };
 
@@ -534,7 +529,6 @@ export default function StreetView({
     }
 
     setError("error.networkConnectionFailed");
-    setIsNetworkError(true);
     stopAutoRotate();
   };
 
@@ -735,7 +729,6 @@ export default function StreetView({
     const showLocation = async () => {
       try {
         setError(null);
-        setIsNetworkError(false);
         setShowInteractionTip(false);
 
         // 停止之前的自动旋转
@@ -802,7 +795,12 @@ export default function StreetView({
 
           if (err.errorKey) {
             setError(err.errorKey);
-            setIsNetworkError(false);
+            return;
+          }
+
+          // 连不上 Google：首页在整个街景区域给出统一提示，这里不再叠一行报错
+          if (err.mapsUnreachable) {
+            setError("error.mapsUnreachable");
             return;
           }
 
@@ -817,10 +815,8 @@ export default function StreetView({
 
           if (isNetworkIssue) {
             setError("error.networkConnectionFailed");
-            setIsNetworkError(true);
           } else {
             setError("error.streetViewLoadFailed");
-            setIsNetworkError(false);
           }
         }
       }
@@ -860,16 +856,10 @@ export default function StreetView({
         </div>
       )}
 
-      {error && (
+      {/* 报错只有一句话，原因和下一步都写在这句里 */}
+      {error && error !== "error.mapsUnreachable" && !mapsDown && (
         <div style={styles.errorContainer}>
           <div style={styles.errorText}>{t(error)}</div>
-          <div style={styles.errorSubText}>
-            {isNetworkError
-              ? t("error.checkNetworkConnection")
-              : error === "error.streetViewNotAvailable"
-                ? t("error.tryOtherLocationOrLater")
-                : ""}
-          </div>
         </div>
       )}
     </div>

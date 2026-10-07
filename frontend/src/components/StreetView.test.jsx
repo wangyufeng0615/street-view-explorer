@@ -3,6 +3,10 @@ import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import StreetView, { resetInteractionTipForTests } from "./StreetView";
 import { loadGoogleMapsWhenVisible } from "../utils/googleMaps";
+import {
+  resetMapsReachabilityForTests,
+  setMapsReachability,
+} from "../utils/mapsReachability";
 
 const translation = vi.hoisted(() => ({
   t: (key) => key,
@@ -716,5 +720,58 @@ describe("StreetView as a feed card prepared in the background", () => {
     const { options } = MockStreetViewPanorama.instances[0];
     expect(options.zoomControl).toBe(false);
     expect(options.panControl).toBe(false);
+  });
+});
+
+describe("StreetView when Google cannot be reached", () => {
+  beforeEach(() => {
+    resetMapsReachabilityForTests();
+    vi.useFakeTimers();
+    MockStreetViewPanorama.instances = [];
+    resetInteractionTipForTests();
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+    vi.clearAllMocks();
+  });
+
+  it("leaves the message to the page instead of adding its own line", async () => {
+    const unreachable = new Error("Google Maps loading timed out");
+    unreachable.mapsUnreachable = true;
+    loadGoogleMapsWhenVisible.mockRejectedValue(unreachable);
+    const onLoadError = vi.fn();
+    const { container } = render(
+      <StreetView panoId="RVHISCP2VhnDsPJUbAybGQ" onLoadError={onLoadError} />,
+    );
+    await advanceTimers(250);
+
+    expect(onLoadError).toHaveBeenCalledWith("error.mapsUnreachable");
+    expect(container.textContent).toBe("");
+  });
+
+  it("hides its own timeout message while the page explains Google is down", async () => {
+    loadGoogleMapsWhenVisible.mockResolvedValue(mockMaps());
+    const { container } = render(
+      <StreetView panoId="RVHISCP2VhnDsPJUbAybGQ" />,
+    );
+    await advanceTimers(250);
+    act(() => setMapsReachability("unavailable"));
+    await advanceTimers(10500);
+    expect(container.textContent).toBe("");
+  });
+
+  it("explains a missing panorama in a single line", async () => {
+    loadGoogleMapsWhenVisible.mockResolvedValue(mockMaps());
+    render(<StreetView panoId="RVHISCP2VhnDsPJUbAybGQ" />);
+    await advanceTimers(250);
+    MockStreetViewPanorama.instances[0].status = "ZERO_RESULTS";
+    await act(async () =>
+      MockStreetViewPanorama.instances[0].emit("status_changed"),
+    );
+
+    const message = screen.getByText("error.streetViewNotAvailable");
+    expect(message.parentElement.children).toHaveLength(1);
   });
 });

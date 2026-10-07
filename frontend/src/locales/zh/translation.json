@@ -71,11 +71,10 @@
   "help.contactPrefix": "如有任何需求或建议： ",
   "error.invalidCoordinateValues": "无效的坐标值",
   "error.streetViewLoadFailed": "街景加载失败了，很抱歉，我会尽快修复",
-  "error.tryOtherLocationOrLater": "建议尝试附近其他位置，或稍后再试",
   "error.googleMapsLoadFailed": "Google Maps 加载失败",
-  "error.networkConnectionFailed": "抱歉，加载失败了，请确保你的网络能够访问Google Maps",
+  "error.networkConnectionFailed": "街景画面没加载出来，请稍后再试。在中国大陆需要能访问 Google 的网络。",
   "error.checkNetworkConnection": "请检查网络连接或稍后重试",
-  "error.streetViewNotAvailable": "很抱歉，该位置暂无街景数据",
+  "error.streetViewNotAvailable": "这个位置没有街景画面，换一站看看吧",
   "world_map": "世界地图",
   "local_map": "局部地图",
   "loading_location": "正在加载位置...",
@@ -478,5 +477,12 @@
   "home.feed.writing": "Atlas 正在写这一站…",
   "home.feed.hint": "上滑去下一站",
   "home.feed.hintRotate": "左右拖动环顾四周，下拉回到上一站",
-  "home.feed.more": "展开来信"
+  "home.feed.more": "展开来信",
+  "home.streetview.unreachableTitle": "暂时看不到街景",
+  "home.streetview.unreachableBody": "街景画面来自 Google 地图，当前网络连不上 Google。在中国大陆需要能访问 Google 的网络。Atlas 的来信不受影响。",
+  "home.streetview.unavailableTitle": "街景服务暂时不可用",
+  "home.streetview.unavailableBody": "Google 地图服务出了点问题，我们会尽快处理。Atlas 的来信不受影响。",
+  "home.streetview.retry": "重试",
+  "home.map.unreachable": "地图需要能访问 Google",
+  "home.map.unavailable": "地图暂时不可用"
 }

@@ -71,11 +71,10 @@
   "help.contactPrefix": "For any needs or suggestions: ",
   "error.invalidCoordinateValues": "Invalid coordinate values",
   "error.streetViewLoadFailed": "Street View failed to load. Sorry, I will fix this as soon as possible.",
-  "error.tryOtherLocationOrLater": "It is recommended to try other nearby locations, or try again later.",
   "error.googleMapsLoadFailed": "Google Maps failed to load",
-  "error.networkConnectionFailed": "Sorry, loading failed. Please ensure your network can access Google Maps.",
+  "error.networkConnectionFailed": "The Street View imagery didn't load. Please try again later. In mainland China, you need a network that can reach Google.",
   "error.checkNetworkConnection": "Please check your network connection or try again later.",
-  "error.streetViewNotAvailable": "Sorry, Street View data is not available for this location.",
+  "error.streetViewNotAvailable": "No Street View imagery here. Try another stop.",
   "world_map": "World Map",
   "local_map": "Local Map",
   "loading_location": "Loading location...",
@@ -479,5 +478,12 @@
   "home.feed.writing": "Atlas is writing about this stop…",
   "home.feed.hint": "Swipe up for the next stop",
   "home.feed.hintRotate": "Drag sideways to look around, pull down to go back",
-  "home.feed.more": "Read more"
+  "home.feed.more": "Read more",
+  "home.streetview.unreachableTitle": "Street View can't load",
+  "home.streetview.unreachableBody": "Street View imagery comes from Google Maps, and this network can't reach Google. In mainland China, you need a network that can reach Google. Atlas's letters still work.",
+  "home.streetview.unavailableTitle": "Street View is temporarily unavailable",
+  "home.streetview.unavailableBody": "Something went wrong with the Google Maps service. We'll fix it soon. Atlas's letters still work.",
+  "home.streetview.retry": "Try again",
+  "home.map.unreachable": "Maps need access to Google",
+  "home.map.unavailable": "Maps are temporarily unavailable"
 }
