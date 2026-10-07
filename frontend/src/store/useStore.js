@@ -352,8 +352,6 @@ const useStore = create(
       isLocationLoading: true,
       isMapLocationLoading: false,
       lastRefreshTime: Date.now() - RATE_LIMIT_MS,
-      // 本次会话用户主动点"去探险"或按空格的次数；第一站不预取
-      userExploreCount: 0,
       // 预取好的下一站（只读展示用，取用仍走 loadRandomLocation）
       prefetchedLocation: null,
 
@@ -389,7 +387,7 @@ const useStore = create(
 
       // Location Actions
       loadRandomLocation: async (skipRateLimit = false, options = {}) => {
-        const { preserveLocation = false, userInitiated = false } = options;
+        const { preserveLocation = false } = options;
         if (!get().isExplorationInitialized) {
           await get().initializeExplorationMode();
           if (!get().isExplorationInitialized) {
@@ -418,9 +416,6 @@ const useStore = create(
         }
 
         if (PREFETCH_NEXT_ENABLED) {
-          if (userInitiated) {
-            set({ userExploreCount: state.userExploreCount + 1 });
-          }
           // 手动和语音随机都先看预取；无效或还没取到位置的预取会被中止
           const prefetched = takeUsablePrefetch(state);
           if (prefetched) return applyPrefetchedLocation(prefetched, set, get);
@@ -839,7 +834,8 @@ const useStore = create(
       },
 
       // 首页在讲解状态、位置、浮层或页面可见性变化时调用；满足条件才开始预取。
-      // eager：手机上滑切换，下一张卡片要提前备好，第一站也预取，当前全景出来就开始，
+      // 第一站（包括封面底下加载的那一站）也预取，讲解写完就开始，第一次点"下一站"就能直接用。
+      // eager：手机上滑切换，下一张卡片要提前备好，当前全景出来就开始，
       // 不等讲解写完（landed 表示当前全景已经显示，避免和它抢图块带宽）
       maybePrefetchNext: ({
         overlayOpen = false,
@@ -862,7 +858,7 @@ const useStore = create(
           descriptionRetryTimer === null &&
           Boolean(state.description || state.descriptionError);
         if (
-          (eager ? !landed : state.userExploreCount < 1) ||
+          (eager && !landed) ||
           overlayOpen ||
           (typeof document !== "undefined" &&
             document.visibilityState === "hidden") ||

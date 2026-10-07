@@ -110,7 +110,7 @@ function randomLocations({ prefetch = NEXT, normal = OTHER } = {}) {
   });
 }
 
-// 当前地点讲解已结束、用户已经主动探索过一次
+// 当前地点讲解已结束
 function settleCurrentPlace(overrides = {}) {
   useStore.setState({
     location: CURRENT,
@@ -120,7 +120,6 @@ function settleCurrentPlace(overrides = {}) {
     descriptionResearchStatus: "verified",
     descriptionError: null,
     isDescriptionLoading: false,
-    userExploreCount: 1,
     ...overrides,
   });
 }
@@ -157,7 +156,6 @@ beforeEach(() => {
     descriptionResearchStatus: null,
     descriptionError: null,
     isDescriptionLoading: false,
-    userExploreCount: 0,
     lastRefreshTime: 0,
     heading: 0,
     streetViewView: null,
@@ -173,22 +171,12 @@ afterEach(() => {
 });
 
 describe("when prefetching starts", () => {
-  it("skips the first place and starts only after a user explore finishes its narration", async () => {
+  it("starts on the first place once its narration finishes", async () => {
     const streams = controllableStreams();
     randomLocations({ normal: CURRENT });
-    // 首屏自动加载的第一站
-    settleCurrentPlace({ userExploreCount: 0 });
-    expect(useStore.getState().maybePrefetchNext()).toBe(false);
-
-    // 语音或模式切换触发的加载不算主动探索
-    await useStore.getState().loadRandomLocation(true);
-    expect(useStore.getState().userExploreCount).toBe(0);
+    // 首屏（或封面底下）自动加载的第一站，讲解还在写时不预取
     useStore.setState({ lastRefreshTime: 0 });
-
-    await useStore
-      .getState()
-      .loadRandomLocation(false, { userInitiated: true });
-    expect(useStore.getState().userExploreCount).toBe(1);
+    await useStore.getState().loadRandomLocation(true);
     const narration = useStore
       .getState()
       .loadLocationDescription(CURRENT.pano_id);
@@ -316,9 +304,7 @@ describe("using a prefetched place", () => {
     });
     const randomCalls = apiMocks.getRandomLocation.mock.calls.length;
 
-    const result = await useStore
-      .getState()
-      .loadRandomLocation(false, { userInitiated: true });
+    const result = await useStore.getState().loadRandomLocation(false);
 
     expect(result).toMatchObject({ success: true, data: NEXT });
     expect(apiMocks.getRandomLocation).toHaveBeenCalledTimes(randomCalls);
@@ -378,9 +364,7 @@ describe("using a prefetched place", () => {
     const stream = await prefetchReady(streams);
     stream.push("第一段");
 
-    await useStore
-      .getState()
-      .loadRandomLocation(false, { userInitiated: true });
+    await useStore.getState().loadRandomLocation(false);
     expect(useStore.getState()).toMatchObject({
       location: NEXT,
       description: "第一段",
@@ -434,14 +418,10 @@ describe("using a prefetched place", () => {
     const streams = controllableStreams();
     const stream = await prefetchReady(streams);
     stream.push("第一段");
-    await useStore
-      .getState()
-      .loadRandomLocation(false, { userInitiated: true });
+    await useStore.getState().loadRandomLocation(false);
 
     // 槽位已经用掉，这次走正常路径
-    const next = useStore
-      .getState()
-      .loadRandomLocation(true, { userInitiated: true });
+    const next = useStore.getState().loadRandomLocation(true);
     expect(stream.signal.aborted).toBe(true);
     await next;
     expect(normalRandomCalls()).toHaveLength(1);
@@ -477,17 +457,6 @@ describe("using a prefetched place", () => {
     expect(result).toMatchObject({ success: true, data: NEXT });
     expect(normalRandomCalls()).toHaveLength(0);
     expect(useStore.getState().description).toBe("下一站完整讲解");
-  });
-
-  it("does not count voice navigation as a user explore", async () => {
-    const streams = controllableStreams();
-    const stream = await prefetchReady(streams);
-    stream.finish("下一站完整讲解");
-    await flush();
-    await useStore
-      .getState()
-      .loadRandomLocation(true, { preserveLocation: true });
-    expect(useStore.getState().userExploreCount).toBe(1);
   });
 
   it("starts the next prefetch once the adopted place is done", async () => {
@@ -632,7 +601,6 @@ describe("for the phone feed", () => {
     randomLocations();
     controllableStreams();
     settleCurrentPlace({
-      userExploreCount: 0,
       description: null,
       isDescriptionLoading: true,
     });
@@ -657,7 +625,7 @@ describe("for the phone feed", () => {
       pano_id: NEXT.pano_id,
     });
 
-    await useStore.getState().loadRandomLocation(true, { userInitiated: true });
+    await useStore.getState().loadRandomLocation(true);
     expect(useStore.getState().location.pano_id).toBe(NEXT.pano_id);
     expect(useStore.getState().prefetchedLocation).toBeNull();
   });

@@ -49,7 +49,6 @@ describe("prefetch switched off", () => {
       description: "当前地点讲解",
       descriptionError: null,
       isDescriptionLoading: false,
-      userExploreCount: 0,
       lastRefreshTime: 0,
       heading: 90,
     });
@@ -62,16 +61,12 @@ describe("prefetch switched off", () => {
       data: { description: "下一站讲解" },
     });
 
-    await useStore
-      .getState()
-      .loadRandomLocation(false, { userInitiated: true });
-    expect(useStore.getState().userExploreCount).toBe(0);
+    await useStore.getState().loadRandomLocation(false);
     expect(apiMocks.getRandomLocation).toHaveBeenCalledTimes(1);
     expect(apiMocks.getRandomLocation).toHaveBeenCalledWith("zh");
     expect(useStore.getState().heading).toBe(90);
 
     await useStore.getState().loadLocationDescription(NEXT.pano_id);
-    useStore.setState({ userExploreCount: 3 });
     expect(useStore.getState().maybePrefetchNext()).toBe(false);
     expect(apiMocks.getRandomLocation).toHaveBeenCalledTimes(1);
     expect(apiMocks.streamLocationDescription).toHaveBeenCalledTimes(1);

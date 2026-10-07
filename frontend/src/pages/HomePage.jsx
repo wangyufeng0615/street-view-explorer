@@ -145,7 +145,7 @@ export default function HomePage({ footprintOverlayOpen = false }) {
     (state) => state.applyNavigatedLocation,
   );
   const isMapLocationLoading = useStore((state) => state.isMapLocationLoading);
-  // 首次进入先显示封面，首页照常在底下加载第一站；封面开着时暂停街景和预取。
+  // 首次进入先显示封面，首页照常在底下加载第一站，讲解写完就预取下一站；封面开着时只暂停街景自动旋转。
   // 决定显示的同时就开始下载封面图，不等封面组件的代码加载完。
   const [cover, setCover] = useState(() => {
     if (!shouldShowCover()) return null;
@@ -232,15 +232,15 @@ export default function HomePage({ footprintOverlayOpen = false }) {
     }
   }, [location?.pano_id, loadLocationDescription]);
 
-  // 用户主动探索（按钮、空格、错误页重试），计入预取的触发条件
+  // 用户主动探索（按钮、空格、错误页重试）
   const handleExplore = useCallback(() => {
-    loadRandomLocation(false, { userInitiated: true });
+    loadRandomLocation(false);
   }, [loadRandomLocation]);
 
   // 上滑换站：切换动画本身已经限速，正在出发时也滑不动，不再套 1 秒限流，
   // 否则连续快滑会被"操作太快"挡回去
   const handleSwipeExplore = useCallback(() => {
-    loadRandomLocation(true, { userInitiated: true });
+    loadRandomLocation(true);
   }, [loadRandomLocation]);
 
   // 使用键盘导航钩子
@@ -372,10 +372,10 @@ export default function HomePage({ footprintOverlayOpen = false }) {
   // 当前讲解结束后在后台预取下一站；是否满足条件由 store 判断
   const hasDescription = Boolean(description);
   useEffect(() => {
-    // 手机上滑切换要提前备好下一张卡片：当前全景一出来就预取，第一站也预取
+    // 手机上滑切换要提前备好下一张卡片：当前全景一出来就预取，不等讲解写完
     const tryPrefetch = () =>
       maybePrefetchNext({
-        overlayOpen: footprintOverlayOpen || coverOpen,
+        overlayOpen: footprintOverlayOpen,
         eager: isFeed,
         landed: hasStreetViewView,
       });
@@ -385,7 +385,6 @@ export default function HomePage({ footprintOverlayOpen = false }) {
   }, [
     maybePrefetchNext,
     footprintOverlayOpen,
-    coverOpen,
     isFeed,
     hasStreetViewView,
     location?.pano_id,
