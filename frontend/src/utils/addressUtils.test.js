@@ -132,6 +132,77 @@ describe("postal codes and the country suffix", () => {
     ).toBe("日本〒100-0001 东京都千代田区");
   });
 
+  it("drops a whole Japanese postal code instead of leaving half of it", () => {
+    const tokyo = {
+      formatted_address:
+        "4-chōme-2-8 Shibakōen, Minato City, Tokyo 105-0011日本",
+      country: "日本",
+      country_code: "JP",
+    };
+    expect(formatAddress(tokyo, "zh")).toBe(
+      "4-chōme-2-8 Shibakōen, Minato City, Tokyo, 日本",
+    );
+    expect(
+      formatAddress(
+        {
+          formatted_address:
+            "4-chōme-2-8 Shibakōen, Minato City, Tokyo 105-0011, Japan",
+          country: "Japan",
+          country_code: "JP",
+        },
+        "en",
+      ),
+    ).toBe("4-chōme-2-8 Shibakōen, Minato City, Tokyo, Japan");
+    expect(
+      formatAddress(
+        {
+          formatted_address:
+            "Av. Pref. Lourival Lopes, 48 - Alto Parnaíba, MA, 65810-000巴西",
+          country: "巴西",
+          country_code: "BR",
+        },
+        "zh",
+      ),
+    ).toBe("Av. Pref. Lourival Lopes, 48 - Alto Parnaíba, MA, 巴西");
+  });
+
+  it("drops Google's Chinese unnamed road and postal code label", () => {
+    const santaFilomena = {
+      formatted_address:
+        "巴西 Piauí, Santa Filomena, 未命名的道路邮政编码: 64945-000",
+      country: "巴西",
+      country_code: "BR",
+    };
+    expect(formatAddress(santaFilomena, "zh")).toBe(
+      "巴西 Piauí, Santa Filomena",
+    );
+    // 切换界面语言时，写在前面的国家名也跟着换
+    expect(formatAddress(santaFilomena, "en")).toBe(
+      "Brazil Piauí, Santa Filomena",
+    );
+    expect(
+      formatAddress(
+        {
+          formatted_address:
+            "巴西 Maranhão, Alto Parnaíba, 未命名的道路邮政编码:",
+          country: "巴西",
+          country_code: "BR",
+        },
+        "zh",
+      ),
+    ).toBe("巴西 Maranhão, Alto Parnaíba");
+    expect(
+      formatAddress(
+        {
+          formatted_address: "巴西马拉尼昂州上巴纳伊巴邮政编码: 65810-000",
+          country: "巴西",
+          country_code: "BR",
+        },
+        "zh",
+      ),
+    ).toBe("巴西马拉尼昂州上巴纳伊巴");
+  });
+
   it("shows only the country when nothing else is left", () => {
     expect(
       formatAddress(
