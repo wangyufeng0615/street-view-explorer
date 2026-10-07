@@ -2,14 +2,15 @@ package openai
 
 import (
 	"context"
-	"github.com/my-streetview-project/backend/internal/models"
-	"github.com/my-streetview-project/backend/internal/utils"
 	"log"
 	"net/http"
 	"net/url"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/my-streetview-project/backend/internal/models"
+	"github.com/my-streetview-project/backend/internal/utils"
 )
 
 const (
@@ -32,8 +33,6 @@ const (
 const regionSystemPrompt = "You are a geography planning service. Convert the user's place or exploration theme into valid geographic bounding boxes. Return exactly one JSON object matching the requested schema. Do not write prose outside JSON, do not use markdown or code fences, and do not adopt a persona or letter format."
 
 type Client interface {
-	GenerateLocationDescription(latitude, longitude float64, locationInfo map[string]string, scene *SceneImage, language string) (string, []Citation, error)
-	GenerateDetailedLocationDescription(latitude, longitude float64, locationInfo map[string]string, scene *SceneImage, language string) (string, []Citation, error)
 	StreamLocationDescription(ctx context.Context, latitude, longitude float64, locationInfo map[string]string, scene *SceneImage, language string, onDelta func(string) error) (string, []Citation, error)
 	StreamDetailedLocationDescription(ctx context.Context, latitude, longitude float64, locationInfo map[string]string, scene *SceneImage, language string, onDelta func(string) error) (string, []Citation, error)
 	GenerateRegionsForInterest(interest string) ([]models.Region, error)

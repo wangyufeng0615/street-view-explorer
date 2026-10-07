@@ -31,17 +31,8 @@ func NewAIService(cfg config.Config, repo repositories.Repository, maps MapProvi
 	}
 }
 
-func (ai *AIService) GetDescriptionForLocation(loc models.Location, language string, view StreetViewView) (string, []openai.Citation, error) {
-	return ai.GetDescriptionForLocationContext(context.Background(), loc, language, view)
-}
-
 func (ai *AIService) GetDescriptionForLocationContext(ctx context.Context, loc models.Location, language string, view StreetViewView) (string, []openai.Citation, error) {
 	return ai.generateDescription(ctx, loc, language, view, false, nil)
-}
-
-// GetDetailedDescriptionForLocation 获取位置的详细AI描述
-func (ai *AIService) GetDetailedDescriptionForLocation(loc models.Location, language string, view StreetViewView) (string, []openai.Citation, error) {
-	return ai.GetDetailedDescriptionForLocationContext(context.Background(), loc, language, view)
 }
 
 func (ai *AIService) GetDetailedDescriptionForLocationContext(ctx context.Context, loc models.Location, language string, view StreetViewView) (string, []openai.Citation, error) {

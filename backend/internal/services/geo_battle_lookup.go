@@ -125,21 +125,6 @@ func (s *GeoBattleService) everyActivePlayerReadyLocked(room *geoBattleRoom) boo
 	return count == 2
 }
 
-func (s *GeoBattleService) everyActivePlayerSubmittedLocked(room *geoBattleRoom) bool {
-	round := &room.Rounds[room.CurrentRound]
-	count := 0
-	for _, player := range room.Players {
-		if player.Left {
-			continue
-		}
-		count++
-		if _, ok := round.Guesses[player.SessionID]; !ok {
-			return false
-		}
-	}
-	return count > 0
-}
-
 func (s *GeoBattleService) activePlayerCountLocked(room *geoBattleRoom) int {
 	count := 0
 	for _, player := range room.Players {

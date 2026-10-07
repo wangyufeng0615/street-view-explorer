@@ -13,11 +13,3 @@ func init() {
 func GetGlobalMapManager() *MapDataManager {
 	return globalMapManager
 }
-
-// EnsureMapDataReady 确保地图数据就绪（供其他包调用）
-func EnsureMapDataReady() error {
-	if globalMapManager == nil {
-		globalMapManager = NewMapDataManager()
-	}
-	return globalMapManager.EnsureWorldMapData()
-}

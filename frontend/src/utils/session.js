@@ -20,6 +20,3 @@ export function getOrCreateSessionId() {
   memorySessionId = sessionId;
   return sessionId;
 }
-
-// Alias for backward compatibility
-export const getSessionId = getOrCreateSessionId;

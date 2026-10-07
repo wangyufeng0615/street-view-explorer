@@ -305,7 +305,7 @@ export function getEntryCountryCode(entry) {
   );
 }
 
-function normalizeCountryCode(countryCode) {
+export function normalizeCountryCode(countryCode) {
   const code = (countryCode || "").trim().toUpperCase();
   return /^[A-Z]{2}$/.test(code) ? code : "";
 }

@@ -80,13 +80,6 @@ func (l *Logger) Error(action, message string, err error, fields ...map[string]i
 	l.log(ERROR, action, message, f, err)
 }
 
-// Request logging with duration
-func (l *Logger) LogRequest(action string, duration time.Duration, fields map[string]interface{}) {
-	durationStr := duration.String()
-	// Always use readable format for development
-	log.Printf("[%s] %s:%s (%s) %v", INFO, l.service, action, durationStr, fields)
-}
-
 // Global logger instances
 var (
 	apiLogger      = NewLogger("api")

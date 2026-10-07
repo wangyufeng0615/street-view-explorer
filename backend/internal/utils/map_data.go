@@ -228,37 +228,6 @@ func (m *MapDataManager) getLocalFileMD5(md5Path string) (string, error) {
 	return string(data), nil
 }
 
-// GetMapDataInfo 获取地图数据信息
-func (m *MapDataManager) GetMapDataInfo() (map[string]interface{}, error) {
-	worldMapPath := filepath.Join(m.dataDir, WorldMapFile)
-
-	info := make(map[string]interface{})
-
-	if !m.fileExists(worldMapPath) {
-		info["exists"] = false
-		return info, nil
-	}
-
-	stat, err := os.Stat(worldMapPath)
-	if err != nil {
-		return nil, err
-	}
-
-	info["exists"] = true
-	info["path"] = worldMapPath
-	info["size"] = stat.Size()
-	info["modified"] = stat.ModTime()
-	info["size_kb"] = float64(stat.Size()) / 1024
-
-	// 尝试加载并获取特征数量
-	fc, err := m.LoadWorldMapData()
-	if err == nil {
-		info["features_count"] = len(fc.Features)
-	}
-
-	return info, nil
-}
-
 // EnsureMinorIslandsData 确保小型岛屿数据存在，如果不存在或过期则下载
 func (m *MapDataManager) EnsureMinorIslandsData() error {
 	minorIslandsPath := filepath.Join(m.dataDir, MinorIslandsFile)

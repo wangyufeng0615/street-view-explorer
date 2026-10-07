@@ -6,22 +6,6 @@ import zh from "./locales/zh/translation.json";
 
 const isTestEnvironment = import.meta.env.MODE === "test";
 
-// Clean up legacy localStorage cache from previous versions
-if (typeof window !== "undefined" && !isTestEnvironment) {
-  try {
-    const keysToRemove = [];
-    for (let i = 0; i < window.localStorage.length; i++) {
-      const key = window.localStorage.key(i);
-      if (key && key.startsWith("i18n_cache_")) {
-        keysToRemove.push(key);
-      }
-    }
-    keysToRemove.forEach((key) => window.localStorage.removeItem(key));
-  } catch {
-    // ignore
-  }
-}
-
 i18n
   .use(LanguageDetector)
   .use(initReactI18next)

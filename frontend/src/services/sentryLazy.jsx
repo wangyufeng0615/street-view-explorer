@@ -186,43 +186,6 @@ export async function captureMessage(message, level = "info") {
 }
 
 /**
- * Create an error boundary component
- */
-export function withErrorBoundary(Component, fallback) {
-  return class ErrorBoundaryWrapper extends React.Component {
-    constructor(props) {
-      super(props);
-      this.state = { hasError: false, error: null };
-    }
-
-    static getDerivedStateFromError(error) {
-      return { hasError: true, error };
-    }
-
-    componentDidCatch(error, errorInfo) {
-      // Capture exception asynchronously
-      captureException(error, { errorInfo });
-    }
-
-    render() {
-      if (this.state.hasError) {
-        if (fallback) {
-          return fallback(this.state.error);
-        }
-        return (
-          <div style={{ padding: "20px", textAlign: "center" }}>
-            <h2>Something went wrong</h2>
-            <p>The error has been reported. Please refresh the page.</p>
-          </div>
-        );
-      }
-
-      return <Component {...this.props} />;
-    }
-  };
-}
-
-/**
  * Test Sentry integration
  */
 export async function testSentry() {
@@ -271,6 +234,3 @@ export function initErrorHandlers() {
     });
   });
 }
-
-// React import for error boundary
-import React from "react";

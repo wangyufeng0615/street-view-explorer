@@ -7,7 +7,6 @@ vi.mock("../services/api", () => ({
 // The real api module (used in one test) reads the session id from storage.
 vi.mock("../utils/session", () => ({
   getOrCreateSessionId: () => "session-1",
-  getSessionId: () => "session-1",
 }));
 
 import { fetchGeoBattleImage } from "../services/api";

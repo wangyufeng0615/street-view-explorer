@@ -436,19 +436,6 @@ func getRegionHeight(region Region) float64 {
 	return region.North - region.South
 }
 
-// GenerateRandomCoordinate 统一的随机坐标生成函数
-// 支持随机场景（regions为nil或空）和用户偏好场景（传入regions）
-// 简化逻辑，依赖街景搜索的兜底机制来处理无街景区域
-func GenerateRandomCoordinate(regions []models.Region) (latitude, longitude float64) {
-	// 选择区域源（用户偏好区域 or 自然地理区域）
-	selectedRegions := selectRegionSource(regions)
-
-	// 随机选择一个区域
-	region := selectRandomRegion(selectedRegions)
-
-	return generateCoordinateInRegion(region)
-}
-
 // ChooseRandomStrategy fixes the exploration lane for one user request. All
 // speculative candidates in that request use the same lane, so faster network
 // responses cannot silently bias the long-run 60/30/10 distribution.
@@ -462,17 +449,6 @@ func ChooseRandomStrategy() string {
 	default:
 		return RandomStrategyFrontier
 	}
-}
-
-// GenerateRandomCoordinateCandidate returns one coordinate candidate. Global
-// callers that need a batch should use GenerateRandomCoordinateCandidates so
-// the same country is not sampled repeatedly within one request.
-func GenerateRandomCoordinateCandidate(userRegions []models.Region, countryCode, strategy string) (RandomCoordinateCandidate, error) {
-	candidates, err := GenerateRandomCoordinateCandidates(userRegions, countryCode, strategy, 1)
-	if err != nil {
-		return RandomCoordinateCandidate{}, err
-	}
-	return candidates[0], nil
 }
 
 // GenerateRandomCoordinateCandidates samples a fixed batch of coordinates.
@@ -637,17 +613,6 @@ func selectWeightedCode(codes []string, weights []float64) string {
 		}
 	}
 	return codes[len(codes)-1]
-}
-
-// GenerateRandomCoordinateInCountry generates a coordinate inside one ISO 3166-1 alpha-2 country.
-func GenerateRandomCoordinateInCountry(countryCode string) (latitude, longitude float64, err error) {
-	regions, err := countryRegionsByISOAlpha2(countryCode)
-	if err != nil {
-		return 0, 0, err
-	}
-	region := selectRegionWithinCountry(regions)
-	lat, lng := generateCoordinateInRegion(region)
-	return lat, lng, nil
 }
 
 func generateCoordinateInRegion(region Region) (latitude, longitude float64) {
@@ -946,11 +911,6 @@ func CalculateDistance(lat1, lon1, lat2, lon2 float64) float64 {
 	distance := R * c
 
 	return distance
-}
-
-// ReloadGeoData 重新加载地理数据（用于测试）
-func ReloadGeoData() error {
-	return InitializeGeoData()
 }
 
 // isAntarcticaRegion 判断区域是否为南极洲区域

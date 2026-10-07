@@ -8,6 +8,7 @@ import {
   haversineDistance,
   calculateScore,
   generateRoundPlan,
+  normalizeCountryCode,
 } from "./geoGameUtils";
 
 /** @type {GameState} */
@@ -153,11 +154,6 @@ function reducer(state, action) {
 }
 
 /** @param {string | undefined} countryCode */
-function normalizeCountryCode(countryCode) {
-  const code = (countryCode || "").trim().toUpperCase();
-  return /^[A-Z]{2}$/.test(code) ? code : "";
-}
-
 /** @param {Target[]} usedTargets @param {Target | null} target */
 function appendUsedTarget(usedTargets, target) {
   if (!target || !Number.isFinite(target.lat) || !Number.isFinite(target.lng)) {

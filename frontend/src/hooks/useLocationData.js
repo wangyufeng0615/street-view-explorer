@@ -9,7 +9,6 @@ export default function useLocationData() {
   const loadRandomLocationFromStore = useStore(
     (state) => state.loadRandomLocation,
   );
-  const resetLocationError = useStore((state) => state.resetLocationError);
   const lastRefreshTime = useStore((state) => state.lastRefreshTime);
   const isLoadingLocation = useStore((state) => state.isLoadingLocation);
 
@@ -30,35 +29,10 @@ export default function useLocationData() {
     [loadRandomLocationFromStore, isLoadingLocation, lastRefreshTime],
   );
 
-  // 为了向后兼容，提供setter函数（虽然现在不需要直接使用）
-  const setLocation = useCallback((_newLocation) => {
-    // 这个函数现在是空的，因为状态由store管理
-    // 但保留它以防有组件依赖这个接口
-    console.log("setLocation called, but state is managed by Zustand store");
-  }, []);
-
-  const setError = useCallback(
-    (error) => {
-      if (error === null) {
-        resetLocationError();
-      }
-      // 其他错误设置由store内部处理
-    },
-    [resetLocationError],
-  );
-
-  const setIsLoading = useCallback((_loading) => {
-    // 同样，这个现在由store管理
-    console.log("setIsLoading called, but state is managed by Zustand store");
-  }, []);
-
   return {
     location,
-    setLocation,
     error,
-    setError,
     isLoading,
-    setIsLoading,
     loadRandomLocation,
     loadingRef,
     lastRefreshTimeRef,

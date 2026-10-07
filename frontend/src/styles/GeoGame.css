@@ -60,11 +60,6 @@
   white-space: nowrap;
 }
 
-.geo-topbar-round {
-  font-size: 14px;
-  color: #4b5563;
-}
-
 .geo-topbar-right {
   display: flex;
   align-items: center;
@@ -589,43 +584,6 @@
   line-height: 1.65;
 }
 
-.geo-ai-toggle {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 16px;
-  background: #f7f5f0;
-  border-radius: 8px;
-  margin-bottom: 24px;
-  cursor: pointer;
-  border: 1px solid #e8e4de;
-  transition: border-color 0.2s;
-}
-
-.geo-ai-toggle:hover {
-  border-color: #0e7490;
-}
-
-.geo-ai-toggle-checkbox {
-  width: 18px;
-  height: 18px;
-  accent-color: #0e7490;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-
-.geo-ai-toggle-label {
-  font-size: 14px;
-  font-weight: 600;
-  color: #1a2b3c;
-}
-
-.geo-ai-toggle-hint {
-  font-size: 12px;
-  color: #9ca3af;
-  margin-top: 2px;
-}
-
 .geo-start-btn {
   width: 100%;
   padding: 14px;
@@ -884,13 +842,6 @@
   font-weight: 800 !important;
 }
 
-.geo-result-value {
-  font-size: 22px;
-  font-weight: 700;
-  color: #0e7490;
-  font-variant-numeric: tabular-nums;
-}
-
 .geo-result-distance {
   font-size: 13px;
   color: #4b5563;
@@ -908,19 +859,6 @@
   border-radius: 8px;
   padding: 10px;
   margin-bottom: 10px;
-}
-
-.geo-result-ai-label {
-  font-size: 13px;
-  font-weight: 600;
-  color: #0e7490;
-  margin-bottom: 6px;
-}
-
-.geo-result-ai-score {
-  font-size: 18px;
-  font-weight: 700;
-  color: #1a2b3c;
 }
 
 .geo-result-ai-distance {

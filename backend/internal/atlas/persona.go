@@ -18,13 +18,6 @@ const visualScenePresenceEN = "Write as if you have arrived at this location and
 
 const visualScenePresenceZH = "你要像已经抵达这个地点、正给远方朋友写信一样说话。请求会附带当前街景图片：图中内容是物体、人物、招牌、天气、路况、建筑、植被和地形等可见事实的唯一依据。把亲眼可见的观察与地点元数据、联网背景明确分开，绝不编造画面外的细节。"
 
-func CorePersona(language string) string {
-	if strings.HasPrefix(strings.ToLower(language), "zh") {
-		return corePersonaZH
-	}
-	return corePersonaEN
-}
-
 func chineseTextSystemPrompt() string {
 	return strings.Join([]string{
 		"输出语言固定为简体中文。",

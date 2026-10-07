@@ -5,15 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/my-streetview-project/backend/internal/atlas"
 	"log"
 	"strings"
 	"time"
-)
 
-func (c *client) GenerateLocationDescription(latitude, longitude float64, locationInfo map[string]string, scene *SceneImage, language string) (string, []Citation, error) {
-	return c.StreamLocationDescription(context.Background(), latitude, longitude, locationInfo, scene, language, nil)
-}
+	"github.com/my-streetview-project/backend/internal/atlas"
+)
 
 // wrongLanguageRetryWindow bounds when a rejected description is retried: the
 // browser waits 45s for a standard description (scene preparation up to 6s,
@@ -243,10 +240,6 @@ func (c *client) streamLocationDescriptionOnce(parent context.Context, latitude,
 	log.Printf("[AI] action=request_completed function=GenerateLocationDescription duration=%v response_length=%d citations_count=%d web_search_requests=%d", time.Since(startTime), len(desc), len(citations), webSearchRequests)
 
 	return desc, citations, nil
-}
-
-func (c *client) GenerateDetailedLocationDescription(latitude, longitude float64, locationInfo map[string]string, scene *SceneImage, language string) (string, []Citation, error) {
-	return c.StreamDetailedLocationDescription(context.Background(), latitude, longitude, locationInfo, scene, language, nil)
 }
 
 func (c *client) StreamDetailedLocationDescription(parent context.Context, latitude, longitude float64, locationInfo map[string]string, scene *SceneImage, language string, onDelta func(string) error) (string, []Citation, error) {

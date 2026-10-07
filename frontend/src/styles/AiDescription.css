@@ -497,8 +497,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .atlas-thinking-mark,
-  .atlas-thinking-title,
-  .compass-needle {
+  .atlas-thinking-title {
     animation: none !important;
   }
 }

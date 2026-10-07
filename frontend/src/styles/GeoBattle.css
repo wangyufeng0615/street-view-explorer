@@ -109,8 +109,7 @@
   gap: 18px;
 }
 
-.geo-battle-hub-grid,
-.geo-battle-choice-grid {
+.geo-battle-hub-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.15fr) minmax(260px, 0.85fr);
   gap: 14px;
@@ -129,12 +128,6 @@
   border-radius: 14px;
   padding: 20px;
   box-shadow: 0 12px 28px rgba(23, 32, 51, 0.06);
-}
-
-.geo-battle-panel--side {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
 }
 
 .geo-battle-side-title {
@@ -177,13 +170,6 @@
   background: rgba(15, 118, 110, 0.08);
 }
 
-.geo-battle-choice-card {
-  min-height: 152px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
 .geo-battle-private-panel,
 .geo-battle-match-panel {
   display: grid;
@@ -220,9 +206,7 @@
   color: #172033;
 }
 
-.geo-battle-side-copy,
-.geo-battle-action-hint,
-.geo-battle-result-distance {
+.geo-battle-side-copy {
   color: #637087;
   font-size: 14px;
   line-height: 1.55;
@@ -240,7 +224,6 @@
 }
 
 .geo-battle-field span,
-.geo-battle-result-label,
 .geo-battle-player-label,
 .geo-battle-phase-label {
   font-size: 13px;
@@ -258,12 +241,6 @@
   font-size: 16px;
   background: rgba(250, 248, 243, 0.85);
   color: #172033;
-}
-
-.geo-battle-action-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 12px;
 }
 
 .geo-battle-primary-btn,
@@ -303,15 +280,6 @@
 .geo-battle-back:disabled {
   opacity: 0.6;
   cursor: not-allowed;
-}
-
-.geo-battle-rule-list {
-  margin: 0;
-  padding-left: 18px;
-  display: grid;
-  gap: 10px;
-  color: #22304b;
-  line-height: 1.6;
 }
 
 .geo-battle-matchmaking-card {
@@ -417,9 +385,7 @@
 }
 
 .geo-battle-player-name,
-.geo-battle-phase-main,
-.geo-battle-result-score,
-.geo-battle-outcome {
+.geo-battle-phase-main {
   color: #111827;
   font-size: clamp(22px, 2.6vw, 30px);
   font-weight: 850;
@@ -1001,10 +967,6 @@
   color: #334155;
 }
 
-.geo-battle-outcome {
-  color: #0f766e;
-}
-
 .geo-battle-final-card {
   display: grid;
   gap: 12px;
@@ -1225,7 +1187,6 @@
   }
 
   .geo-battle-hub-grid,
-  .geo-battle-choice-grid,
   .geo-battle-status-bar,
   .geo-battle-board {
     grid-template-columns: minmax(0, 1fr);
@@ -1296,10 +1257,6 @@
     grid-row: 1;
     width: auto;
     justify-content: flex-end;
-  }
-
-  .geo-battle-choice-card {
-    min-height: 0;
   }
 
   .geo-battle-profile-panel {

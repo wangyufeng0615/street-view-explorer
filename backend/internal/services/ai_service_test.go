@@ -76,18 +76,6 @@ func (c *changingLetterClient) next(onDelta func(string) error) (string, []opena
 	return letter, []openai.Citation{{URL: fmt.Sprintf("https://example.com/%d", c.calls)}}, nil
 }
 
-func (c *changingLetterClient) GenerateLocationDescription(_ float64, _ float64, info map[string]string, scene *openai.SceneImage, _ string) (string, []openai.Citation, error) {
-	c.lastScene = scene
-	c.lastInfo = info
-	return c.next(nil)
-}
-
-func (c *changingLetterClient) GenerateDetailedLocationDescription(_ float64, _ float64, info map[string]string, scene *openai.SceneImage, _ string) (string, []openai.Citation, error) {
-	c.lastScene = scene
-	c.lastInfo = info
-	return c.next(nil)
-}
-
 func (c *changingLetterClient) StreamLocationDescription(_ context.Context, _ float64, _ float64, info map[string]string, scene *openai.SceneImage, _ string, onDelta func(string) error) (string, []openai.Citation, error) {
 	c.lastScene = scene
 	c.lastInfo = info
@@ -113,11 +101,11 @@ func TestDescriptionRequestsAlwaysGenerateANewLetter(t *testing.T) {
 	service := NewAIService(noCacheTestConfig{}, nil, nil, client)
 	location := models.Location{PanoID: "same-panorama", Latitude: 44.0882, Longitude: 25.33667}
 
-	first, firstCitations, err := service.GetDescriptionForLocation(location, "zh", StreetViewView{})
+	first, firstCitations, err := service.GetDescriptionForLocationContext(context.Background(), location, "zh", StreetViewView{})
 	if err != nil {
 		t.Fatalf("first description: %v", err)
 	}
-	second, secondCitations, err := service.GetDescriptionForLocation(location, "zh", StreetViewView{})
+	second, secondCitations, err := service.GetDescriptionForLocationContext(context.Background(), location, "zh", StreetViewView{})
 	if err != nil {
 		t.Fatalf("second description: %v", err)
 	}
@@ -135,13 +123,14 @@ func TestDescriptionFetchesCurrentStreetViewFrame(t *testing.T) {
 	client := &changingLetterClient{}
 	service := NewAIService(visualDescriptionConfig{}, nil, maps, client)
 
-	_, _, err := service.GetDescriptionForLocation(
+	_, _, err := service.GetDescriptionForLocationContext(
+		context.Background(),
 		models.Location{PanoID: "pano", Latitude: 1, Longitude: 2},
 		"en",
 		StreetViewView{PanoID: "actual-pano", Heading: 90, FOV: 80},
 	)
 	if err != nil {
-		t.Fatalf("GetDescriptionForLocation() error = %v", err)
+		t.Fatalf("GetDescriptionForLocationContext() error = %v", err)
 	}
 	if maps.frameCalls != 1 {
 		t.Fatalf("Street View frame fetches = %d, want 1", maps.frameCalls)
@@ -159,13 +148,14 @@ func TestDescriptionFallsBackToSavedAddressWhenGeocodingFails(t *testing.T) {
 	client := &changingLetterClient{}
 	service := NewAIService(visualDescriptionConfig{}, nil, maps, client)
 
-	desc, _, err := service.GetDescriptionForLocation(
+	desc, _, err := service.GetDescriptionForLocationContext(
+		context.Background(),
 		models.Location{PanoID: "pano", Latitude: 1, Longitude: 2, FormattedAddress: "Saved Road, Saved Town", Country: "Chile", CountryCode: "CL"},
 		"en",
 		StreetViewView{Heading: 90, FOV: 80},
 	)
 	if err != nil || desc == "" {
-		t.Fatalf("GetDescriptionForLocation() = %q, %v; want a description from the saved address", desc, err)
+		t.Fatalf("GetDescriptionForLocationContext() = %q, %v; want a description from the saved address", desc, err)
 	}
 	if client.lastInfo["formatted_address"] != "Saved Road, Saved Town" || client.lastInfo["country_code"] != "CL" {
 		t.Fatalf("location info passed to AI = %#v", client.lastInfo)
@@ -179,13 +169,14 @@ func TestDescriptionFailsClosedWhenStreetViewFrameFails(t *testing.T) {
 	maps := &visualDescriptionMaps{frameErr: fmt.Errorf("maps unavailable")}
 	service := NewAIService(visualDescriptionConfig{}, nil, maps, &changingLetterClient{})
 
-	_, _, err := service.GetDescriptionForLocation(
+	_, _, err := service.GetDescriptionForLocationContext(
+		context.Background(),
 		models.Location{PanoID: "pano", Latitude: 1, Longitude: 2},
 		"en",
 		StreetViewView{Heading: 90, FOV: 80},
 	)
 	if err == nil || !strings.Contains(err.Error(), "获取街景画面失败") {
-		t.Fatalf("GetDescriptionForLocation() error = %v, want visible frame failure", err)
+		t.Fatalf("GetDescriptionForLocationContext() error = %v, want visible frame failure", err)
 	}
 }
 

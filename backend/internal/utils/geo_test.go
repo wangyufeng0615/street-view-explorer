@@ -19,10 +19,6 @@ func requireGeoTestData(tb testing.TB) {
 	tb.Helper()
 
 	geoTestSetupOnce.Do(func() {
-		if err := EnsureMapDataReady(); err != nil {
-			geoTestSetupErr = fmt.Errorf("确保地图数据就绪失败: %w", err)
-			return
-		}
 		if err := InitializeGeoData(); err != nil {
 			geoTestSetupErr = fmt.Errorf("初始化地理数据失败: %w", err)
 		}
@@ -133,10 +129,11 @@ func TestRandomStrategyMix(t *testing.T) {
 func TestRandomCoordinateCandidateCarriesTargetCountry(t *testing.T) {
 	requireGeoTestData(t)
 	for i := 0; i < 100; i++ {
-		candidate, err := GenerateRandomCoordinateCandidate(nil, "", RandomStrategyFair)
+		candidates, err := GenerateRandomCoordinateCandidates(nil, "", RandomStrategyFair, 1)
 		if err != nil {
-			t.Fatalf("GenerateRandomCoordinateCandidate() error = %v", err)
+			t.Fatalf("GenerateRandomCoordinateCandidates() error = %v", err)
 		}
+		candidate := candidates[0]
 		if candidate.TargetCountryCode == "" {
 			t.Fatal("candidate missing target ISO2 country")
 		}
@@ -205,7 +202,7 @@ func TestGlobalCandidateCountriesExcludeUnownedMinorIslandOverlay(t *testing.T) 
 	}
 }
 
-func TestGenerateRandomCoordinateInCountry(t *testing.T) {
+func TestGenerateRandomCoordinateCandidatesInCountry(t *testing.T) {
 	requireGeoTestData(t)
 
 	code, ok := NormalizeISOAlpha2CountryCode("jp")
@@ -221,17 +218,17 @@ func TestGenerateRandomCoordinateInCountry(t *testing.T) {
 		t.Fatal("expected at least one Japan region")
 	}
 
-	for i := 0; i < 20; i++ {
-		lat, lng, err := GenerateRandomCoordinateInCountry("JP")
-		if err != nil {
-			t.Fatalf("country coordinate generation failed: %v", err)
-		}
-		if !coordinateInAnyPolygon(lat, lng, regions) {
-			t.Fatalf("coordinate (%.6f, %.6f) is outside Japan polygons", lat, lng)
+	candidates, err := GenerateRandomCoordinateCandidates(nil, "JP", "", 20)
+	if err != nil {
+		t.Fatalf("country coordinate generation failed: %v", err)
+	}
+	for _, c := range candidates {
+		if c.TargetCountryCode != "JP" || !coordinateInAnyPolygon(c.Latitude, c.Longitude, regions) {
+			t.Fatalf("candidate %+v is outside Japan polygons", c)
 		}
 	}
 
-	if _, _, err := GenerateRandomCoordinateInCountry("XX"); err == nil {
+	if _, err := GenerateRandomCoordinateCandidates(nil, "XX", "", 1); err == nil {
 		t.Fatal("expected unsupported country code to fail")
 	}
 	if _, ok := NormalizeISOAlpha2CountryCode("USA"); ok {
@@ -298,7 +295,11 @@ func TestCoordinateGenerationWithoutFallback(t *testing.T) {
 	totalAttempts := 0
 
 	for i := 0; i < numTests; i++ {
-		lat, lng := GenerateRandomCoordinate(nil)
+		candidates, err := GenerateRandomCoordinateCandidates(nil, "", "", 1)
+		if err != nil {
+			t.Fatalf("GenerateRandomCoordinateCandidates() error = %v", err)
+		}
+		lat, lng := candidates[0].Latitude, candidates[0].Longitude
 		totalAttempts++
 
 		found := coordinateInAnyPolygon(lat, lng, regions)
@@ -410,7 +411,11 @@ func TestUserPreferenceRegionGeneration(t *testing.T) {
 	inRangeCount := 0
 
 	for i := 0; i < numTests; i++ {
-		lat, lng := GenerateRandomCoordinate(userRegions)
+		candidates, err := GenerateRandomCoordinateCandidates(userRegions, "", "", 1)
+		if err != nil {
+			t.Fatalf("GenerateRandomCoordinateCandidates() error = %v", err)
+		}
+		lat, lng := candidates[0].Latitude, candidates[0].Longitude
 
 		// 检查坐标是否不是默认的北京坐标
 		if lat != 39.9042 || lng != 116.4074 {

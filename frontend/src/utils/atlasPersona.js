@@ -22,10 +22,6 @@ export function isPlusCodeLabel(value) {
   return PLUS_CODE_PATTERN.test(String(value || "").trim());
 }
 
-export function atlasCorePersona(locale = "en") {
-  return locale === "zh" ? CORE_PERSONA.zh : CORE_PERSONA.en;
-}
-
 export function truncateAtlasText(text, maxLength = 900) {
   if (!text) return "";
   const trimmed = String(text).trim();

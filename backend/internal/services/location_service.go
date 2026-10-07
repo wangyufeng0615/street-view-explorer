@@ -77,12 +77,6 @@ func (ls *LocationService) GetLocation(panoID string) (*models.Location, error) 
 	return ls.repo.GetLocationByPanoID(panoID)
 }
 
-// GetRandomLocation 获取随机位置，支持用户偏好
-// 如果 sessionID 为空，则使用默认的全球随机生成
-func (ls *LocationService) GetRandomLocation(sessionID string, language string, countryCodes ...string) (models.Location, error) {
-	return ls.GetRandomLocationWithContext(context.Background(), sessionID, language, countryCodes...)
-}
-
 func (ls *LocationService) GetRandomLocationWithContext(ctx context.Context, sessionID string, language string, countryCodes ...string) (models.Location, error) {
 	var regions []models.Region
 	countryCode := ""
@@ -552,11 +546,6 @@ func validateRegions(regions []models.Region) ([]models.Region, error) {
 	return valid, nil
 }
 
-// LookupLocation 根据坐标查找或创建位置
-func (ls *LocationService) LookupLocation(lat, lng float64, language string) (*models.Location, error) {
-	return ls.LookupLocationWithContext(context.Background(), lat, lng, language)
-}
-
 func (ls *LocationService) LookupLocationWithContext(ctx context.Context, lat, lng float64, language string) (*models.Location, error) {
 
 	// URL lookup 只接受附近街景，不做全局兜底跳转。
@@ -605,11 +594,6 @@ func (ls *LocationService) LocalizedAddress(ctx context.Context, lat, lng float6
 	return &location, nil
 }
 
-// LookupNearestLocation 根据坐标查找最近的可用街景并创建位置记录。
-func (ls *LocationService) LookupNearestLocation(lat, lng float64, language string) (*models.Location, error) {
-	return ls.LookupNearestLocationWithContext(context.Background(), lat, lng, language)
-}
-
 func (ls *LocationService) LookupNearestLocationWithContext(ctx context.Context, lat, lng float64, language string) (*models.Location, error) {
 
 	hasStreetView, validLat, validLng, panoId := ls.maps.FindNearestStreetView(ctx, lat, lng)
@@ -642,11 +626,6 @@ func (ls *LocationService) LookupNearestLocationWithContext(ctx context.Context,
 	}
 
 	return &location, nil
-}
-
-// SearchLocation resolves a concrete place/landmark query and loads nearby Street View.
-func (ls *LocationService) SearchLocation(query, language string) (*models.Location, *PlaceResolution, error) {
-	return ls.SearchLocationWithContext(context.Background(), query, language)
 }
 
 func (ls *LocationService) SearchLocationWithContext(ctx context.Context, query, language string) (*models.Location, *PlaceResolution, error) {
@@ -709,11 +688,6 @@ func (ls *LocationService) SearchLocationWithContext(ctx context.Context, query,
 // RecordVisit 记录用户访问
 func (ls *LocationService) RecordVisit(sessionID string, loc models.Location, source string) error {
 	return ls.repo.RecordVisit(sessionID, loc, source)
-}
-
-// GetVisitHistory 获取用户的访问历史
-func (ls *LocationService) GetVisitHistory(sessionID string, limit, offset int) ([]models.VisitRecord, int64, int64, error) {
-	return ls.repo.GetVisitHistory(sessionID, limit, offset)
 }
 
 // GetGlobalVisitHistory 获取所有用户共享的访问历史

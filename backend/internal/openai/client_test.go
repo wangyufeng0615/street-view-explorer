@@ -25,6 +25,15 @@ func ann(url string, start, end int) annotation {
 	}
 }
 
+// Non-streaming shorthands kept for tests; production code always streams.
+func (c *client) GenerateLocationDescription(latitude, longitude float64, locationInfo map[string]string, scene *SceneImage, language string) (string, []Citation, error) {
+	return c.StreamLocationDescription(context.Background(), latitude, longitude, locationInfo, scene, language, nil)
+}
+
+func (c *client) GenerateDetailedLocationDescription(latitude, longitude float64, locationInfo map[string]string, scene *SceneImage, language string) (string, []Citation, error) {
+	return c.StreamDetailedLocationDescription(context.Background(), latitude, longitude, locationInfo, scene, language, nil)
+}
+
 func TestStripInlineCitations(t *testing.T) {
 	tests := []struct {
 		name        string

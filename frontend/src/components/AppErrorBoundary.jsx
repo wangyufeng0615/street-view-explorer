@@ -22,7 +22,7 @@ class AppErrorBoundary extends React.Component {
 
   componentDidCatch(error, errorInfo) {
     // Log error to console in development
-    if (process.env.NODE_ENV === "development") {
+    if (import.meta.env.DEV) {
       console.error("Error caught by boundary:", error, errorInfo);
     }
 
@@ -67,7 +67,7 @@ class AppErrorBoundary extends React.Component {
                 `${sentenceGap}${i18n.t("error.boundary_reporting")}`}
             </p>
 
-            {process.env.NODE_ENV === "development" && this.state.error && (
+            {import.meta.env.DEV && this.state.error && (
               <details style={styles.details}>
                 <summary style={styles.summary}>
                   {i18n.t("error.boundary_details")}

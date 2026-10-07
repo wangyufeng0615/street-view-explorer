@@ -1,8 +1,5 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
-import viteTsconfigPaths from 'vite-tsconfig-paths';
-import svgr from 'vite-plugin-svgr';
-import path from 'path';
 
 const apiProxyTarget = process.env.VITE_API_PROXY_TARGET || 'http://localhost:8080';
 
@@ -10,13 +7,9 @@ const apiProxyTarget = process.env.VITE_API_PROXY_TARGET || 'http://localhost:80
 export default defineConfig({
   plugins: [
     react({
-      // Add React refresh
-      fastRefresh: true,
       // Support JSX in .js files
       include: "**/*.{jsx,tsx,js,ts}",
     }),
-    viteTsconfigPaths(),
-    svgr(),
   ],
   
   // Server configuration
@@ -52,7 +45,7 @@ export default defineConfig({
         // Note: sentry is excluded to enable true lazy loading via dynamic import
         manualChunks: {
           vendor: ['react', 'react-dom', 'react-router-dom'],
-          i18n: ['i18next', 'react-i18next', 'i18next-browser-languagedetector', 'i18next-http-backend'],
+          i18n: ['i18next', 'react-i18next', 'i18next-browser-languagedetector'],
           zustand: ['zustand'],
         },
       },
@@ -67,29 +60,7 @@ export default defineConfig({
   
   // Resolve configuration
   resolve: {
-    alias: {
-      '@': path.resolve(__dirname, './src'),
-      '@components': path.resolve(__dirname, './src/components'),
-      '@hooks': path.resolve(__dirname, './src/hooks'),
-      '@services': path.resolve(__dirname, './src/services'),
-      '@utils': path.resolve(__dirname, './src/utils'),
-      '@styles': path.resolve(__dirname, './src/styles'),
-      '@pages': path.resolve(__dirname, './src/pages'),
-      '@store': path.resolve(__dirname, './src/store'),
-    },
     extensions: ['.js', '.jsx', '.ts', '.tsx', '.json'],
-  },
-  
-  // CSS configuration
-  css: {
-    modules: {
-      localsConvention: 'camelCase',
-    },
-  },
-  
-  // Define global constants
-  define: {
-    'process.env': {},
   },
   
   // Optimizations

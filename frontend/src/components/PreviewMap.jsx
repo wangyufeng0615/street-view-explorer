@@ -1,74 +1,12 @@
 import React, { memo, useEffect, useRef, useState, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { loadGoogleMapsScript, loadMarkerLibrary } from "../utils/googleMaps";
-
-function removeMapListener(listenerRef) {
-  if (listenerRef.current) {
-    listenerRef.current.remove();
-    listenerRef.current = null;
-  }
-}
-
-function removeMarker(markerRef) {
-  if (!markerRef.current) return;
-
-  if (typeof markerRef.current.setMap === "function") {
-    markerRef.current.setMap(null);
-  } else {
-    markerRef.current.map = null;
-  }
-  markerRef.current = null;
-}
-
-function setMarkerPosition(marker, position) {
-  if (!marker) return;
-
-  if (typeof marker.setPosition === "function") {
-    marker.setPosition(position);
-    return;
-  }
-  marker.position = position;
-}
-
-function PickStatusOverlay({ status, message }) {
-  if (!message || status === "idle") {
-    return null;
-  }
-
-  const isError = status === "error";
-  const isSuccess = status === "success";
-
-  return (
-    <div
-      style={{
-        position: "absolute",
-        left: "50%",
-        bottom: "10px",
-        transform: "translateX(-50%)",
-        maxWidth: "calc(100% - 24px)",
-        padding: "6px 10px",
-        borderRadius: "999px",
-        background: isError
-          ? "rgba(127, 29, 29, 0.9)"
-          : isSuccess
-            ? "rgba(20, 83, 45, 0.9)"
-            : "rgba(15, 23, 42, 0.88)",
-        color: "#fff",
-        fontSize: "12px",
-        lineHeight: 1.3,
-        textAlign: "center",
-        whiteSpace: "nowrap",
-        overflow: "hidden",
-        textOverflow: "ellipsis",
-        pointerEvents: "none",
-        zIndex: 2,
-        boxShadow: "0 8px 20px rgba(15, 23, 42, 0.25)",
-      }}
-    >
-      {message}
-    </div>
-  );
-}
+import {
+  removeMapListener,
+  removeMarker,
+  setMarkerPosition,
+} from "../utils/mapMarkers";
+import PickStatusOverlay from "./PickStatusOverlay";
 
 function PreviewMap({
   latitude,

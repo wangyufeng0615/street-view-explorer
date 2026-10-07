@@ -4,11 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
-	"net"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -85,40 +82,5 @@ func CheckProxyHealth(proxyURL string, timeout time.Duration) error {
 		return fmt.Errorf("代理测试请求返回错误状态码: %d", resp.StatusCode)
 	}
 
-	return nil
-}
-
-// SetupProxyWithFallback 设置代理并在代理不可用时回退到直接连接
-func SetupProxyWithFallback(proxyURL string, timeout time.Duration) func(*http.Request) (*url.URL, error) {
-	if proxyURL == "" {
-		return nil // 没有设置代理
-	}
-
-	// 解析代理URL
-	proxy, err := url.Parse(proxyURL)
-	if err != nil {
-		log.Printf("%v，将不使用代理", proxyParseError(err))
-		return nil
-	}
-
-	// 检查代理健康状态
-	err = CheckProxyHealth(proxyURL, timeout)
-	if err != nil {
-		log.Printf("代理健康检查失败: %v，将不使用代理", err)
-		return nil
-	}
-
-	// 返回代理函数
-	return http.ProxyURL(proxy)
-}
-
-// CheckTCPConnection 检查TCP连接是否可用
-func CheckTCPConnection(host string, port int, timeout time.Duration) error {
-	address := net.JoinHostPort(host, strconv.Itoa(port))
-	conn, err := net.DialTimeout("tcp", address, timeout)
-	if err != nil {
-		return fmt.Errorf("连接到 %s 失败: %w", address, err)
-	}
-	conn.Close()
 	return nil
 }

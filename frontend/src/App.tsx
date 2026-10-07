@@ -55,14 +55,6 @@ function RouteFallback() {
   );
 }
 
-// Create router with future flags enabled
-const router = {
-  future: {
-    v7_startTransition: true,
-    v7_relativeSplatPath: true,
-  },
-};
-
 declare global {
   interface Window {
     testSentry: () => void;
@@ -163,7 +155,7 @@ function App() {
   }, []);
 
   return (
-    <Router {...router}>
+    <Router>
       <AppRoutes />
     </Router>
   );

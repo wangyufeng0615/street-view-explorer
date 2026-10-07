@@ -91,41 +91,6 @@ func Init(cfg *Config) error {
 	return nil
 }
 
-// CaptureError captures an error with additional context
-func CaptureError(err error, contexts map[string]interface{}) {
-	if err == nil {
-		return
-	}
-
-	sentry.WithScope(func(scope *sentry.Scope) {
-		// Add custom context
-		for key, value := range contexts {
-			scope.SetContext(key, sentry.Context{
-				"data": RedactSensitiveValue(value),
-			})
-		}
-
-		sentry.CaptureException(fmt.Errorf("%s", RedactSensitiveString(err.Error())))
-	})
-}
-
-// CaptureMessage captures a message event
-func CaptureMessage(message string, level sentry.Level, contexts map[string]interface{}) {
-	sentry.WithScope(func(scope *sentry.Scope) {
-		// Set level
-		scope.SetLevel(level)
-
-		// Add custom context
-		for key, value := range contexts {
-			scope.SetContext(key, sentry.Context{
-				"data": RedactSensitiveValue(value),
-			})
-		}
-
-		sentry.CaptureMessage(RedactSensitiveString(message))
-	})
-}
-
 func RedactEvent(event *sentry.Event) {
 	if event == nil {
 		return
