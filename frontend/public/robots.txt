@@ -33,3 +33,4 @@ Crawl-delay: 1
 
 # Host directive
 Host: https://earth.wangyufeng.org 
+Sitemap: https://earth.wangyufeng.org/sitemap.xml

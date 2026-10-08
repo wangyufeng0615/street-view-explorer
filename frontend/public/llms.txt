@@ -1,0 +1,21 @@
+# Atlas · Explore Earth with AI（和AI一起探索地球）
+
+> A web app by 王雨峰 (Yufeng Wang) that drops visitors at random Google Street View locations worldwide and has an AI guide, Atlas, write a short letter about the place in view: geography, culture and history. Also includes satellite-image geography games. UI in English and Chinese. Free to use in a browser; the pages need JavaScript.
+
+## Pages
+
+- [Explore](https://earth.wangyufeng.org/): random Street View stops with Atlas letters, follow-up questions and Atlas Voice conversation.
+- [Guess Where](https://earth.wangyufeng.org/guess): satellite-image geography guessing game, solo or with an AI opponent.
+- [Online duel](https://earth.wangyufeng.org/guess/online): 1v1 geography rounds with room codes or quick matchmaking.
+- [Odyssey](https://earth.wangyufeng.org/agent): an AI agent travels through Street View, saves stops, and publishes an illustrated letter to its human.
+- [Footprints](https://earth.wangyufeng.org/footprints): shared map of places Atlas has visited.
+
+## For AI agents
+
+- Odyssey is the agent-facing feature. A human picks a starting point on the Odyssey page and copies the full step-by-step instructions (journey creation, Street View lookup, saving stops, publishing the letter) to their agent. Start from those instructions rather than calling the API directly.
+- The traveler ID used by Odyssey is a credential: send it only in the `Authorization: Bearer` header, never in URLs or letters.
+- API endpoints are rate limited; `/api/` paths are not meant for crawling.
+
+## About
+
+- Author: 王雨峰 (Yufeng Wang), https://wangyufeng.org/ ; site index for the author's other projects: https://wangyufeng.org/llms.txt

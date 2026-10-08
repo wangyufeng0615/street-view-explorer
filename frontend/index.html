@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
     
     <!-- Primary Meta Tags -->
-    <title>Atlas</title>
+    <title>Atlas · Explore Earth with AI 和AI一起探索地球</title>
     <meta name="title" content="Explore Earth with AI" />
     <meta name="description" content="Explore random street views from around the world with AI-powered cultural and historical insights. Discover hidden gems, learn about local culture, and travel virtually through Google Street View." />
     <meta name="keywords" content="street view, random location, travel, explore, world map, cultural insights, virtual travel, global exploration, AI travel guide, Google Street View" />
@@ -67,14 +67,20 @@
         "priceCurrency": "USD"
       },
       "creator": {
-        "@type": "Organization",
-        "name": "Street View Explorer Team"
+        "@type": "Person",
+        "name": "王雨峰 (Yufeng Wang)",
+        "url": "https://wangyufeng.org/"
       },
+      "inLanguage": ["en", "zh-CN"],
+      "isAccessibleForFree": true,
       "featureList": [
         "Random street view exploration",
         "AI-powered location insights",
         "Global map visualization",
         "Cultural and historical information",
+        "Satellite-image geography guessing game with an optional AI opponent",
+        "Online 1v1 geography duel",
+        "Odyssey: an external AI agent travels through Street View and writes an illustrated letter",
         "Multi-language support"
       ]
     }
@@ -99,9 +105,28 @@
         }
     </script>
     
+    <link rel="alternate" type="text/plain" title="llms.txt" href="https://earth.wangyufeng.org/llms.txt" />
+    <script>document.documentElement.classList.add("js")</script>
+    <style>.seo-fallback{max-width:720px;margin:0 auto;padding:24px 16px;font:16px/1.7 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif}.js .seo-fallback{display:none}</style>
+
     <!-- Cloudflare Web Analytics is injected at the edge in production. -->
 </head>
 <body>
+    <!-- Plain copy for crawlers and no-JS readers; hidden as soon as the inline script above runs. -->
+    <main class="seo-fallback">
+        <h1>Atlas · Explore Earth with AI（和AI一起探索地球）</h1>
+        <p>Atlas drops you at a random Google Street View location anywhere in the world and writes a short letter about what you are looking at: the place, its culture and history, grounded in the frame you are facing. The interface is available in English and Chinese.</p>
+        <p>Atlas 把你随机放到世界某处的谷歌街景里，并结合你正在看的画面，写一封关于这个地方的地理、文化与历史的短信。界面支持中文和英文。</p>
+        <h2>What you can do</h2>
+        <ul>
+            <li><a href="https://earth.wangyufeng.org/">Explore</a>: random Street View stops across countries, with Atlas letters, follow-up questions and Atlas Voice conversation.</li>
+            <li><a href="https://earth.wangyufeng.org/guess">Guess Where</a>: a satellite-image geography game, solo or against an AI opponent.</li>
+            <li><a href="https://earth.wangyufeng.org/guess/online">Online duel</a>: 1v1 rounds with room codes or quick matchmaking.</li>
+            <li><a href="https://earth.wangyufeng.org/agent">Odyssey</a>: let your own AI agent travel through Street View and send you an illustrated letter.</li>
+            <li><a href="https://earth.wangyufeng.org/footprints">Footprints</a>: a shared map of where Atlas has been.</li>
+        </ul>
+        <p>Requires JavaScript. Made by <a href="https://wangyufeng.org/">王雨峰 (Yufeng Wang)</a>.</p>
+    </main>
     <div id="root"></div>
     <!-- Vite entry point -->
     <script type="module" src="/src/index.tsx"></script>
